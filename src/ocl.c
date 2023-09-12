@@ -86,7 +86,7 @@ static char *file_load (const char *filename, const char *common)
   if (r != 1)
     exit_with_error ("fread failed (%s)", strerror (errno));
 
-  b[s + sc] = '\0';
+  b[s + sc + 1] = '\0';
 
   return b;
 }
