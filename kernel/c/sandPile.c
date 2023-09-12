@@ -244,6 +244,8 @@ unsigned ssandPile_compute_tiled(unsigned nb_iter)
   return 0;
 }
 
+#ifdef ENABLE_OPENCL
+
 // Only called when --dump or --thumbnails is used
 void ssandPile_refresh_img_ocl ()
 {
@@ -256,6 +258,8 @@ void ssandPile_refresh_img_ocl ()
 
   ssandPile_refresh_img ();
 }
+
+#endif
 
 //////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////
