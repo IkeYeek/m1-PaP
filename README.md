@@ -1,4 +1,5 @@
-This projects aims at providing students with an easy-to-use programming environment to learn parallel programming.
+[EasyPAP](https://gforgeron.gitlab.io/easypap) aims at providing students with an easy-to-use programming environment
+to learn parallel programming.
 
 The idea is to parallelize sequential computations on 2D matrices over multicore and GPU platforms. At each iteration,
 the current matrix can be displayed, allowing to visually check the correctness of the computation method.
