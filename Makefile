@@ -21,41 +21,41 @@ ENABLE_MIPP			= 1
 ###### Customization Section #######
 
 # Compilers
-CC			:= gcc
-CXX			:= g++
+CC				:= gcc
+CXX				:= g++
 
 # Optimization level
-CFLAGS 		:= -O3 -march=native
+CFLAGS 			:= -O3 -march=native
 
 # Warnings
-CFLAGS		+= -Wall -Wno-unused-function
+CFLAGS			+= -Wall -Wno-unused-function
 
 ####################################
 
-CFLAGS		+= -I./include -I./traces/include
-LDLIBS		+= -lm
+CFLAGS			+= -I./include -I./traces/include
+LDLIBS			+= -lm
 
-CXXFLAGS	:= -std=c++11
+CXXFLAGS			:= -std=c++11
 
-OS_NAME		:= $(shell uname -s | tr a-z A-Z)
-ARCH		:= $(shell uname -m | tr a-z A-Z)
+OS_NAME			:= $(shell uname -s | tr a-z A-Z)
+ARCH			:= $(shell uname -m | tr a-z A-Z)
 
-SOURCES		:= $(wildcard src/*.c)
+SOURCES			:= $(wildcard src/*.c)
 
 ifneq ($(ENABLE_SDL), 1)
-SOURCES		:= $(filter-out src/gmonitor.c src/graphics.c src/cpustat.c, $(SOURCES))
+SOURCES			:= $(filter-out src/gmonitor.c src/graphics.c src/cpustat.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_PAPI), 1)
-SOURCES		:= $(filter-out src/perfcounter.c, $(SOURCES))
+SOURCES			:= $(filter-out src/perfcounter.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_OPENCL), 1)
-SOURCES		:= $(filter-out src/ocl.c, $(SOURCES))
+SOURCES			:= $(filter-out src/ocl.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_SHA), 1)
-SOURCES		:= $(filter-out src/hash.c, $(SOURCES))
+SOURCES			:= $(filter-out src/hash.c, $(SOURCES))
 endif
 
 CUDA_SOURCE	:= $(wildcard src/*.cu)
@@ -64,10 +64,10 @@ KERNELS			:= $(wildcard kernel/c/*.c)
 CXX_KERNELS	 	:= $(wildcard kernel/mipp/*.cpp)
 CUDA_KERNELS	:= $(wildcard kernel/cuda/*.cu)
 
-T_SOURCE	:= traces/src/trace_common.c
+T_SOURCE		:= traces/src/trace_common.c
 
 ifeq ($(ENABLE_TRACE), 1)
-T_SOURCE	+= traces/src/trace_record.c
+T_SOURCE		+= traces/src/trace_record.c
 endif
 
 L_SOURCE		:= $(wildcard src/*.l)
@@ -84,11 +84,13 @@ CUDA_K_OBJECTS	:= $(CUDA_KERNELS:kernel/cuda/%.cu=obj/cuda_%.o)
 ALL_OBJECTS	:= $(OBJECTS) $(K_OBJECTS) $(T_OBJECTS) $(L_OBJECTS)
 
 ifeq ($(ENABLE_CUDA), 1)
-ALL_OBJECTS	+= $(CUDA_OBJECTS) $(CUDA_K_OBJECTS)
+ALL_OBJECTS		+= $(CUDA_OBJECTS) $(CUDA_K_OBJECTS)
+NEED_CPP_LINK	:= 1
 endif
 
 ifeq ($(ENABLE_MIPP), 1)
-ALL_OBJECTS	+= $(CXX_K_OBJECTS)
+ALL_OBJECTS		+= $(CXX_K_OBJECTS)
+NEED_CPP_LINK	:= 1
 endif
 
 DEPENDS			:= $(SOURCES:src/%.c=deps/%.d)
@@ -99,120 +101,132 @@ L_DEPENDS		:= $(L_GEN:obj/%.c=deps/%.d)
 CUDA_DEPENDS	:= $(CUDA_SOURCE:src/%.cu=deps/%.d)
 CUDA_K_DEPENDS	:= $(CUDA_KERNELS:kernel/cuda/%.cu=deps/cuda_%.d)
 
-ALL_DEPENDS := $(DEPENDS) $(K_DEPENDS) $(T_DEPENDS) $(L_DEPENDS)
+ALL_DEPENDS		:= $(DEPENDS) $(K_DEPENDS) $(T_DEPENDS) $(L_DEPENDS)
 
 ifeq ($(ENABLE_CUDA), 1)
-ALL_DEPENDS	+= $(CUDA_DEPENDS) $(CUDA_K_DEPENDS)
+ALL_DEPENDS		+= $(CUDA_DEPENDS) $(CUDA_K_DEPENDS)
 endif
 
 ifeq ($(ENABLE_MIPP), 1)
-ALL_DEPENDS	+= $(CXX_K_DEPENDS)
+ALL_DEPENDS		+= $(CXX_K_DEPENDS)
 endif
 
-MAKEFILES	:= Makefile
+MAKEFILES		:= Makefile
 
 ifeq ($(OS_NAME), DARWIN)
-LDLIBS		+= -framework OpenGL
+LDFLAGS			+= -Wl,-ld_classic
+LDLIBS			+= -framework OpenGL
 else
-CFLAGS		+= -pthread -rdynamic
-LDFLAGS		+= -export-dynamic
-LDLIBS		+= -lGL -ldl
+CFLAGS			+= -pthread -rdynamic
+LDFLAGS			+= -export-dynamic
+LDLIBS			+= -lGL -ldl
 endif
 
 # Vectorization
 ifeq ($(ENABLE_VECTO), 1)
-CFLAGS		+= -DENABLE_VECTO
+CFLAGS			+= -DENABLE_VECTO
 endif
 
 # Monitoring
 ifeq ($(ENABLE_MONITORING), 1)
-CFLAGS		+= -DENABLE_MONITORING
+CFLAGS			+= -DENABLE_MONITORING
 endif
 
 # OpenMP
-CFLAGS		+= -fopenmp
-LDFLAGS		+= -fopenmp
+CFLAGS			+= -fopenmp
+LDFLAGS			+= -fopenmp
 
 # OpenCL
 ifeq ($(ENABLE_OPENCL), 1)
-CFLAGS		+= -DENABLE_OPENCL -DCL_SILENCE_DEPRECATION -DARCH=$(ARCH)_ARCH
+CFLAGS			+= -DENABLE_OPENCL -DCL_SILENCE_DEPRECATION -DARCH=$(ARCH)_ARCH
 ifeq ($(OS_NAME), DARWIN)
-LDLIBS		+= -framework OpenCL
+LDLIBS			+= -framework OpenCL
 else
-LDLIBS		+= -lOpenCL
+LDLIBS			+= -lOpenCL
 endif
 endif
 
 # Hardware Locality (hwloc)
-PACKAGES	:= hwloc
+PACKAGES		:= hwloc
 
 # Simple DirectMedia Layer (SDL)
 ifeq ($(ENABLE_SDL), 1)
-CFLAGS		+= -DENABLE_SDL
-PACKAGES	+= SDL2_image SDL2_ttf
+CFLAGS			+= -DENABLE_SDL
+PACKAGES		+= SDL2_image SDL2_ttf
 endif
 
 ifeq ($(ENABLE_TRACE), 1)
 # Right now, only fxt is supported
-CFLAGS		+= -DENABLE_TRACE -DENABLE_FUT
-PACKAGES	+= fxt
+CFLAGS			+= -DENABLE_TRACE -DENABLE_FUT
+PACKAGES		+= fxt
 endif
 
 # Message Passing Interface (MPI)
 ifeq ($(ENABLE_MPI), 1)
-CFLAGS		+= -DENABLE_MPI
-PACKAGES	+= ompi
+CFLAGS			+= -DENABLE_MPI
+PACKAGES		+= ompi
 endif
 
 # Performance Application Programming Interface (PAPI)
 ifeq ($(ENABLE_PAPI), 1)
-CFLAGS		+= -DENABLE_PAPI
-MICROARCH	:= $(shell echo $(shell (gcc -march=native -Q --help=target) | grep -m 1 march) | cut -d ' ' -f2)
+CFLAGS			+= -DENABLE_PAPI
+MICROARCH		:= $(shell echo $(shell (gcc -march=native -Q --help=target) | grep -m 1 march) | cut -d ' ' -f2)
 ifeq ($(MICROARCH), $(filter $(MICROARCH),skylake skylake-avx512 cascadelake))
-CFLAGS 		+= -DMICROARCH_SKYLAKE
+CFLAGS 			+= -DMICROARCH_SKYLAKE
 else
 ifeq ($(MICROARCH), haswell)
-CFLAGS 		+= -DMICROARCH_HASWELL
+CFLAGS 			+= -DMICROARCH_HASWELL
 endif
 endif
-PACKAGES	+= papi
+PACKAGES		+= papi
 endif
 
 # Secure Hash Algorithm (SHA)
 ifeq ($(ENABLE_SHA), 1)
-CFLAGS		+= -DENABLE_SHA
-PACKAGES	+= openssl
+CFLAGS			+= -DENABLE_SHA
+PACKAGES		+= openssl
 endif
 
 # Compute Unified Device Architecture (CUDA)
 ifeq ($(ENABLE_CUDA), 1)
-CFLAGS		+= -DENABLE_CUDA
-LDLIBS		+= -lcudart
-PACKAGES	+= cuda
-CUDA_CFLAGS := -O3 -I./include -I./traces/include
+CFLAGS			+= -DENABLE_CUDA
+LDLIBS			+= -lcudart
+PACKAGES		+= cuda
+CUDA_CFLAGS 	:= -O3 -I./include -I./traces/include
 endif
 
 # MyIntrinsics++ (MIPP)
 ifeq ($(ENABLE_MIPP), 1)
-CXXFLAGS	+= -I./lib/mipp/src
+CXXFLAGS		+= -I./lib/mipp/src
 endif
 
 # Query CFLAGS and LDLIBS for all packages
-PKG_CHECK	:= $(shell if pkg-config --print-errors --exists $(PACKAGES); then echo 0; else echo 1; fi)
+PKG_CHECK		:= $(shell if pkg-config --print-errors --exists $(PACKAGES); then echo 0; else echo 1; fi)
+
+# If some packages are missing, abort make process
 ifeq ($(PKG_CHECK), 1)
 $(error Installation problem: missing package)
 endif
 
-CFLAGS		+= $(shell pkg-config --cflags $(PACKAGES))
-LDFLAGS		+= $(shell pkg-config --libs-only-L $(PACKAGES))
-LDLIBS		+= $(shell pkg-config --libs-only-l $(PACKAGES))
+CFLAGS			+= $(shell pkg-config --cflags $(PACKAGES))
+LDFLAGS			+= $(shell pkg-config --libs-only-L $(PACKAGES))
+LDLIBS			+= $(shell pkg-config --libs-only-l $(PACKAGES))
 
-CXXFLAGS	+= $(CFLAGS)
+CXXFLAGS		+= $(CFLAGS)
+
+ifeq ($(NEED_CPP_LINK), 1)
+LD				:= $(CXX)
+else
+LD				:= $(CC)
+endif
+
+
+########## Compute rules ###########
 
 $(ALL_OBJECTS): $(MAKEFILES)
 
 $(PROGRAM): $(ALL_OBJECTS)
-	$(CXX) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(LD) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c
 	$(CC) -o $@ $(CFLAGS) -c $<
