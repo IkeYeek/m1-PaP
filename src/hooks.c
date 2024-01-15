@@ -166,7 +166,7 @@ void hooks_draw_helper (char *suffix, void_func_t default_func)
   f ();
 }
 
-int do_tile (int x, int y, int width, int height, int who)
+int do_tile_id (int x, int y, int width, int height, int who)
 {
   if (the_tile_func == NULL)
     exit_with_error ("No appropriate do_tile function found");

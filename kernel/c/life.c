@@ -105,7 +105,7 @@ unsigned life_compute_seq (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++) {
 
-    int change = do_tile (0, 0, DIM, DIM, 0);
+    int change = do_tile (0, 0, DIM, DIM);
 
     if (!change)
       return it;
@@ -128,7 +128,7 @@ unsigned life_compute_tiled (unsigned nb_iter)
 
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
-        change |= do_tile (x, y, TILE_W, TILE_H, 0);
+        change |= do_tile (x, y, TILE_W, TILE_H);
 
     swap_tables ();
 

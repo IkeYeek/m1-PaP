@@ -46,7 +46,7 @@ unsigned invert_compute_tiled (unsigned nb_iter)
 
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
-        do_tile (x, y, TILE_W, TILE_H, 0 /* CPU id */);
+        do_tile (x, y, TILE_W, TILE_H);
 
   }
 

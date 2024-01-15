@@ -216,7 +216,7 @@ unsigned ssandPile_compute_seq(unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++)
   {
-    int change = do_tile(1, 1, DIM - 2, DIM - 2, 0);
+    int change = do_tile(1, 1, DIM - 2, DIM - 2);
     swap_tables();
     if (change == 0)
       return it;
@@ -235,7 +235,7 @@ unsigned ssandPile_compute_tiled(unsigned nb_iter)
         change |=
             do_tile(x + (x == 0), y + (y == 0),
                     TILE_W - ((x + TILE_W == DIM) + (x == 0)),
-                    TILE_H - ((y + TILE_H == DIM) + (y == 0)), 0 /* CPU id */);
+                    TILE_H - ((y + TILE_H == DIM) + (y == 0)));
     swap_tables();
     if (change == 0)
       return it;
@@ -315,7 +315,7 @@ unsigned asandPile_compute_seq(unsigned nb_iter)
   for (unsigned it = 1; it <= nb_iter; it++)
   {
     // On traite toute l'image en un coup (oui, c'est une grosse tuile)
-    change = do_tile(1, 1, DIM - 2, DIM - 2, 0);
+    change = do_tile(1, 1, DIM - 2, DIM - 2);
 
     if (change == 0)
       return it;
@@ -334,7 +334,7 @@ unsigned asandPile_compute_tiled(unsigned nb_iter)
         change |=
             do_tile(x + (x == 0), y + (y == 0),
                     TILE_W - ((x + TILE_W == DIM) + (x == 0)),
-                    TILE_H - ((y + TILE_H == DIM) + (y == 0)), 0 /* CPU id */);
+                    TILE_H - ((y + TILE_H == DIM) + (y == 0)));
     if (change == 0)
       return it;
   }

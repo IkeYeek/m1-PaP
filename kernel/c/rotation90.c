@@ -22,7 +22,7 @@ unsigned rotation90_compute_seq (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++) {
 
-    do_tile (0, 0, DIM, DIM, 0);
+    do_tile (0, 0, DIM, DIM);
 
     swap_images ();
   }

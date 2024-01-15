@@ -21,7 +21,7 @@ unsigned transpose_compute_seq (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++) {
 
-    do_tile (0, 0, DIM, DIM, 0);
+    do_tile (0, 0, DIM, DIM);
 
     swap_images ();
   }
@@ -40,7 +40,7 @@ unsigned transpose_compute_tiled (unsigned nb_iter)
 
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
-        do_tile (x, y, TILE_W, TILE_H, 0);
+        do_tile (x, y, TILE_W, TILE_H);
 
     swap_images ();
   }

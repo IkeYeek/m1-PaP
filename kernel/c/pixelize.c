@@ -80,7 +80,7 @@ unsigned pixelize_compute_seq (unsigned nb_iter)
 
     for (int y = 0; y < DIM; y += PIX_BLOC)
       for (int x = 0; x < DIM; x += PIX_BLOC)
-        do_tile (x, y, PIX_BLOC, PIX_BLOC, 0);
+        do_tile (x, y, PIX_BLOC, PIX_BLOC);
   }
 
   return 0;

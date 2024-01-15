@@ -27,6 +27,12 @@ void hooks_establish_bindings (int silent);
 void hooks_draw_helper (char *suffix, void_func_t default_func);
 
 // Call appropriate do_tile_${suffix} function, with calls to monitoring start/end
-int do_tile (int x, int y, int width, int height, int who);
+int do_tile_id (int x, int y, int width, int height, int who);
+
+#define do_tile_implicit(x,y,w,h) do_tile_id(x,y,w,h,omp_get_thread_num())
+
+// The two macros implement the switch between do_tile_implicit and do_tile_id
+#define _macro(_1,_2,_3,_4,_5,NAME,...) NAME
+#define do_tile(...) _macro(__VA_ARGS__,do_tile_id,do_tile_implicit)(__VA_ARGS__)
 
 #endif
