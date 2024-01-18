@@ -4,16 +4,16 @@ from expTools import *
 import os
 
 easyspap_options = {}
-easyspap_options["--kernel "] = ["rotation90"]
-easyspap_options["--iterations "] = [100]
-easyspap_options["--variant "] = ["omp_tiled",
+easyspap_options["--kernel"] = ["rotation90"]
+easyspap_options["--iterations"] = [100]
+easyspap_options["--variant"] = ["omp_tiled",
                                   "omp_cache",]
-easyspap_options["--tile-size "] = [8, 16, 32]
-easyspap_options["--size "] = [512, 1024, 2048, 4096]
-easyspap_options["--cache"] = [""]
+easyspap_options["--tile-size"] = [8, 16, 32]
+easyspap_options["--size"] = [512, 1024, 2048, 4096]
+easyspap_options["--counters"] = [""]
 
 omp_icv = {}  # OpenMP Internal Control Variables
-omp_icv["OMP_NUM_THREADS="] = [1] + list(range(2, 13, 2))
-omp_icv["OMP_SCHEDULE="] = ["static"]
+omp_icv["OMP_NUM_THREADS"] = [1] + list(range(2, 13, 2))
+omp_icv["OMP_SCHEDULE"] = ["static"]
 
-execute('./run', omp_icv, easyspap_options, nbrun=1)
+execute('./run', omp_icv, easyspap_options, nbruns=1)
