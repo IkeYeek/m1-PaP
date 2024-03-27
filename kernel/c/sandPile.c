@@ -204,7 +204,7 @@ int ssandPile_do_tile_default(int x, int y, int width, int height)
       table(out, i, j) += table(in, i - 1, j) / 4;
       table(out, i, j) += table(in, i, j + 1) / 4;
       table(out, i, j) += table(in, i, j - 1) / 4;
-      if (table(out, i, j) >= 4)
+      if (table(out, i, j) != table(in, i, j))
         diff = 1;
     }
 
