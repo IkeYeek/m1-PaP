@@ -20,8 +20,11 @@ extern unsigned gpu_index[];
 #define TRACE_FIRST_ITER   0x10B
 #define TRACE_DO_CACHE     0x10C
 #define TRACE_TILE         0x10D
+#define TRACE_MESHFILE     0x10E
+#define TRACE_PALETTE      0x10F
 
 #define DEFAULT_EZV_TRACE_DIR "data/traces"
+#define DEFAULT_EZV_DUMP_DIR "data/dump"
 #define DEFAULT_EZV_TRACE_BASE "ezv_trace_current"
 #define DEFAULT_EZV_TRACE_EXT  ".evt"
 #define DEFAULT_EZV_TRACE_FILE DEFAULT_EZV_TRACE_BASE DEFAULT_EZV_TRACE_EXT

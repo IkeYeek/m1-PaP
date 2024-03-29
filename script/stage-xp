@@ -57,7 +57,7 @@ DEST="${TRACEDIR}/$1"
 
 if [[ -d $DEST ]]; then
     shall_we_continue "Directory $DEST will be erased"
-    $cmd rm -f ${DEST}/*.png ${DEST}/*.evt
+    $cmd rm -f ${DEST}/*.png ${DEST}/*.raw ${DEST}/*.evt
 else
     $cmd mkdir -p ${DEST}
 fi
@@ -71,6 +71,11 @@ fi
 png=( ${TRACEDIR}/*.png )
 if [[ -f ${png[0]} ]]; then
     files=( ${files[@]} ${png[@]} )
+fi
+
+raw=( ${TRACEDIR}/*.raw )
+if [[ -f ${raw[0]} ]]; then
+    files=( ${files[@]} ${raw[@]} )
 fi
 
 if [[ ${#files[@]} > 0 ]]; then

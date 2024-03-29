@@ -49,7 +49,7 @@ CFILE=${EASYPAPDIR}/kernel/c/${KERNEL}.c
 if [[ -f $CFILE ]]; then
     shall_we_continue "File $CFILE will be erased"
 fi
- 
+
 sed -e "s/<template>/$KERNEL/g" < ${EASYPAPDIR}/data/templates/kernel_template.c > $CFILE && echo "Template file $CFILE generated."
 
 exit 0

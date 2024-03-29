@@ -1,19 +1,17 @@
 
-
-#include <SDL.h>
+#include "mesh3d_sdl_gl.h"
+#include "error.h"
+#include "trace_common.h"
+#include "trace_data.h"
+#include "trace_file.h"
+#include "trace_graphics.h"
 
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <stdbool.h>
-
-#include "error.h"
-#include "trace_data.h"
-#include "trace_file.h"
-#include "trace_graphics.h"
-#include "trace_common.h"
 
 static int WINDOW_PREFERRED_WIDTH  = 1920;
 static int WINDOW_PREFERRED_HEIGHT = 1024;
@@ -22,8 +20,8 @@ static int first_iteration = -1;
 static int last_iteration  = -1;
 static int whole_trace     = 0;
 
-static unsigned nb_dir = 0;
-char *trace_dir[MAX_TRACES] = { NULL, NULL };
+static unsigned nb_dir      = 0;
+char *trace_dir[MAX_TRACES] = {NULL, NULL};
 
 static void usage (char *progname, int val)
 {
@@ -130,14 +128,14 @@ static int clever_get_event (SDL_Event *event)
   static SDL_Event pr_event; // prefetched event
 
   if (prefetched) {
-    *event = pr_event;
+    *event     = pr_event;
     prefetched = false;
     return 1;
   }
-  
+
   r = get_event (event, true);
 
-  if(r != 1)
+  if (r != 1)
     return r;
 
   // check if successive, similar events can be dropped
@@ -147,7 +145,7 @@ static int clever_get_event (SDL_Event *event)
       int ret_code = get_event (&pr_event, false);
       if (ret_code == 1) {
         if (pr_event.type == SDL_MOUSEMOTION) {
-          *event = pr_event;
+          *event     = pr_event;
           prefetched = false;
           skipped_events++;
         } else {
@@ -156,10 +154,24 @@ static int clever_get_event (SDL_Event *event)
       } else
         return 1;
     } while (prefetched == false);
-
   }
 
   return 1;
+}
+
+static void check_consistency (void)
+{
+  if (nb_traces == 2) {
+    if (trace[0].mesh_file == NULL) {
+      if (trace[1].mesh_file != NULL)
+        exit_with_error ("Comparison between incompatible traces (w mesh vs w/o mesh)");
+    } else {
+      if (trace[1].mesh_file == NULL)
+        exit_with_error ("Comparison between incompatible traces (w mesh vs w/o mesh)");
+      if (strcmp(trace[0].mesh_file, trace[1].mesh_file))
+        exit_with_error ("Comparison between traces operating on different meshes is not possible");
+    }
+  }
 }
 
 int main (int argc, char **argv)
@@ -193,6 +205,8 @@ int main (int argc, char **argv)
     exit_with_error ("Too many trace files specified (max %d)", MAX_TRACES);
   }
 
+  check_consistency ();
+  
   trace_data_sync_iterations ();
 
   trace_graphics_init (WINDOW_PREFERRED_WIDTH, WINDOW_PREFERRED_HEIGHT);
@@ -209,77 +223,31 @@ int main (int argc, char **argv)
     int r = clever_get_event (&event);
 
     if (r > 0) {
+
       if (event.type == SDL_KEYDOWN) {
         switch (event.key.keysym.sym) {
-        case SDLK_RIGHT:
-          trace_graphics_shift_left ();
-          break;
-        case SDLK_LEFT:
-          trace_graphics_shift_right ();
-          break;
-        case SDLK_MINUS:
-        case SDLK_KP_MINUS:
-        case SDLK_m:
-          trace_graphics_zoom_out ();
-          break;
-        case SDLK_PLUS:
-        case SDLK_KP_PLUS:
-        case SDLK_p:
-          trace_graphics_zoom_in ();
-          break;
-        case SDLK_SPACE:
-          trace_graphics_reset_zoom ();
-          break;
-        case SDLK_w:
-          trace_graphics_display_all ();
-          break;
-        case SDLK_a:
-          trace_graphics_toggle_align_mode ();
-          break;
-        case SDLK_x:
-          trace_graphics_toggle_vh_mode ();
-          break;
-        case SDLK_t:
-          trace_graphics_toggle_tracking_mode ();
-          break;
-        case SDLK_f:
-          trace_graphics_toggle_footprint_mode ();
-          break;
-        case SDLK_z:
-          trace_graphics_zoom_to_selection ();
-          break;
-        case SDLK_s:
-          trace_graphics_save_screenshot ();
-          break;
         case SDLK_ESCAPE:
         case SDLK_q:
           quit = SDL_TRUE;
           break;
+        default:;
         }
       } else if (event.type == SDL_QUIT) {
         quit = SDL_TRUE;
-      } else if (event.type == SDL_MOUSEMOTION) {
-        trace_graphics_mouse_moved (event.motion.x, event.motion.y);
-      } else if (event.type == SDL_MOUSEBUTTONDOWN) {
-        trace_graphics_mouse_down (event.button.x, event.button.y);
-      } else if (event.type == SDL_MOUSEBUTTONUP) {
-        trace_graphics_mouse_up (event.button.x, event.button.y);
-      } else if (event.type == SDL_MOUSEWHEEL) {
-        trace_graphics_scroll (event.wheel.x);
-      } else if (event.type == SDL_WINDOWEVENT) {
-        switch (event.window.event) {
-        case SDL_WINDOWEVENT_RESIZED:
-          trace_graphics_relayout (event.window.data1, event.window.data2);
-          break;
-        case SDL_WINDOWEVENT_CLOSE:
-          quit = SDL_TRUE;
-          break;
-        }
+      } else if (event.type == SDL_WINDOWEVENT &&
+                 event.window.event == SDL_WINDOWEVENT_CLOSE) {
+        quit = SDL_TRUE;
+        break;
       }
+
+      if (!quit) 
+        trace_graphics_process_event (&event);
     }
   } while (!quit);
 
   // printf ("Events skipped: %u\n", skipped_events);
+
+  trace_graphics_clean ();
 
   SDL_Quit ();
 

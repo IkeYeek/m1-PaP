@@ -1,6 +1,11 @@
-#include <SDL_image.h>
-#include <SDL_opengl.h>
-#include <SDL_ttf.h>
+#include "trace_graphics.h"
+#include "error.h"
+#include "mesh3d.h"
+#include "mesh3d_renderer.h"
+#include "trace_common.h"
+
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <fcntl.h>
 #include <fut.h>
 #include <fxt-tools.h>
@@ -13,9 +18,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "error.h"
-#include "trace_common.h"
-#include "trace_graphics.h"
+enum
+{
+  EASYVIEW_MODE_UNDEFINED,
+  EASYVIEW_MODE_2D_IMAGES,
+  EASYVIEW_MODE_3D_MESHES
+} easyview_mode = EASYVIEW_MODE_UNDEFINED;
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -81,6 +89,8 @@ static int GANTT_HEIGHT, PREVIEW_DIM, CACHE_STATS_WIDTH;
 static int BUBBLE_WIDTH, BUBBLE_HEIGHT, REDUCED_BUBBLE_WIDTH,
     REDUCED_BUBBLE_HEIGHT;
 
+static Uint32 main_windowID = 0;
+
 static SDL_Window *window             = NULL;
 static SDL_Renderer *renderer         = NULL;
 static TTF_Font *the_font             = NULL;
@@ -117,10 +127,10 @@ static int footprint_mode = 0;
 static long start_time = 0, end_time = 0, duration = 0;
 
 static long selection_start_time = 0, selection_duration = 0;
-static long mouse_orig_time     = 0;
-static SDL_Point mouse          = {-1, -1};
-static int mouse_in_gantt_zone  = 0;
-static int mouse_down           = 0;
+static long mouse_orig_time    = 0;
+static SDL_Point mouse         = {-1, -1};
+static int mouse_in_gantt_zone = 0;
+static int mouse_down          = 0;
 
 static int max_cores = -1, max_iterations = -1;
 static long max_time = -1;
@@ -150,6 +160,11 @@ struct
   int first_displayed_iter, last_displayed_iter;
 } trace_ctrl[MAX_TRACES];
 
+// 3D meshes
+static mesh3d_obj_t mesh;
+static mesh3d_ctx_t ctx[MAX_TRACES] = {NULL, NULL};
+static int picked = -1;
+
 static inline unsigned layout_get_min_width (void)
 {
   return WINDOW_MIN_WIDTH;
@@ -176,11 +191,17 @@ static unsigned layout_get_height (unsigned preview_dim, unsigned task_height)
 
 static unsigned layout_get_min_height (void)
 {
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+    return layout_get_height (0, MIN_TASK_HEIGHT);
+
   return layout_get_height (MIN_PREVIEW_DIM, MIN_TASK_HEIGHT);
 }
 
 static unsigned layout_get_max_height (void)
 {
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+    return layout_get_height (0, MAX_TASK_HEIGHT);
+
   return layout_get_height (MAX_PREVIEW_DIM, MAX_TASK_HEIGHT);
 }
 
@@ -206,10 +227,13 @@ static void layout_recompute (int at_init)
 
   if (nb_traces == 1) {
     // Compute preview size
-    PREVIEW_DIM = min (MAX_PREVIEW_DIM,
-                       max (MIN_PREVIEW_DIM,
-                            min (WINDOW_WIDTH / 4,
-                                 WINDOW_HEIGHT - TOP_MARGIN - BOTTOM_MARGIN)));
+    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+      PREVIEW_DIM = 0;
+    else
+      PREVIEW_DIM = min (MAX_PREVIEW_DIM,
+                         max (MIN_PREVIEW_DIM, min (WINDOW_WIDTH / 4,
+                                                    WINDOW_HEIGHT - TOP_MARGIN -
+                                                        BOTTOM_MARGIN)));
 
     // See how much space we have for GANTT chart
     unsigned space = WINDOW_HEIGHT - TOP_MARGIN - BOTTOM_MARGIN;
@@ -244,12 +268,15 @@ static void layout_recompute (int at_init)
     unsigned padding = 0;
 
     // Compute preview size
-    PREVIEW_DIM =
-        min (MAX_PREVIEW_DIM,
-             max (MIN_PREVIEW_DIM,
-                  min (WINDOW_WIDTH / 4, (WINDOW_HEIGHT - TOP_MARGIN -
-                                          BOTTOM_MARGIN - INTERTRACE_MARGIN) /
-                                             2)));
+    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+      PREVIEW_DIM = 0;
+    else
+      PREVIEW_DIM =
+          min (MAX_PREVIEW_DIM,
+               max (MIN_PREVIEW_DIM,
+                    min (WINDOW_WIDTH / 4, (WINDOW_HEIGHT - TOP_MARGIN -
+                                            BOTTOM_MARGIN - INTERTRACE_MARGIN) /
+                                               2)));
 
     // See how much space we have for GANTT chart
     unsigned space =
@@ -345,12 +372,16 @@ static inline int point_in_rect (const SDL_Point *p, const SDL_Rect *r)
 
 static inline int point_inside_mosaic (const SDL_Point *p, unsigned trace_num)
 {
-  return point_in_rect (p, &trace_display_info[trace_num].mosaic);
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
+    return mesh3d_ctx_is_in_focus (ctx[trace_num]);
+  } else
+    return point_in_rect (p, &trace_display_info[trace_num].mosaic);
 }
 
 static inline int point_inside_mosaics (const SDL_Point *p)
 {
-  return point_inside_mosaic (p, 0) || ((nb_traces == 1) ? 0 : (point_inside_mosaic (p, 1)));
+  return point_inside_mosaic (p, 0) ||
+         ((nb_traces == 1) ? 0 : (point_inside_mosaic (p, 1)));
 }
 
 static inline int point_inside_gantt (const SDL_Point *p, unsigned trace_num)
@@ -406,10 +437,32 @@ static inline int is_lane (trace_t *const tr, int cpu_num)
 
 // Texture creation functions
 
-static void preload_thumbnails (unsigned nb_iter)
+static float *mesh_load_raw_data (const char *filename)
 {
+  int fd = open (filename, O_RDONLY);
+  if (fd == -1)
+    return NULL;
+
+  off_t len = lseek (fd, 0L, SEEK_END);
+  if (len % sizeof (float) != 0)
+    exit_with_error ("%s size should be a multiple of sizeof(float)", filename);
+
+  lseek (fd, 0L, SEEK_SET);
+
+  float *data = malloc (len);
+  int n       = read (fd, data, len);
+  if (n != len)
+    exit_with_error ("Read from %s returned less data than expected", filename);
+
+  close (fd);
+  return data;
+}
+
+static unsigned preload_thumbnails (unsigned nb_iter)
+{
+  unsigned success = 0, expected = 0;
+
   if (use_thumbnails) {
-    unsigned success = 0, expected = 0;
     unsigned nb_dirs  = 0;
     unsigned bound[2] = {nb_iter, nb_iter};
     char *dir[2]      = {trace_dir[0], trace_dir[1]};
@@ -421,7 +474,7 @@ static void preload_thumbnails (unsigned nb_iter)
       // or because we compare two traces starting from a different iteration
       // number. (Note that in this latter case -- and if iteration ranges
       // overlap -- we could probably try to load once and shift the indexes in
-      // the second array... I don't think it is relevant)
+      // the second array... I don't think it is worth it.)
 
       nb_dirs = 2;
       if (!dir[1])
@@ -447,22 +500,33 @@ static void preload_thumbnails (unsigned nb_iter)
         SDL_Surface *thumb = NULL;
         char filename[MAX_FILENAME];
 
-        sprintf (filename, "%s/thumb_%04d.png", dir[d],
-                 trace[d].first_iteration + iter);
-        thumb = IMG_Load (filename);
+        if (easyview_mode == EASYVIEW_MODE_2D_IMAGES) {
+          sprintf (filename, "%s/thumb_%04d.png", dir[d],
+                   trace[d].first_iteration + iter);
+          thumb = IMG_Load (filename);
+        } else {
+          sprintf (filename, "%s/thumb_%04d.raw", dir[d],
+                   trace[d].first_iteration + iter);
+          thumb = (SDL_Surface *)mesh_load_raw_data (filename);
+        }
 
         if (thumb != NULL) {
           success++;
 
-          thumb_tex[d][iter] = SDL_CreateTextureFromSurface (renderer, thumb);
-          SDL_FreeSurface (thumb);
-          SDL_SetTextureAlphaMod (thumb_tex[d][iter], brightness);
+          if (easyview_mode == EASYVIEW_MODE_2D_IMAGES) {
+            thumb_tex[d][iter] = SDL_CreateTextureFromSurface (renderer, thumb);
+            SDL_FreeSurface (thumb);
+            SDL_SetTextureAlphaMod (thumb_tex[d][iter], brightness);
+          } else {
+            thumb_tex[d][iter] = (SDL_Texture *)thumb;
+          }
         } else
           thumb_tex[d][iter] = NULL;
       }
 
     printf ("%d/%u thumbnails successfully preloaded\n", success, expected);
   }
+  return success;
 }
 
 static void create_task_textures (unsigned nb_cores)
@@ -608,7 +672,7 @@ static void create_digit_textures (TTF_Font *font)
     char msg[32];
     snprintf (msg, 32, "%d", c);
 
-    s = TTF_RenderText_Blended (font, msg, white_color);
+    s = TTF_RenderUTF8_Blended (font, msg, white_color);
     if (s == NULL)
       exit_with_error ("TTF_RenderText_Solid failed: %s", SDL_GetError ());
 
@@ -726,9 +790,9 @@ static void blit_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
 
   to_sdl_color (color, &col);
 
-  SDL_Surface *s = TTF_RenderText_Blended (font, msg, col);
+  SDL_Surface *s = TTF_RenderUTF8_Blended (font, msg, col);
   if (s == NULL)
-    exit_with_error ("TTF_RenderText_Blended failed: %s", SDL_GetError ());
+    exit_with_error ("TTF_RenderUTF8_Blended failed: %s", SDL_GetError ());
 
   dst.x = LEFT_MARGIN - s->w;
   dst.y = trace_display_info[trace].gantt.y +
@@ -913,16 +977,26 @@ static inline int get_tile_rect (trace_t *tr, trace_task_t *t, SDL_Rect *dst)
 static void show_tile (trace_t *tr, trace_task_t *t, unsigned cpu,
                        unsigned highlight)
 {
-  SDL_Rect dst;
   unsigned task_color =
       is_lane (tr, cpu) ? gpu_index[t->task_type] : (cpu % MAX_COLORS);
 
-  get_tile_rect (tr, t, &dst);
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
+    if (t->w) {
+      mesh3d_set_cpu_color (
+          ctx[tr->num], t->x, t->w,
+          (highlight ? cpu_colors[task_color]
+                     : (cpu_colors[task_color] & 0xFFFFFF00) | 0xC0));
+    }
+  } else {
+    SDL_Rect dst;
 
-  SDL_RenderCopy (
-      renderer,
-      (highlight ? square_tex_bright[task_color] : square_tex_dark[task_color]),
-      NULL, &dst);
+    get_tile_rect (tr, t, &dst);
+
+    SDL_RenderCopy (renderer,
+                    (highlight ? square_tex_bright[task_color]
+                               : square_tex_dark[task_color]),
+                    NULL, &dst);
+  }
 }
 
 static void display_tab (unsigned trace_num)
@@ -1066,7 +1140,8 @@ static void display_cache_histo (const int64_t *counters, int x, int y, int w,
     return;
 
   // STALL RATIO
-  unsigned ratio = counters[EASYPAP_TOTAL_STALLS] * 255 / counters[EASYPAP_TOTAL_CYCLES];
+  unsigned ratio =
+      counters[EASYPAP_TOTAL_STALLS] * 255 / counters[EASYPAP_TOTAL_CYCLES];
   SDL_Rect dst;
 
   SDL_SetRenderDrawColor (renderer, ratio, 255 - ratio, 0, 255);
@@ -1130,7 +1205,7 @@ typedef struct
   {                                                                            \
     NULL, NULL, 0, 0, {0, 0, 0, 0},                                            \
     {                                                                          \
-      0, 0/*, 0, 0*/                                                           \
+      0, 0 /*, 0, 0*/                                                          \
     }                                                                          \
   }
 
@@ -1224,7 +1299,9 @@ static void display_tile_background (int tr)
   static int displayed_iter[MAX_TRACES] = {-1, -1};
   static SDL_Texture *tex[MAX_TRACES]   = {NULL};
 
-  SDL_RenderCopy (renderer, black_square, NULL, &trace_display_info[tr].mosaic);
+  if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
+    SDL_RenderCopy (renderer, black_square, NULL,
+                    &trace_display_info[tr].mosaic);
 
   if (use_thumbnails) {
 
@@ -1239,8 +1316,12 @@ static void display_tile_background (int tr)
     }
   }
 
-  if (tex[tr] != NULL)
-    SDL_RenderCopy (renderer, tex[tr], NULL, &trace_display_info[tr].mosaic);
+  if (tex[tr] != NULL) {
+    if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
+      SDL_RenderCopy (renderer, tex[tr], NULL, &trace_display_info[tr].mosaic);
+    else
+      mesh3d_set_data_colors (ctx[tr], (float *)tex[tr]);
+  }
 }
 
 static void display_gantt_background (trace_t *tr, int _t, int first_it)
@@ -1314,6 +1395,14 @@ static void display_cache_stats (trace_t *tr, int _t,
   }
 }
 
+static void inline magnify (SDL_Rect *r)
+{
+  r->x -= MAGNIFICATION;
+  r->y -= MAGNIFICATION;
+  r->w += MAGNIFICATION * 2;
+  r->h += MAGNIFICATION * 2;
+}
+
 static void trace_graphics_display_trace (unsigned _t,
                                           selected_task_info_t *selected)
 {
@@ -1332,6 +1421,10 @@ static void trace_graphics_display_trace (unsigned _t,
   bzero (to_be_emphasized, max_cores * sizeof (trace_task_t *));
   if (tr->has_cache_data)
     bzero (cumulated_cache_stat, max_cores * sizeof (perfcounter_array_t));
+
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
+    mesh3d_reset_cpu_colors (ctx[_t]);
+  }
 
   // Set clipping region
   {
@@ -1438,14 +1531,11 @@ static void trace_graphics_display_trace (unsigned _t,
                 }
                 // The task is under the mouse cursor: display it a little
                 // bigger!
-                dst.x -= MAGNIFICATION;
-                dst.y -= MAGNIFICATION;
-                dst.w += MAGNIFICATION * 2;
-                dst.h += MAGNIFICATION * 2;
+                magnify (&dst);
               }
 
-              if (!horiz_mode && !tracking_mode && t->w &&
-                  t->h) // task has as associated tile to be displayed
+              if (!horiz_mode && !tracking_mode &&
+                  t->w) // task has as associated tile to be displayed
                 to_be_emphasized[c] = t;
             }
 
@@ -1473,19 +1563,39 @@ static void trace_graphics_display_trace (unsigned _t,
               SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
 
           } else if (in_mosaic) {
-            SDL_Rect r;
+            if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
+              int task_match = 0;
 
-            get_tile_rect (tr, t, &r);
+              if (picked != -1 && t->w)
+                task_match = ((picked >= t->x) & (picked < t->x + t->w));
 
-            if (point_in_rect (&virt_mouse, &r)) {
-              if (!target_tile) {
-                target_tile      = 1;
-                target_tile_rect = r;
+              if (task_match) {
+                target_tile        = 1;
+                target_tile_rect.x = t->x;
+                target_tile_rect.w = t->w;
+                // Display task a little bigger!
+                magnify (&dst);
+                SDL_RenderCopy (renderer, perf_fill[MAX_COLORS], NULL, &dst);
+              } else {
+                SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
               }
-              SDL_RenderCopy (renderer, perf_fill[MAX_COLORS], NULL,
-                              &dst); // white
-            } else
-              SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
+            } else {
+              SDL_Rect r;
+
+              get_tile_rect (tr, t, &r);
+
+              if (point_in_rect (&virt_mouse, &r)) {
+                if (!target_tile) {
+                  target_tile      = 1;
+                  target_tile_rect = r;
+                }
+                // Display task a little bigger!
+                magnify (&dst);
+                SDL_RenderCopy (renderer, perf_fill[MAX_COLORS], NULL,
+                                &dst); // white
+              } else
+                SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
+            }
           } else
             SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
         }
@@ -1504,11 +1614,15 @@ static void trace_graphics_display_trace (unsigned _t,
 
   display_tile_background (_t);
 
-  if (target_tile)
-    // Display mouse-selected tile in white color
-    SDL_RenderCopy (renderer, square_tex_dark[MAX_COLORS], NULL,
-                    &target_tile_rect);
-  else if (horiz_mode) {
+  if (target_tile) {
+    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+      // Highlight cells in mesh
+      mesh3d_set_cpu_color (ctx[_t], target_tile_rect.x, target_tile_rect.w, 0xFFFFFFC0);
+    else
+      // Display mouse-selected tile in white color
+      SDL_RenderCopy (renderer, square_tex_dark[MAX_COLORS], NULL,
+                      &target_tile_rect);
+  } else if (horiz_mode) {
     for (int c = 0; c < tr->nb_cores; c++) {
 
       if (to_be_emphasized[c] != NULL) {
@@ -1517,7 +1631,7 @@ static void trace_graphics_display_trace (unsigned _t,
                                   to_be_emphasized[c], cpu_chain)
         {
           // Skip if the task has no associated tile
-          if (t->w == 0 || t->h == 0)
+          if (t->w == 0)
             continue;
 
           if (task_end_time (tr, t) < start_time)
@@ -1549,7 +1663,7 @@ static void trace_graphics_display_trace (unsigned _t,
                 continue;
 
               // Skip if the task has no associated tile
-              if (t->w == 0 || t->h == 0)
+              if (t->w == 0)
                 continue;
 
               // Stop when reaching next iteration
@@ -1624,9 +1738,12 @@ static void trace_graphics_display (void)
   display_mouse_selection (&selected);
 
   SDL_RenderPresent (renderer);
+
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+    mesh3d_render (ctx, nb_traces);
 }
 
-void trace_graphics_save_screenshot (void)
+static void trace_graphics_save_screenshot (void)
 {
   SDL_Rect rect;
   SDL_Surface *screen_surface = NULL;
@@ -1661,7 +1778,7 @@ void trace_graphics_save_screenshot (void)
     struct tm *tm_info;
     timer   = time (NULL);
     tm_info = localtime (&timer);
-    strftime (filename, MAX_FILENAME, "screenshot-%Y_%m_%d-%H_%M_%S.png",
+    strftime (filename, MAX_FILENAME, DEFAULT_EZV_DUMP_DIR "/screenshot-%Y_%m_%d-%H_%M_%S.png",
               tm_info);
   }
 
@@ -1678,7 +1795,7 @@ void trace_graphics_save_screenshot (void)
 
 // Control of view
 
-void trace_graphics_toggle_vh_mode (void)
+static void trace_graphics_toggle_vh_mode (void)
 {
   horiz_mode ^= 1;
 
@@ -1693,7 +1810,7 @@ void trace_graphics_toggle_vh_mode (void)
   trace_graphics_display ();
 }
 
-void trace_graphics_toggle_footprint_mode (void)
+static void trace_graphics_toggle_footprint_mode (void)
 {
   static unsigned old_horiz, old_track;
 
@@ -1714,7 +1831,7 @@ void trace_graphics_toggle_footprint_mode (void)
   trace_graphics_display ();
 }
 
-void trace_graphics_toggle_tracking_mode (void)
+static void trace_graphics_toggle_tracking_mode (void)
 {
   if (nb_traces > 1) {
     tracking_mode ^= 1;
@@ -1821,7 +1938,7 @@ static void set_iteration_range (int trace_num)
   duration = end_time - start_time;
 }
 
-void trace_graphics_scroll (int delta)
+static void trace_graphics_scroll (int delta)
 {
   long start = start_time + duration * SHIFT_FACTOR * delta;
   long end   = start + duration;
@@ -1844,7 +1961,7 @@ void trace_graphics_scroll (int delta)
   }
 }
 
-void trace_graphics_shift_left (void)
+static void trace_graphics_shift_left (void)
 {
   if (quick_nav_mode) {
     int longest = (trace[0].nb_iterations >= trace[nb_traces - 1].nb_iterations)
@@ -1864,7 +1981,7 @@ void trace_graphics_shift_left (void)
   }
 }
 
-void trace_graphics_shift_right (void)
+static void trace_graphics_shift_right (void)
 {
   if (quick_nav_mode) {
     int longest = (trace[0].nb_iterations >= trace[nb_traces - 1].nb_iterations)
@@ -1884,7 +2001,7 @@ void trace_graphics_shift_right (void)
   }
 }
 
-void trace_graphics_zoom_in (void)
+static void trace_graphics_zoom_in (void)
 {
   if (quick_nav_mode && (trace_ctrl[0].last_displayed_iter >
                          trace_ctrl[0].first_displayed_iter)) {
@@ -1912,7 +2029,7 @@ void trace_graphics_zoom_in (void)
   }
 }
 
-void trace_graphics_zoom_out (void)
+static void trace_graphics_zoom_out (void)
 {
   if (quick_nav_mode) {
     int longest = (trace[0].nb_iterations >= trace[nb_traces - 1].nb_iterations)
@@ -1951,7 +2068,7 @@ void trace_graphics_zoom_out (void)
   }
 }
 
-void trace_graphics_zoom_to_selection (void)
+static void trace_graphics_zoom_to_selection (void)
 {
   if (selection_duration > 0) {
     long start = selection_start_time;
@@ -1979,7 +2096,7 @@ void trace_graphics_zoom_to_selection (void)
   }
 }
 
-void trace_graphics_mouse_moved (int x, int y)
+static void trace_graphics_mouse_moved (int x, int y)
 {
   mouse.x = x;
   mouse.y = y;
@@ -2016,7 +2133,7 @@ void trace_graphics_mouse_moved (int x, int y)
   trace_graphics_display ();
 }
 
-void trace_graphics_mouse_down (int x, int y)
+static void trace_graphics_mouse_down (int x, int y)
 {
   mouse.x = x;
   mouse.y = y;
@@ -2032,7 +2149,7 @@ void trace_graphics_mouse_down (int x, int y)
   }
 }
 
-void trace_graphics_mouse_up (int x, int y)
+static void trace_graphics_mouse_up (int x, int y)
 {
   mouse_down = 0;
 }
@@ -2063,7 +2180,7 @@ void trace_graphics_setview (int first, int last)
   trace_graphics_display ();
 }
 
-void trace_graphics_reset_zoom (void)
+static void trace_graphics_reset_zoom (void)
 {
   if (trace_data_align_mode) {
 
@@ -2105,7 +2222,7 @@ void trace_graphics_display_all (void)
   trace_graphics_display ();
 }
 
-void trace_graphics_toggle_align_mode ()
+static void trace_graphics_toggle_align_mode ()
 {
   if (nb_traces == 1)
     return;
@@ -2130,7 +2247,7 @@ void trace_graphics_toggle_align_mode ()
   trace_graphics_display ();
 }
 
-void trace_graphics_relayout (unsigned w, unsigned h)
+static void trace_graphics_relayout (unsigned w, unsigned h)
 {
   WINDOW_WIDTH  = w;
   WINDOW_HEIGHT = h;
@@ -2152,6 +2269,11 @@ void trace_graphics_init (unsigned w, unsigned h)
                    iteration_end_time (trace + nb_traces - 1,
                                        trace[nb_traces - 1].nb_iterations - 1));
 
+  if (trace[0].mesh_file != NULL) {
+    easyview_mode = EASYVIEW_MODE_3D_MESHES;
+  } else
+    easyview_mode = EASYVIEW_MODE_2D_IMAGES;
+
   if (SDL_Init (SDL_INIT_VIDEO) != 0)
     exit_with_error ("SDL_Init");
 
@@ -2161,6 +2283,9 @@ void trace_graphics_init (unsigned w, unsigned h)
     exit_with_error ("SDL_GetDesktopDisplayMode failed: %s", SDL_GetError ());
 
   dm.h -= 128; // to account for headers, footers, etc.
+
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+    w -= 512;
 
   const unsigned min_width  = layout_get_min_width ();
   const unsigned min_height = layout_get_min_height ();
@@ -2190,6 +2315,8 @@ void trace_graphics_init (unsigned w, unsigned h)
   if (window == NULL)
     exit_with_error ("SDL_CreateWindow");
 
+  main_windowID = SDL_GetWindowID (window);
+
   SDL_SetWindowMinimumSize (window, min_width, min_height);
 
   // No Vsync provides a (much) smoother experience
@@ -2200,13 +2327,32 @@ void trace_graphics_init (unsigned w, unsigned h)
   else
     render_flags = SDL_RENDERER_ACCELERATED;
 
-  renderer = SDL_CreateRenderer (window, -1, render_flags);
+  int choosen_renderer = -1;
+
+  unsigned drivers = SDL_GetNumRenderDrivers ();
+
+  for (int d = 0; d < drivers; d++) {
+    SDL_RendererInfo info;
+    SDL_GetRenderDriverInfo (d, &info);
+    //fprintf (stderr, "Available Renderer %d: [%s]\n", d, info.name);
+#ifdef USE_GLAD
+    if (!strcmp (info.name, "opengl"))
+      choosen_renderer = d;
+#endif
+  }
+
+  renderer = SDL_CreateRenderer (window, choosen_renderer, render_flags);
   if (renderer == NULL)
     exit_with_error ("SDL_CreateRenderer");
 
   SDL_RendererInfo info;
   SDL_GetRendererInfo (renderer, &info);
-  printf ("Renderer used: [%s]\n", info.name);
+  //printf ("Renderer used: [%s]\n", info.name);
+
+#ifdef USE_GLAD
+  if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
+    mesh3d_load_opengl ();
+#endif
 
   create_task_textures (min (max_cores, MAX_COLORS));
 
@@ -2224,7 +2370,137 @@ void trace_graphics_init (unsigned w, unsigned h)
 
   create_text_texture (the_font);
 
-  preload_thumbnails (max_iterations);
+  unsigned nbthumbs = preload_thumbnails (max_iterations);
 
   SDL_SetRenderDrawBlendMode (renderer, SDL_BLENDMODE_BLEND);
+
+  // 3D Meshes
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
+    mesh3d_init ("./lib/mesh3d");
+
+    mesh3d_obj_init (&mesh);
+    mesh3d_obj_load (trace[0].mesh_file, &mesh);
+
+    int x = -1, y = -1, w = 0;
+
+    SDL_GetWindowPosition (window, &x, &y);
+    SDL_GetWindowSize (window, &w, NULL);
+
+    for (int c = 0; c < nb_traces; c++) {
+      ctx[c] = mesh3d_ctx_create ("Tile Mapping", x + w, y + c * (512 + 96),
+                                  512, 512, MESH3D_ENABLE_PICKING | MESH3D_ENABLE_CLIPPING);
+
+      mesh3d_set_mesh (ctx[c], &mesh);
+
+      // Color cell according to CPU
+      mesh3d_use_cpu_colors (ctx[c]);
+
+      if (nbthumbs > 0) {
+        mesh3d_configure_data_colors_predefined (ctx[c], trace[c].palette);
+        mesh3d_set_data_brightness (ctx[c], (float)brightness / 255.0f);
+      }
+    }
+
+    SDL_RaiseWindow (window);
+  }
+}
+
+void trace_graphics_process_event (SDL_Event *event)
+{
+  int refresh, pick;
+
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+    if (event->wheel.windowID != main_windowID ||
+        event->type == SDL_MOUSEWHEEL) {
+      // event is for OpenGL tiling window(s)
+      mesh3d_process_event (ctx, nb_traces, event, &refresh, &pick);
+      if (pick)
+        picked = mesh3d_perform_picking (ctx, nb_traces);
+      if (refresh | pick)
+        trace_graphics_display ();
+      return;
+    }
+
+  if (event->type == SDL_KEYDOWN) {
+    switch (event->key.keysym.sym) {
+    case SDLK_RIGHT:
+      trace_graphics_shift_left ();
+      break;
+    case SDLK_LEFT:
+      trace_graphics_shift_right ();
+      break;
+    case SDLK_MINUS:
+    case SDLK_KP_MINUS:
+    case SDLK_m:
+      trace_graphics_zoom_out ();
+      break;
+    case SDLK_PLUS:
+    case SDLK_KP_PLUS:
+    case SDLK_p:
+      trace_graphics_zoom_in ();
+      break;
+    case SDLK_SPACE:
+      trace_graphics_reset_zoom ();
+      break;
+    case SDLK_w:
+      trace_graphics_display_all ();
+      break;
+    case SDLK_a:
+      trace_graphics_toggle_align_mode ();
+      break;
+    case SDLK_x:
+      trace_graphics_toggle_vh_mode ();
+      break;
+    case SDLK_t:
+      if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
+        trace_graphics_toggle_tracking_mode ();
+      // FIXME: not yet supported in MESH3D mode
+      break;
+    case SDLK_f:
+      trace_graphics_toggle_footprint_mode ();
+      break;
+    case SDLK_z:
+      trace_graphics_zoom_to_selection ();
+      break;
+    case SDLK_s:
+      trace_graphics_save_screenshot ();
+      break;
+    default:
+      if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
+        mesh3d_process_event (ctx, nb_traces, event, &refresh, &pick);
+        if (pick)
+          picked = mesh3d_perform_picking (ctx, nb_traces);
+        if (pick | refresh)
+          trace_graphics_display ();
+      }
+      break;
+    }
+  } else if (event->type == SDL_MOUSEMOTION) {
+    trace_graphics_mouse_moved (event->motion.x, event->motion.y);
+  } else if (event->type == SDL_MOUSEBUTTONDOWN) {
+    trace_graphics_mouse_down (event->button.x, event->button.y);
+  } else if (event->type == SDL_MOUSEBUTTONUP) {
+    trace_graphics_mouse_up (event->button.x, event->button.y);
+  } else if (event->type == SDL_MOUSEWHEEL) {
+    trace_graphics_scroll (event->wheel.x);
+  } else if (event->type == SDL_WINDOWEVENT) {
+    switch (event->window.event) {
+    case SDL_WINDOWEVENT_RESIZED:
+      trace_graphics_relayout (event->window.data1, event->window.data2);
+      break;
+    }
+  }
+}
+
+void trace_graphics_clean ()
+{
+  if (renderer != NULL)
+    SDL_DestroyRenderer (renderer);
+  else
+    return;
+
+  if (window != NULL)
+    SDL_DestroyWindow (window);
+  else
+    return;
 }

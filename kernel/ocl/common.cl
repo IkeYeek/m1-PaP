@@ -6,6 +6,12 @@
 // Utility functions for OpenCL
 //
 
+#ifndef DIM
+#define DIM 1
+#define TILE_W 1
+#define TILE_H 1
+#endif
+
 static int4 color_to_int4 (unsigned c)
 {
   uchar4 ci = *(uchar4 *) &c;

@@ -1,3 +1,10 @@
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
+#include <assert.h>
+#include <sys/mman.h>
+#include <time.h>
 
 #include "graphics.h"
 #include "constants.h"
@@ -5,18 +12,12 @@
 #include "error.h"
 #include "global.h"
 #include "gmonitor.h"
+#include "gpu.h"
 #include "hooks.h"
 #include "img_data.h"
 #include "minmax.h"
 #include "time_macros.h"
-#include "gpu.h"
 
-#include <SDL_image.h>
-#include <SDL_opengl.h>
-#include <SDL_ttf.h>
-#include <assert.h>
-#include <sys/mman.h>
-#include <time.h>
 
 static unsigned WIN_WIDTH  = 1024;
 static unsigned WIN_HEIGHT = 1024;
@@ -47,7 +48,7 @@ static void create_digit_textures (TTF_Font *font)
     char msg[32];
     snprintf (msg, 32, "%d", c);
 
-    SDL_Surface *s = TTF_RenderText_Blended (font, msg, white_color);
+    SDL_Surface *s = TTF_RenderUTF8_Blended (font, msg, white_color);
     if (s == NULL)
       exit_with_error ("TTF_RenderText_Solid failed: %s", SDL_GetError ());
 
@@ -176,7 +177,7 @@ static void graphics_image_clean (void)
 
 #include "ee.h"
 
-void graphics_init (void)
+SDL_Window *graphics_init (const char *title)
 {
   Uint32 render_flags = 0;
 
@@ -188,31 +189,20 @@ void graphics_init (void)
   if (vsync && !soft_rendering)
     render_flags |= SDL_RENDERER_PRESENTVSYNC;
 
-  // Initialisation de SDL
-  if (easypap_image_file != NULL || do_display)
-    if (SDL_Init (SDL_INIT_VIDEO) != 0)
-      exit_with_error ("SDL_Init failed (%s)", SDL_GetError ());
-
   if (do_display) {
-    char title[1024];
     int x = 0; // SDL_WINDOWPOS_CENTERED;
     int y = 0;
 
-    if (easypap_mpirun) {
-      sprintf (title,
-               "EasyPAP -- Process: [%d/%d]   Kernel: [%s]   Variant: [%s]   "
-               "Tiling: [%s]",
-               easypap_mpi_rank (), easypap_mpi_size (), kernel_name,
-               variant_name, tile_name);
+    if (SDL_Init (SDL_INIT_VIDEO) != 0)
+      exit_with_error ("SDL_Init failed (%s)", SDL_GetError ());
 
+    if (easypap_mpirun) {
       if (easypap_mpi_size () > 1 && debug_enabled ('M')) {
         WIN_WIDTH = WIN_HEIGHT = 512;
         x = (easypap_mpi_rank () % 2) * (WIN_WIDTH + 352 * 2);
         y = (easypap_mpi_rank () / 2) * (WIN_HEIGHT + 22) + 45;
       }
-    } else
-      sprintf (title, "EasyPAP -- Kernel: [%s]   Variant: [%s]   Tiling: [%s]",
-               kernel_name, variant_name, tile_name);
+    }
 
     // Création de la fenêtre sur l'écran
     win =
@@ -290,19 +280,6 @@ void graphics_init (void)
   else if (!DIM)
     DIM = DEFAULT_DIM;
 
-#ifdef ENABLE_MONITORING
-  if (do_gmonitor) {
-    int x = -1, y = -1, w = 0;
-
-    SDL_GetWindowPosition (win, &x, &y);
-    SDL_GetWindowSize (win, &w, NULL);
-
-    gmonitor_init (x + w, y);
-
-    SDL_RaiseWindow (win);
-  }
-#endif
-
   // Création d'une texture de taille DIM x DIM
   texture = SDL_CreateTexture (
       ren, SDL_PIXELFORMAT_RGBA8888, // SDL_PIXELFORMAT_RGBA32,
@@ -311,6 +288,8 @@ void graphics_init (void)
   SDL_SetTextureBlendMode (texture, SDL_BLENDMODE_BLEND);
 
   PRINT_DEBUG ('i', "Init phase 0: SDL initialized (DIM = %d)\n", DIM);
+
+  return win;
 }
 
 void graphics_alloc_images (void)
@@ -351,8 +330,7 @@ void graphics_share_texture_buffers (void)
   glGetIntegerv (GL_TEXTURE_BINDING_2D, (GLint *)&texid);
 
   if (gpu_used)
-    gpu_map_textures(texid);
-
+    gpu_map_textures (texid);
 }
 
 void graphics_render_image (void)
@@ -360,10 +338,11 @@ void graphics_render_image (void)
   SDL_Rect src, dst;
 
   // Refresh texture
-  if (gpu_used) {
-    glFinish ();
-    gpu_update_texture ();
-  } else
+  if (gpu_used)
+    if (easypap_gl_buffer_sharing)
+      gpu_update_texture ();
+
+  if (!gpu_used || !easypap_gl_buffer_sharing)
     SDL_UpdateTexture (texture, NULL, image, DIM * sizeof (Uint32));
 
   src.x = 0;
@@ -425,45 +404,15 @@ void graphics_save_thumbnail (unsigned iteration)
 
   SDL_FillRect (mini_surface, NULL, 0);
 
-  // SDL_SetSurfaceAlphaMod (s, 170);
-
   SDL_BlitScaled (s,                  /* src */
                   NULL, mini_surface, /* dest */
                   NULL);
-
-  // SDL_SetSurfaceAlphaMod (s, 255);
 
   int r = IMG_SavePNG (mini_surface, filename);
 
   if (r != 0)
     exit_with_error ("IMG_SavePNG (\"%s\") failed (%s)", filename,
                      SDL_GetError ());
-}
-
-int graphics_get_event (SDL_Event *event, int blocking)
-{
-  int r;
-#if 0
-  // FIXME: investigate why the first call to SDL_PollEvent takes so much time ob MacOS
-  long temps;
-  struct timeval t1, t2;
-
-  gettimeofday (&t1, NULL);
-#endif
-
-  if (blocking)
-    r = SDL_WaitEvent (event);
-  else
-    r = SDL_PollEvent (event);
-
-#if 0
-  gettimeofday (&t2, NULL);
-
-  temps = TIME_DIFF (t1, t2);
-
-  PRINT_MASTER ("SDL_PollEvent(blocking=%d) took %ld.%03ld ms\n", blocking, temps / 1000, temps % 1000);
-#endif
-  return r;
 }
 
 void graphics_clean (void)

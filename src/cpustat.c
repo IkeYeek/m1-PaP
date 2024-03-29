@@ -1,21 +1,21 @@
-#include <SDL_image.h>
-#include <SDL_opengl.h>
-#include <SDL_ttf.h>
+#include "cpustat.h"
+#include "debug.h"
+#include "error.h"
+#include "global.h"
+#include "gpu.h"
+#include "graphics.h"
+#include "time_macros.h"
+#include "trace_common.h"
+
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <hwloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/mman.h>
-
-#include "cpustat.h"
-#include "debug.h"
-#include "error.h"
-#include "global.h"
-#include "graphics.h"
-#include "time_macros.h"
-#include "trace_common.h"
-#include "gpu.h"
 
 #define HISTOGRAM_WIDTH 256
 #define HISTOGRAM_HEIGHT 100
@@ -26,11 +26,11 @@
 #define LEFT_MARGIN 80
 #define TOP_MARGIN 16
 #define BOTTOM_MARGIN 16
-#define MAX_WINDOW_HEIGHT 1024
 
 static unsigned PERFMETER_HEIGHT = 16;
 static unsigned INTERMARGIN      = 8;
 
+static unsigned MAX_WINDOW_HEIGHT     = 0;
 static unsigned WINDOW_HEIGHT         = 0;
 static unsigned WINDOW_WIDTH          = 0;
 static unsigned INITIAL_WINDOW_HEIGHT = 0;
@@ -149,7 +149,7 @@ static void cpustat_create_text_texture (void)
     } else {
       snprintf (msg, 32, "Idleness ");
     }
-    SDL_Surface *s = TTF_RenderText_Blended (font, msg, col);
+    SDL_Surface *s = TTF_RenderUTF8_Blended (font, msg, col);
     if (s == NULL)
       exit_with_error ("TTF_RenderText_Solid failed: %s", SDL_GetError ());
 
@@ -255,18 +255,16 @@ static void cpustat_draw_idleness (void)
 
 void cpustat_init (int x, int y)
 {
-  /*
-  SDL_DisplayMode DM;
+  SDL_DisplayMode dm;
 
-  SDL_GetCurrentDisplayMode(0, &DM);
-  printf ("Display size: %dx%d\n", DM.w, DM.h);
-*/
+  if (SDL_GetDesktopDisplayMode (0, &dm) != 0)
+    exit_with_error ("SDL_GetDesktopDisplayMode failed: %s", SDL_GetError ());
+
+  MAX_WINDOW_HEIGHT = dm.h - 128; // to account for headers, footers, etc.
 
   NBCORES = easypap_requested_number_of_threads ();
   if (gpu_used)
-    NBGPUS  = easypap_number_of_gpus();
-
-
+    NBGPUS = easypap_number_of_gpus ();
 
   cpu_stats = malloc ((NBCORES + NBGPUS) * sizeof (cpu_stat_t));
 
@@ -295,7 +293,7 @@ void cpustat_init (int x, int y)
 
   // Initialisation du moteur de rendu
   ren = SDL_CreateRenderer (
-      win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+      win, -1, SDL_RENDERER_ACCELERATED /*| SDL_RENDERER_PRESENTVSYNC*/);
   if (ren == NULL)
     exit_with_error ("SDL_CreateRenderer failed: %s", SDL_GetError ());
 
@@ -373,7 +371,7 @@ void cpustat_display_stats (void)
   SDL_RenderPresent (ren);
 
   // for (int c = 0; c < NBCORES; c++)
-  //   PRINT_DEBUG ('m', "CPU Utilization for core %2d: %3.2f\n", c,
+  //   PRINT_DEBUG ('p', "CPU Utilization for core %2d: %3.2f\n", c,
   //                100.0 * cpustat_activity_ratio (c));
 }
 

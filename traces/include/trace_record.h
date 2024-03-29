@@ -11,6 +11,8 @@ extern unsigned trace_may_be_used;
 void trace_record_init (char *file, unsigned cpu, unsigned gpu, unsigned dim,
                         char *label, unsigned starting_iteration,
                         unsigned cache);
+void trace_record_set_meshfile (char *filename);
+void trace_record_set_palette (int palette);
 void trace_record_declare_task_ids (char *task_ids[]);
 void trace_record_commit_task_ids (void);
 void __trace_record_start_iteration ();

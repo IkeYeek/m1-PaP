@@ -5,8 +5,8 @@ if [[ -z ${EASYPAPDIR+x} ]]; then
 fi
 
 TRACEDIR=${TRACEDIR:-${EASYPAPDIR}/data/traces}
-TRACEFILE=${TRACEDIR}/ezv_trace_current.evt
-OLDTRACEFILE=${TRACEDIR}/ezv_trace_previous.evt
+CUR_TRACEFILE=ezv_trace_current.evt
+PREV_TRACEFILE=ezv_trace_previous.evt
 
 HASHDIR=${EASYPAPDIR}/data/hash
 DUMPDIR=${EASYPAPDIR}/data/dump

@@ -5,6 +5,7 @@
 #include "global.h"
 #include "api_funcs.h"
 #include "img_data.h"
+#include "mesh_data.h"
 #include "hooks.h"
 #include "arch_flags.h"
 #include "debug.h"

@@ -32,10 +32,10 @@ CFLAGS			+= -Wall -Wno-unused-function
 
 ####################################
 
-CFLAGS			+= -I./include -I./traces/include
+CFLAGS			+= -DEASYPAP -I./include -I./traces/include
 LDLIBS			+= -lm
 
-CXXFLAGS			:= -std=c++11
+CXXFLAGS		:= -std=c++11
 
 OS_NAME			:= $(shell uname -s | tr a-z A-Z)
 ARCH			:= $(shell uname -m | tr a-z A-Z)
@@ -115,11 +115,10 @@ MAKEFILES		:= Makefile
 
 ifeq ($(OS_NAME), DARWIN)
 LDFLAGS			+= -Wl,-ld_classic
-LDLIBS			+= -framework OpenGL
 else
 CFLAGS			+= -pthread -rdynamic
 LDFLAGS			+= -export-dynamic
-LDLIBS			+= -lGL -ldl
+LDLIBS			+= -ldl
 endif
 
 # Vectorization
@@ -153,6 +152,14 @@ PACKAGES		:= hwloc
 ifeq ($(ENABLE_SDL), 1)
 CFLAGS			+= -DENABLE_SDL
 PACKAGES		+= SDL2_image SDL2_ttf
+ifeq ($(OS_NAME), DARWIN)
+#CFLAGS			+= -DUSE_GLAD
+CFLAGS			+= -DGL_SILENCE_DEPRECATION
+LDLIBS			+= -framework OpenGL
+else
+CFLAGS			+= -DUSE_GLAD
+LDLIBS			+= -lGL
+endif
 endif
 
 ifeq ($(ENABLE_TRACE), 1)
@@ -200,6 +207,9 @@ ifeq ($(ENABLE_MIPP), 1)
 CXXFLAGS		+= -I./lib/mipp/src
 endif
 
+# cglm
+PACKAGES		+= cglm
+
 # Query CFLAGS and LDLIBS for all packages
 PKG_CHECK		:= $(shell if pkg-config --print-errors --exists $(PACKAGES); then echo 0; else echo 1; fi)
 
@@ -211,6 +221,14 @@ endif
 CFLAGS			+= $(shell pkg-config --cflags $(PACKAGES))
 LDFLAGS			+= $(shell pkg-config --libs-only-L $(PACKAGES))
 LDLIBS			+= $(shell pkg-config --libs-only-l $(PACKAGES))
+
+# Mesh3d lib
+MESH3D_DIR	:= ./lib/mesh3d
+MESH3D_LIB  := $(MESH3D_DIR)/lib/libmesh3d.a
+LDFLAGS		+= -L$(MESH3D_DIR)/lib
+LDLIBS		+= -lmesh3d -lscotch
+CFLAGS		+= -I$(MESH3D_DIR)/include
+
 
 CXXFLAGS		+= $(CFLAGS)
 
@@ -225,7 +243,7 @@ endif
 
 $(ALL_OBJECTS): $(MAKEFILES)
 
-$(PROGRAM): $(ALL_OBJECTS)
+$(PROGRAM): $(ALL_OBJECTS) $(MESH3D_LIB)
 	$(LD) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c

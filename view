@@ -54,8 +54,8 @@ if [[ ! -f ${VIEW} ]]; then
 fi
 
 if [[ ${COMPARE} == "yes" ]]; then
-    [[ -f ${TRACEFILE} && -f ${OLDTRACEFILE} ]] || error "Comparing trace files requires two files under ${TRACEDIR}"
-    ARGS+=("${TRACEFILE}" "${OLDTRACEFILE}")
+    [[ -f ${TRACEDIR}/${CUR_TRACEFILE} && -f ${TRACEDIR}/${PREV_TRACEFILE} ]] || error "Comparing trace files requires two files under ${TRACEDIR}"
+    ARGS+=("${TRACEDIR}/${CUR_TRACEFILE}" "${TRACEDIR}/${PREV_TRACEFILE}")
 fi
 
 exec ${VIEW} ${ARGS[@]}

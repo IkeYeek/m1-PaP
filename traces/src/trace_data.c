@@ -4,6 +4,7 @@
 
 #include "error.h"
 #include "trace_data.h"
+#include "mesh3d.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -44,6 +45,8 @@ void trace_data_init (trace_t *tr, unsigned num)
   tr->nb_iterations   = 0;
   tr->first_iteration = 1;
   tr->label           = NULL;
+  tr->mesh_file       = NULL;
+  tr->palette         = MESH3D_PALETTE_LINEAR;
   tr->task_ids        = NULL;
   tr->task_ids_count  = 0;
   tr->has_cache_data  = 0;
@@ -77,6 +80,17 @@ void trace_data_set_label (trace_t *tr, char *label)
 {
   tr->label = malloc (strlen (label) + 1);
   strcpy (tr->label, label);
+}
+
+void trace_data_set_meshfile (trace_t *tr, char *filename)
+{
+  tr->mesh_file = malloc (strlen (filename) + 1);
+  strcpy (tr->mesh_file, filename);
+}
+
+void trace_data_set_palette (trace_t *tr, mesh3d_palette_name_t palette)
+{
+  tr->palette = palette;
 }
 
 static int next_id[MAX_TRACES] = {0, 0};

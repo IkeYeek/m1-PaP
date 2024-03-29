@@ -122,8 +122,17 @@ void trace_file_load (char *file)
     case TRACE_TASKID:
       trace_data_add_taskid (&trace[nb_traces], (char *)ev.raw);
       break;
+
     case TRACE_DO_CACHE:
       trace_data_set_do_cache (&trace[nb_traces], (unsigned)ev.param[0]);
+      break;
+      
+    case TRACE_MESHFILE:
+      trace_data_set_meshfile (&trace[nb_traces], (char *)ev.raw);
+      break;
+
+    case TRACE_PALETTE:
+      trace_data_set_palette (&trace[nb_traces], ev.param[0]);
       break;
     default:
       break;
@@ -151,10 +160,11 @@ void trace_file_load (char *file)
 
   trace_data_no_more_data (&trace[nb_traces]);
 
-  printf ("Trace #%d \"%s\" successfully opened: %d iterations on %d CPUs, %s "
+  printf ("Trace #%d \"%s\" successfully opened: %d iterations on %d CPUs [%s] - %s "
           "(%s)\n",
           nb_traces, trace[nb_traces].label, trace[nb_traces].nb_iterations,
           trace[nb_traces].nb_cores,
+          trace[nb_traces].mesh_file ? trace[nb_traces].mesh_file : "",
           trace[nb_traces].has_cache_data ? "cache usage found"
                                           : "no cache data",
           file);

@@ -5,15 +5,18 @@ _easypap_completions()
     local LONG_OPTIONS=("--help" "--load-image" "--size" "--kernel" "--variant" "--monitoring" "--thumbnails"
                         "--trace" "--no-display" "--iterations" "--nb-tiles" "--tile-size" "--arg" "--first-touch"
                         "--label" "--mpirun" "--soft-rendering" "--show-devices" "--tile-width" "--tile-height"
-                        "--trace-iter" "--thumbnails-iter" "--with-tile" "--counters" "--show-hash" "--gpu")
+                        "--trace-iter" "--thumbnails-iter" "--with-tile" "--counters" "--show-hash" "--gpu"
+                        "--load-mesh" "--pause" "--show-iterations" "--debug")
     local SHORT_OPTIONS=("-h" "-l" "-s" "-k" "-v" "-m" "-tn"
                          "-t" "-n" "-i" "-nt" "-ts" "-a" "-ft"
                          "-lb" "-mpi" "-sr" "-sd" "-tw" "-th"
-                         "-ti" "-tni" "-wt" "-c" "-sh" "-g")
+                         "-ti" "-tni" "-wt" "-c" "-sh" "-g"
+                         "-lm" "-p" "-si" "-d")
     local NB_OPTIONS=${#LONG_OPTIONS[@]}
 
-    local exclude_l=(2) # load-image excludes size
-    local exclude_s=(1) # size excludes load-image
+    local exclude_l=(2 26) # load-image excludes size and load-mesh
+    local exclude_s=(1 26) # size excludes load-image and load-mesh
+    local exclude_lm=(1 2) # load-mesh excludes load-image and size
     local exclude_m=(7 8) # monitoring excludes trace and no-display
     local exclude_tn=(7 20 21) # thumbnails excludes trace, trace-iter and thumbnails-iter
     local exclude_t=(5 6 20 21) # trace excludes monitoring, thumbnails, trace-iter and thumbnails-iter
@@ -62,6 +65,13 @@ _easypap_completions()
                     COMPREPLY=($(compgen -f -X '!*.png' -- "images/"))
                 else
                     COMPREPLY=($(compgen -o plusdirs -f -X '!*.png' -- $cur))
+                fi
+                ;;
+            -lm|--load-mesh)
+                if [[ -z "$cur" ]]; then
+                    COMPREPLY=($(compgen -f -X '!*.obj' -- "data/mesh/"))
+                else
+                    COMPREPLY=($(compgen -o plusdirs -f -X '!*.obj' -- $cur))
                 fi
                 ;;
             -a|--arg)
@@ -150,7 +160,7 @@ _easypap_completions()
                 ;;
             -n|--no-display|-m|--monitoring|-t|--trace|-th|--thumbs|\
             -ft|--first-touch|-du|--dump|-p|--pause|-sr|--soft-rendering|\
-            -g|--gpu|-c|--cache|-sh|--show-hash)
+            -g|--gpu|-c|--cache|-sh|--show-hash|-si|--show-iterations)
                 # After options taking no argument, we can suggest another option
                 if [[ "$cur" =~ ^--.* ]]; then
                     _easypap_option_suggest "${LONG_OPTIONS[@]}"

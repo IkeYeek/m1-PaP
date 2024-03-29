@@ -134,9 +134,15 @@ _easypap_tile_funcs()
     fi
 
     tmp=`nm $obj | awk '/ +_?'"$1"'_do_tile_[^.]*$/ {print $3}'`
-
+    if [[ -n $tmp ]]; then
+        for f in $tmp; do
+            tile_funcs="$tile_funcs ${f#*_do_tile_}"
+        done
+        return
+    fi
+    tmp=`nm $obj | awk '/ +_?'"$1"'_do_patch_[^.]*$/ {print $3}'`
     for f in $tmp; do
-        tile_funcs="$tile_funcs ${f#*_do_tile_}"
+        tile_funcs="$tile_funcs ${f#*_do_patch_}"
     done
 }
 

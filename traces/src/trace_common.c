@@ -14,7 +14,8 @@ unsigned cpu_colors[MAX_COLORS + 1] = {
     0xCFFFBFFF, // Pale Green
     0xF08080FF, // Light Coral
     0xE000E0FF, // Magenta
-    0x4B9447FF, // Dark green
+    //0x4B9447FF, // Dark green
+    0x77B5FEFF, // light Blue
     0x964B00FF, // Brown
     0xFFFFFFFF  // white
 };

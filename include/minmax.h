@@ -12,5 +12,7 @@
        __typeof__ (b) _b = (b); \
      _a > _b ? _a : _b; })
 
+#define ROUND_TO_MULTIPLE(n, r) (((n) + (r) - 1U) & ~((r) - 1U))
+
 
 #endif

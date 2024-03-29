@@ -47,6 +47,17 @@ void trace_record_init (char *file, unsigned cpu, unsigned gpu, unsigned dim,
   cache_activated = is_cache_enabled;
 }
 
+void trace_record_set_meshfile (char *filename)
+{
+  if (filename != NULL)
+    FUT_DO_PROBESTR (TRACE_MESHFILE, filename);
+}
+
+void trace_record_set_palette (int palette)
+{
+  FUT_DO_PROBE1 (TRACE_PALETTE, palette);
+}
+
 void trace_record_finalize (void)
 {
   if (fut_endup ("temp") < 0)
@@ -61,7 +72,6 @@ void trace_record_declare_task_ids (char *task_ids[])
   if (!trace_may_be_used)
     return;
 
-  // FIXME
   task_ids_count = 1;
 
   if (task_ids != NULL) {

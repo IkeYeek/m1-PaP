@@ -53,34 +53,23 @@ void img_data_replicate (void)
 unsigned heat_to_rgb (float h) // 0.0 = cold, 1.0 = hot
 {
   int i;
-  float f, p, q, t;
-  float v = 1.0;
-  float s = 1.0;
+  float f, q, t;
 
-  if (s == 0) {
-    // achromatic (grey)
-    int c = v * 255;
-    return rgba (c, c, c, 255);
-  }
-
-  h = (1.0 - h) * 4; // sector 0.0 to 4.0
-  if (h == 4.0)
-    h = 3.99999;
+  h = (1.0 - h) * 3.999999; // sector 0.0 to 4.0
   i = h;
   f = h - i; // factorial part of h
-  p = v * (1 - s);
-  q = v * (1 - s * f);
-  t = v * (1 - s * (1 - f));
+  q = (1 - f);
+  t = (1 - q);
 
   switch (i) {
   case 0:
-    return rgba (v * 255, t * 255, p * 255, 255);
+    return rgba (255, t * 255, 0, 255);
   case 1:
-    return rgba (q * 255, v * 255, p * 255, 255);
+    return rgba (q * 255, 255, 0, 255);
   case 2:
-    return rgba (p * 255, v * 255, t * 255, 255);
+    return rgba (0, 255, t * 255, 255);
   default:
-    return rgba (p * 255, q * 255, v * 255, 255);
+    return rgba (0, q * 255, 255, 255);
   }
 }
 

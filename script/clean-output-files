@@ -5,8 +5,8 @@ EASYPAPDIR=${EASYPAPDIR:-$(realpath ${_script_dir}/..)}
 . ${_script_dir}/easypap-common.bash
 unset _script_dir
 
-rm ${TRACEDIR}/*.png 2>/dev/null
+rm ${TRACEDIR}/*.png ${TRACEDIR}/*.raw 2>/dev/null
 rm ${HASHDIR}/*.sha256 2>/dev/null
-rm ${DUMPDIR}/*.png 2>/dev/null
+rm ${DUMPDIR}/*.png ${DUMPDIR}/*.raw 2>/dev/null
 
 exit 0

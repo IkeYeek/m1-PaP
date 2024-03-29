@@ -8,22 +8,22 @@ default: $(PROGRAM)
 ### config section ###
 
 ENABLE_FUT	=	1
-
 ######################
 
 ARCH		:= $(shell uname -s | tr a-z A-Z)
 
 SOURCES		:= $(filter-out src/trace_record.c, $(wildcard src/*.c))
+
 OBJECTS		:= $(SOURCES:src/%.c=obj/%.o)
 DEPENDS		:= $(SOURCES:src/%.c=deps/%.d)
 
 MAKEFILES	:= Makefile
 
-CFLAGS		:= -O3 -march=native -Wall -Wno-unused-function
+CFLAGS		:= -O3 -march=native -Wall -Wno-unused-function -DGL_SILENCE_DEPRECATION #-Wno-deprecated-declarations
 CFLAGS		+= -I./include -I../include
 LDLIBS		+= -lm
 
-PACKAGES	:= SDL2_image SDL2_ttf
+PACKAGES	:= SDL2_image SDL2_ttf cglm
 
 ifeq ($(ENABLE_FUT), 1)
 CFLAGS		+= -DENABLE_FUT
@@ -31,9 +31,10 @@ PACKAGES	+= fxt
 endif
 
 ifeq ($(ARCH),DARWIN)
+#CFLAGS		+= -DUSE_GLAD
 LDLIBS		+= -framework OpenGL
 else
-CFLAGS		+= -rdynamic
+CFLAGS		+= -DUSE_GLAD -rdynamic
 LDFLAGS		+= -export-dynamic
 LDLIBS		+= -lGL -lpthread -ldl
 endif
@@ -47,10 +48,16 @@ CFLAGS		+= $(shell pkg-config --cflags $(PACKAGES))
 LDFLAGS		+= $(shell pkg-config --libs-only-L $(PACKAGES))
 LDLIBS		+= $(shell pkg-config --libs-only-l $(PACKAGES))
 
+# Mesh3d lib
+MESH3D_DIR	:= ../lib/mesh3d
+MESH3D_LIB  := $(MESH3D_DIR)/lib/libmesh3d.a
+LDFLAGS		+= -L$(MESH3D_DIR)/lib
+LDLIBS		+= -lmesh3d -lscotch
+CFLAGS		+= -I$(MESH3D_DIR)/include
 
 $(OBJECTS): $(MAKEFILES)
 
-$(PROGRAM): $(OBJECTS)
+$(PROGRAM): $(OBJECTS) $(MESH3D_LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c

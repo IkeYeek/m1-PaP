@@ -6,6 +6,20 @@
 
 #include <stdint.h>
 
+// Images are DIM * DIM arrays of pixels
+// Tiles have a size of CPU_TILE_H * CPU_TILE_W
+// An image contains CPU_NBTILES_Y * CPU_NBTILES_X
+
+extern unsigned DIM;
+
+extern unsigned TILE_W;
+extern unsigned TILE_H;
+extern unsigned NB_TILES_X;
+extern unsigned NB_TILES_Y;
+
+extern unsigned GPU_SIZE_X;
+extern unsigned GPU_SIZE_Y;
+
 extern uint32_t *RESTRICT image, *RESTRICT alt_image;
 
 static inline uint32_t *img_cell (uint32_t *RESTRICT i, int l, int c)
