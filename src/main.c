@@ -598,7 +598,7 @@ int main (int argc, char **argv)
     if (gpu_used && easypap_mode == EASYPAP_MODE_2D_IMAGES)
       graphics_share_texture_buffers ();
 
-    if (the_refresh_img)
+    if (the_refresh_img && !(gpu_used && easypap_gl_buffer_sharing))
       the_refresh_img ();
 
     display_refresh (iterations);
