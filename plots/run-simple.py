@@ -4,8 +4,9 @@ from graphTools import *
 from expTools import *
 import os
 
+# Recommended plot:
+# plots/easyplot.py -if mandel-simple.csv -v omp_tiled 
 
-# options communes
 options = {}
 options["--label"] = ["final"]
 options["-k"] = ["mandel"]
@@ -21,7 +22,7 @@ options["-v"] = ["omp_tiled"]
 options["-ts"] = [8, 16, 32]
 ompenv["OMP_SCHEDULE"] = ["dynamic"]
 
-# execute('./run ', ompenv, options, nbruns, verbose=False, easyPath=".")
+execute('./run ', ompenv, options, nbruns, verbose=False, easyPath=".")
 
 # OMP_LINE static
 del options["-ts"]
@@ -34,6 +35,3 @@ execute("./run ", ompenv, options, nbruns, verbose=False, easyPath=".")
 # OMP_LINE dynamic
 ompenv["OMP_SCHEDULE"] = ["dynamic"]
 execute("./run ", ompenv, options, nbruns, verbose=False, easyPath=".")
-
-print("Recommended plot:")
-print("plots/easyplot.py -if mandel-simple.csv -v omp_tiled")

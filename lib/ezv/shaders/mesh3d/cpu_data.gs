@@ -68,7 +68,7 @@ void main ()
 
     // CPU Colors
     col = texelFetch (RGBAColors, ind).r;
-    cpuColor = unpackUnorm4x8 (uint(col)).wzyx;
+    cpuColor = unpackUnorm4x8 (uint(col));
 
     // Data colors
     val = clamp (texelFetch (Values, ind).r, 0.0, 1.0);

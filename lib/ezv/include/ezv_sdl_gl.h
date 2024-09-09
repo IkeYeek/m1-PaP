@@ -1,5 +1,5 @@
-#ifndef MESH3D_SDL_GL_H_IS_DEF
-#define MESH3D_SDL_GL_H_IS_DEF
+#ifndef EZV_SDL_GL_H
+#define EZV_SDL_GL_H
 
 #ifndef USE_GLAD
 #include <OpenGL/gl3.h>

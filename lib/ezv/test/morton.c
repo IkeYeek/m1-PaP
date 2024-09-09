@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #include "error.h"
-#include "mesh3d.h"
+#include "ezv.h"
 
 // settings
 const unsigned int SCR_WIDTH  = 1024;
@@ -13,9 +13,9 @@ const unsigned int SCR_HEIGHT = 768;
 #define MAX_CTX 2
 
 static mesh3d_obj_t mesh;
-static mesh3d_ctx_t ctx[MAX_CTX] = {NULL, NULL};
-static unsigned nb_ctx           = 1;
-static int hud                   = -1;
+static ezv_ctx_t ctx[MAX_CTX] = {NULL, NULL};
+static unsigned nb_ctx        = 1;
+static int hud                = -1;
 
 static float *data            = NULL;
 static int datasize           = 0;
@@ -23,12 +23,12 @@ static unsigned selected_cell = -1;
 
 static void do_pick (void)
 {
-  selected_cell = mesh3d_perform_picking (ctx, nb_ctx);
+  selected_cell = ezv_perform_1D_picking (ctx, nb_ctx);
 
   memset (data, 0, datasize);
 
   if (selected_cell != -1) {
-    mesh3d_hud_set (ctx[0], hud, "Cell: %d", selected_cell);
+    ezv_hud_set (ctx[0], hud, "Cell: %d", selected_cell);
 
     data[selected_cell] = 1.0; // selected triangle
 
@@ -36,9 +36,9 @@ static void do_pick (void)
          v < mesh.index_first_neighbor[selected_cell + 1]; v++)
       data[mesh.neighbors[v]] = 0.2;
   } else
-    mesh3d_hud_set (ctx[0], hud, NULL);
+    ezv_hud_set (ctx[0], hud, NULL);
 
-  mesh3d_set_data_colors (ctx[0], data);
+  ezv_set_data_colors (ctx[0], data);
 }
 
 static void display_cell_stats (void)
@@ -126,7 +126,7 @@ static void process_events (void)
         return;
       }
     }
-    mesh3d_process_event (ctx, nb_ctx, &event, NULL, &pick);
+    ezv_process_event (ctx, nb_ctx, &event, NULL, &pick);
     if (pick)
       do_pick ();
   }
@@ -137,8 +137,7 @@ static void load_mesh (int argc, char *argv[], mesh3d_obj_t *mesh)
   if (argc > 1) {
 
     if (!strcmp (argv[1], "--help") || !strcmp (argv[1], "-h")) {
-      printf ("Usage: %s [ -t1 | -t2 | -tv | -cv | -cy | <file> ]\n",
-              argv[0]);
+      printf ("Usage: %s [ -t1 | -t2 | -tv | -cv | -cy | <file> ]\n", argv[0]);
       exit (0);
     } else if (!strcmp (argv[1], "--torus-1") || !strcmp (argv[1], "-t1"))
       mesh3d_obj_build_torus_surface (mesh, 1);
@@ -159,21 +158,21 @@ static void load_mesh (int argc, char *argv[], mesh3d_obj_t *mesh)
 
 int main (int argc, char *argv[])
 {
+  ezv_init (NULL);
+
   mesh3d_obj_init (&mesh);
   load_mesh (argc, argv, &mesh);
 
-  mesh3d_init (NULL);
-
   // Create SDL windows and initialize OpenGL context
-  ctx[0] = mesh3d_ctx_create ("Morton", SDL_WINDOWPOS_CENTERED,
-                              SDL_WINDOWPOS_UNDEFINED, SCR_WIDTH, SCR_HEIGHT,
-                              MESH3D_ENABLE_PICKING | MESH3D_ENABLE_HUD |
-                                  MESH3D_ENABLE_CLIPPING);
-  hud    = mesh3d_hud_alloc (ctx[0]);
-  mesh3d_hud_toggle (ctx[0], hud);
+  ctx[0] = ezv_ctx_create (
+      EZV_CTX_TYPE_MESH3D, "Morton", SDL_WINDOWPOS_CENTERED,
+      SDL_WINDOWPOS_UNDEFINED, SCR_WIDTH, SCR_HEIGHT,
+      EZV_ENABLE_PICKING | EZV_ENABLE_HUD | EZV_ENABLE_CLIPPING);
+  hud = ezv_hud_alloc (ctx[0]);
+  ezv_hud_toggle (ctx[0], hud);
 
   // Attach mesh
-  mesh3d_set_mesh (ctx[0], &mesh);
+  ezv_mesh3d_set_mesh (ctx[0], &mesh);
 
   // Heat Palette (as simple as defining these five key colors)
   float colors[] = {0.0f, 0.0f, 0.0f, 0.0f,  // transparent
@@ -182,19 +181,19 @@ int main (int argc, char *argv[])
                     1.0f, 1.0f, 0.0f, 1.0f,  // yellow
                     1.0f, 0.0f, 0.0f, 1.0f}; // red
 
-  mesh3d_configure_data_colors (ctx[0], colors, 5);
+  ezv_use_data_colors (ctx[0], colors, 5);
 
   datasize = mesh.nb_cells * sizeof (float);
   data     = malloc (datasize);
 
   memset (data, 0, datasize);
 
-  mesh3d_set_data_colors (ctx[0], data);
+  ezv_set_data_colors (ctx[0], data);
 
   // render loop
   while (1) {
     process_events ();
-    mesh3d_render (ctx, nb_ctx);
+    ezv_render (ctx, nb_ctx);
   }
 
   return 0;

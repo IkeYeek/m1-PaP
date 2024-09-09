@@ -28,7 +28,7 @@ _easypap_kernels()
 # result placed in variants
 _easypap_variants()
 {
-    local f p file tmp obj
+    local f p file tmp obj v
 
     variants=
     obj=
@@ -51,7 +51,10 @@ _easypap_variants()
     tmp=`nm $obj | awk '/ +_?'"$1"'_compute_[^.]*$/ {print $3}'`
 
     for f in $tmp; do
-        variants="$variants ${f#*_compute_}"
+        v=${f#*_compute_}
+        if [[ ! $v =~ ^ocl* ]]; then
+            variants="$variants $v"
+        fi
     done
 }
 
@@ -73,7 +76,7 @@ _easypap_gpu_variants()
     #tmp=`awk '/__kernel/ {print $3}' < kernel/ocl/${k}.cl`
 
     for f in $tmp; do
-        if [[ $f =~ .*update_texture$ || $f =~ bench_kernel ]]; then
+        if [[ $f =~ .*update_texture$ || $f =~ bench_kernel || $f =~ gather_outgoing_cells ]]; then
             continue
         fi
         gvariants="$gvariants ${f#$1_}"

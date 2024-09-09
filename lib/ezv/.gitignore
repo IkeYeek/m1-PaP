@@ -5,4 +5,8 @@ patch
 cpu
 store
 part
+diy
+image
+imagecpu
+imagedapu
 *.obj

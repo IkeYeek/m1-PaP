@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #include "error.h"
-#include "mesh3d.h"
+#include "ezv.h"
 
 // settings
 const unsigned int SCR_WIDTH  = 1024;
@@ -13,19 +13,19 @@ const unsigned int SCR_HEIGHT = 768;
 #define MAX_CTX 2
 
 static mesh3d_obj_t mesh;
-static mesh3d_ctx_t ctx[MAX_CTX] = {NULL, NULL};
+static ezv_ctx_t ctx[MAX_CTX] = {NULL, NULL};
 static unsigned nb_ctx           = 1;
 static int hud                   = -1;
 
 static void do_pick (void)
 {
-  int p = mesh3d_perform_picking (ctx, nb_ctx);
+  int p = ezv_perform_1D_picking (ctx, nb_ctx);
 
   if (p == -1)
-    mesh3d_hud_off (ctx[0], hud);
+    ezv_hud_off (ctx[0], hud);
   else {
-    mesh3d_hud_on (ctx[0], hud);
-    mesh3d_hud_set (ctx[0], hud, "Cell: %d", p);
+    ezv_hud_on (ctx[0], hud);
+    ezv_hud_set (ctx[0], hud, "Cell: %d", p);
   }
 }
 
@@ -82,7 +82,7 @@ static void process_events (void)
 
   if (r > 0) {
     int pick;
-    mesh3d_process_event (ctx, nb_ctx, &event, NULL, &pick);
+    ezv_process_event (ctx, nb_ctx, &event, NULL, &pick);
     if (pick)
       do_pick ();
   }
@@ -123,23 +123,23 @@ static void load_mesh (int argc, char *argv[], mesh3d_obj_t *mesh)
 
 int main (int argc, char *argv[])
 {
+  ezv_init (NULL);
+
   mesh3d_obj_init (&mesh);
   load_mesh (argc, argv, &mesh);
 
-  mesh3d_init (NULL);
-
   // Create SDL windows and initialize OpenGL context
-  ctx[0] = mesh3d_ctx_create ("Mesh", SDL_WINDOWPOS_CENTERED,
+  ctx[0] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "Mesh", SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOWPOS_UNDEFINED, SCR_WIDTH, SCR_HEIGHT,
-                              MESH3D_ENABLE_PICKING | MESH3D_ENABLE_HUD |
-                                  MESH3D_ENABLE_CLIPPING);
-  hud    = mesh3d_hud_alloc (ctx[0]);
-  mesh3d_hud_toggle (ctx[0], hud);
+                              EZV_ENABLE_PICKING | EZV_ENABLE_HUD |
+                                  EZV_ENABLE_CLIPPING);
+  hud    = ezv_hud_alloc (ctx[0]);
+  ezv_hud_toggle (ctx[0], hud);
 
   // Attach mesh
-  mesh3d_set_mesh (ctx[0], &mesh);
+  ezv_mesh3d_set_mesh (ctx[0], &mesh);
 
-  mesh3d_configure_data_colors_predefined (ctx[0], MESH3D_PALETTE_RAINBOW);
+  ezv_use_data_colors_predefined (ctx[0], EZV_PALETTE_RAINBOW);
 
   float values[mesh.nb_cells];
 
@@ -153,12 +153,12 @@ int main (int argc, char *argv[])
                 (mesh.bbox.max[COORD] - mesh.bbox.min[COORD]);
   }
 
-  mesh3d_set_data_colors (ctx[0], values);
+  ezv_set_data_colors (ctx[0], values);
 
   // render loop
   while (1) {
     process_events ();
-    mesh3d_render (ctx, nb_ctx);
+    ezv_render (ctx, nb_ctx);
   }
 
   return 0;

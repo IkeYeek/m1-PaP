@@ -4,35 +4,27 @@
 #include <unistd.h>
 
 #include "error.h"
-#include "mesh3d_ctx.h"
+#include "ezv_ctx.h"
+#include "ezv_hud.h"
+#include "ezv_mesh3d_object.h"
+#include "ezv_sdl_gl.h"
+#include "ezv_shader.h"
 #include "mesh3d_renderer.h"
-#include "mesh3d_sdl_gl.h"
-#include "mesh3d_shader.h"
 #include "stb_image.h"
 
-enum
-{
-  BINDING_POINT_COLORBUF,
-  BINDING_POINT_MATRICES,
-  BINDING_POINT_CUSTOM_COLORS,
-  BINDING_POINT_CLIPPING,
-  BINDING_POINT_HUDINFO
-};
+// #define WHITE_BACKGROUND 1
 
 static const float DEFAULT_DATA_BRIGHTNESS = 0.8f;
-static const float DIGIT_W = 10.0f;
-static const float DIGIT_H = 20.0f;
 
-const float NEARZ = 0.2f;
-const float FARZ  = 5.0f;
+static const float NEARZ = 0.2f;
+static const float FARZ  = 5.0f;
 
 typedef struct render_ctx_s
 {
   GLuint UBO_DATACOL;
-  GLuint UBO_MAT, UBO_CUST, UBO_CLIP, UBO_HUD;
-  GLuint VBO;                       // Vertex Buffer Object (contains vertices)
-  GLuint VAO;                       // Vertex Array Object
-  GLuint VBO_HUD, VAO_HUD, EBO_HUD; // For on-screen head-up display
+  GLuint UBO_MAT, UBO_CUST, UBO_CLIP;
+  GLuint VBO; // Vertex Buffer Object (contains vertices)
+  GLuint VAO; // Vertex Array Object
   GLuint VBO_ZPLANE, VAO_ZPLANE, EBO_ZPLANE; // for zplane clipping
   GLuint VBO_IND;  // Vertex Buffer Object containing triangles (i.e. 3-tuples
                    // indexing vertices)
@@ -46,19 +38,19 @@ typedef struct render_ctx_s
   GLuint tex_color;   // TBO_COL
   GLuint tex_datacol; // TBO_DATACOL
   GLuint FBO;
-  GLuint pickingTexture, depthTexture, digitTexture;
-  GLuint cpu_shader, picking_shader, data_shader, hud_shader, dapu_shader,
-      clipping_shader, cut_shader;
+  GLuint pickingTexture, depthTexture, imgTexture;
+  GLuint cpu_shader, picking_shader, data_shader, dapu_shader, clipping_shader,
+      cut_shader;
   GLuint cpu_colors_loc, cpu_info_loc;
   GLuint data_values_loc, data_info_loc, data_palettesize_loc;
-  GLuint hud_digitex_loc, hud_digits_loc, hud_line_loc;
-  GLuint dapu_colors_loc, dapu_info_loc, dapu_values_loc, dapu_palettesize_loc, dapu_brightness_loc;
+  GLuint dapu_colors_loc, dapu_info_loc, dapu_values_loc, dapu_palettesize_loc,
+      dapu_brightness_loc;
   GLuint cut_info_loc;
 } mesh3d_render_ctx_t;
 
-const float INITIAL_TRANSLATE_VAL = -1.5f;
-const float INITIAL_ROTATE_Y      = -90.0f;
-const float INITIAL_ROTATE_X      = +15.0f;
+static const float INITIAL_TRANSLATE_VAL = -1.5f;
+static const float INITIAL_ROTATE_Y      = -90.0f;
+static const float INITIAL_ROTATE_X      = +15.0f;
 
 static GLfloat rotate_x    = INITIAL_ROTATE_X;
 static GLfloat rotate_y    = INITIAL_ROTATE_Y;
@@ -88,23 +80,11 @@ static struct
   float height;
 } Clipping;
 
-static struct
-{
-  float digit_width;
-  float x_spacing;
-  float y_spacing;
-} HudInfo;
-
 static mat4 projection, unclipped_proj;
 
 // Normalization operations translate and rescale the object to fit into a
 // normalized bounding-box centered in (0,0,0)
 static vec3 norm_scale, norm_translate;
-
-void mesh3d_switch_to_context (mesh3d_ctx_t ctx)
-{
-  SDL_GL_MakeCurrent (ctx->win, ctx->glcontext);
-}
 
 static void set_transformed_zplane (void)
 {
@@ -117,7 +97,7 @@ static void set_transformed_zplane (void)
   Clipping.clipping_zproj = proj[3];
 }
 
-void mesh3d_reset_view (mesh3d_ctx_t ctx[], unsigned nb_ctx)
+void mesh3d_reset_view (ezv_ctx_t ctx[], unsigned nb_ctx)
 {
   rotate_x    = INITIAL_ROTATE_X;
   rotate_y    = INITIAL_ROTATE_Y;
@@ -128,18 +108,22 @@ void mesh3d_reset_view (mesh3d_ctx_t ctx[], unsigned nb_ctx)
   mesh3d_renderer_mvp_update (ctx, nb_ctx, 0.0f, 0.0f, 0.0f);
 }
 
-static void mesh3d_renderer_mvp_init (mesh3d_ctx_t ctx)
+static void mesh3d_renderer_mvp_init (ezv_ctx_t ctx)
 {
   static int done             = 0;
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
 
   // Create matrices and vector once
   if (!done) {
-    bbox_t *bbox = &ctx->mesh->bbox;
+    bbox_t *bbox = &mesh->bbox;
     GLfloat msize;
     vec3 dim;
     mat4 model, view;
 
+    if (!mesh->bbox_set)
+      mesh3d_obj_compute_bounding_box (mesh);
+      
     glm_vec3_sub (bbox->max, bbox->min, dim);
     msize = glm_max (glm_max (dim[0], dim[1]), dim[2]);
 
@@ -168,10 +152,10 @@ static void mesh3d_renderer_mvp_init (mesh3d_ctx_t ctx)
     glm_mat4_mul (Matrices.vp_unclipped, model, Matrices.mvp);
     glm_mat4_copy (Matrices.mvp, Matrices.mvp_unclipped);
 
-    glm_ortho (0.0f, (float)ctx->winw, (float)ctx->winh, 0.0f, NEARZ, FARZ,
+    glm_ortho (0.0f, (float)ctx->winw, (float)ctx->winh, 0.0f, -2.0f, 2.0f,
                Matrices.ortho);
 
-    if (ctx->mesh->mesh_type == MESH3D_TYPE_SURFACE)
+    if (mesh->mesh_type == MESH3D_TYPE_SURFACE)
       // lighgrey mesh for surfaces
       glm_vec4_copy ((vec4){0.5, 0.5, 0.5, 1.0}, CustomColors.mesh_color);
     else
@@ -210,7 +194,7 @@ static void mesh3d_renderer_mvp_init (mesh3d_ctx_t ctx)
                     renctx->UBO_CLIP);
 }
 
-void mesh3d_renderer_mvp_update (mesh3d_ctx_t ctx[], unsigned nb_ctx, float dx,
+void mesh3d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
                                  float dy, float dz)
 {
   mat4 model, view, tmp;
@@ -245,18 +229,19 @@ void mesh3d_renderer_mvp_update (mesh3d_ctx_t ctx[], unsigned nb_ctx, float dx,
   set_transformed_zplane ();
 
   for (int c = 0; c < nb_ctx; c++) {
-    mesh3d_switch_to_context (ctx[c]);
+    mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx[c]);
 
-    glBindBuffer (GL_UNIFORM_BUFFER, ctx[c]->render_ctx->UBO_MAT);
+    ezv_switch_to_context (ctx[c]);
+
+    glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_MAT);
     glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Matrices), &Matrices);
 
-    glBindBuffer (GL_UNIFORM_BUFFER, ctx[c]->render_ctx->UBO_CLIP);
+    glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_CLIP);
     glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Clipping), &Clipping);
   }
 }
 
-void mesh3d_renderer_zplane_update (mesh3d_ctx_t ctx[], unsigned nb_ctx,
-                                    float dz)
+void mesh3d_renderer_zplane_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dz)
 {
   Clipping.clipping_zcoord += dz;
   Clipping.clipping_active = ctx[0]->clipping_active;
@@ -264,128 +249,16 @@ void mesh3d_renderer_zplane_update (mesh3d_ctx_t ctx[], unsigned nb_ctx,
   mesh3d_renderer_mvp_update (ctx, nb_ctx, 0.0f, 0.0f, 0.0f);
 }
 
-static void mesh3d_renderer_hud_init (mesh3d_ctx_t ctx)
+static void mesh3d_zplane_init (ezv_ctx_t ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
-
-  int width, height, nrChannels;
-  char file[1024];
-  unsigned char *data = NULL;
-
-  sprintf (file, "%s/img/ascii.png", mesh3d_prefix ? mesh3d_prefix : ".");
-  stbi_set_flip_vertically_on_load (true);
-  data = stbi_load (file, &width, &height, &nrChannels, 0);
-  if (data == NULL)
-    exit_with_error ("Cannot open %s", file);
-
-  HudInfo.digit_width = DIGIT_W / (float)width;
-  HudInfo.x_spacing   = DIGIT_W + 2.0f;
-  HudInfo.y_spacing   = DIGIT_H + 4.0f;
-
-  glGenBuffers (1, &renctx->UBO_HUD);
-  glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_HUD);
-  glBufferData (GL_UNIFORM_BUFFER, sizeof (HudInfo), &HudInfo, GL_STATIC_DRAW);
-  glBindBufferBase (GL_UNIFORM_BUFFER, BINDING_POINT_HUDINFO, renctx->UBO_HUD);
-
-  glGenTextures (1, &renctx->digitTexture);
-  glActiveTexture (GL_TEXTURE4);
-  glBindTexture (GL_TEXTURE_2D, renctx->digitTexture);
-  glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA,
-                GL_UNSIGNED_BYTE, data);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  stbi_image_free (data);
-
-  float vertices[] = {
-      // 2D positions     // tex coord
-      0.0f,    0.0f,    0.0f,
-      1.0f, // top left
-      0.0f,    DIGIT_H, 0.0f,
-      0.0f, // bottom left
-      DIGIT_W, 0.0f,    HudInfo.digit_width,
-      1.0f, // top right
-      DIGIT_W, DIGIT_H, HudInfo.digit_width,
-      0.0f, // bottom right
-  };
-
-  // Warning: use clockwise orientation
-  unsigned int indices[] = {
-      0, 3, 1, // first triangle
-      0, 2, 3  // second triangle
-  };
-
-  // bind uniform buffer object to texture #4
-  glProgramUniform1i (renctx->hud_shader, renctx->hud_digitex_loc, 4);
-
-  glGenVertexArrays (1, &renctx->VAO_HUD);
-  glGenBuffers (1, &renctx->VBO_HUD);
-  glGenBuffers (1, &renctx->EBO_HUD);
-
-  // bind the Vertex Array Object first, then bind and set vertex buffer(s)
-  glBindVertexArray (renctx->VAO_HUD);
-
-  glBindBuffer (GL_ARRAY_BUFFER, renctx->VBO_HUD);
-  glBufferData (GL_ARRAY_BUFFER, sizeof (vertices), vertices, GL_STATIC_DRAW);
-
-  glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, renctx->EBO_HUD);
-  glBufferData (GL_ELEMENT_ARRAY_BUFFER, sizeof (indices), indices,
-                GL_STATIC_DRAW);
-
-  // configure vertex attributes(s).
-  glVertexAttribPointer (0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof (float),
-                         (void *)0);
-  glEnableVertexAttribArray (0);
-
-  // configure texture coordinates
-  glVertexAttribPointer (1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof (float),
-                         (void *)(2 * sizeof (float)));
-  glEnableVertexAttribArray (1);
-
-  // Not useful
-  // bzero (the_digits, sizeof (the_digits));
-}
-
-static void mesh3d_hud_display (mesh3d_ctx_t ctx)
-{
-  int y = 0;
-
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
-
-  glDisable (GL_DEPTH_TEST);
-
-  glUseProgram (renctx->hud_shader);
-
-  glBindVertexArray (renctx->VAO_HUD);
-
-  for (int h = 0; h < MAX_HUDS; h++) {
-    if (!ctx->hud[h].valid || !ctx->hud[h].active)
-      continue;
-
-    // refresh 'digits' uniform data
-    glProgramUniform1iv (renctx->hud_shader, renctx->hud_digits_loc, MAX_DIGITS,
-                         ctx->hud[h].display);
-
-    // tell which line to use
-    glProgramUniform1i (renctx->hud_shader, renctx->hud_line_loc, y++);
-
-    glDrawElementsInstanced (GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, MAX_DIGITS);
-  }
-
-  glBindVertexArray (renctx->VAO);
-
-  glEnable (GL_DEPTH_TEST);
-}
-
-static void mesh3d_zplane_init (mesh3d_ctx_t ctx)
-{
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
 
   float vertices[] = {
       // 2D positions
-      -.65f, .65f * (float)ctx->winh / (float)ctx->winw, //
+      -.65f, .65f * (float)ctx->winh / (float)ctx->winw,  //
       -.65f, -.65f * (float)ctx->winh / (float)ctx->winw, //
-      .65f, -.65f * (float)ctx->winh / (float)ctx->winw, //
-      .65f, .65f * (float)ctx->winh / (float)ctx->winw,
+      .65f,  -.65f * (float)ctx->winh / (float)ctx->winw, //
+      .65f,  .65f * (float)ctx->winh / (float)ctx->winw,
   };
 
   glGenVertexArrays (1, &renctx->VAO_ZPLANE);
@@ -404,10 +277,10 @@ static void mesh3d_zplane_init (mesh3d_ctx_t ctx)
   glEnableVertexAttribArray (0);
 }
 
-static void mesh3d_zplane_display (mesh3d_ctx_t ctx)
+static void mesh3d_zplane_display (ezv_ctx_t ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
-  mesh3d_obj_t *mesh          = ctx->mesh;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
 
   glDisable (GL_DEPTH_TEST);
 
@@ -426,9 +299,9 @@ static void mesh3d_zplane_display (mesh3d_ctx_t ctx)
   glEnable (GL_DEPTH_TEST);
 }
 
-static void mesh3d_picking_init (mesh3d_ctx_t ctx)
+static void mesh3d_picking_init (ezv_ctx_t ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
 
   // Create the FBO for or triangle picking
   glGenFramebuffers (1, &renctx->FBO);
@@ -455,9 +328,9 @@ static void mesh3d_picking_init (mesh3d_ctx_t ctx)
 }
 
 // called by ctx_create: the mesh is not defined yet, nor any palette
-void mesh3d_renderer_init (mesh3d_ctx_t ctx)
+void mesh3d_renderer_init (ezv_ctx_t ctx)
 {
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
   // configure global opengl state
   // -----------------------------
@@ -467,20 +340,14 @@ void mesh3d_renderer_init (mesh3d_ctx_t ctx)
   glEnable (GL_LINE_SMOOTH);
   glLineWidth (.75);
 
-  // glEnable(GL_CLIP_DISTANCE0);
-
   // Allocate render_ctx
   mesh3d_render_ctx_t *renctx = malloc (sizeof (mesh3d_render_ctx_t));
   renctx->UBO_DATACOL         = 0;
   renctx->UBO_MAT             = 0;
   renctx->UBO_CUST            = 0;
   renctx->UBO_CLIP            = 0;
-  renctx->UBO_HUD             = 0;
   renctx->VBO                 = 0;
   renctx->VAO                 = 0;
-  renctx->VBO_HUD             = 0;
-  renctx->VAO_HUD             = 0;
-  renctx->EBO_HUD             = 0;
   renctx->VBO_ZPLANE          = 0;
   renctx->VAO_ZPLANE          = 0;
   renctx->EBO_ZPLANE          = 0;
@@ -494,128 +361,108 @@ void mesh3d_renderer_init (mesh3d_ctx_t ctx)
   renctx->tex_color           = 0;
   renctx->depthTexture        = 0;
   renctx->pickingTexture      = 0;
-  renctx->digitTexture        = 0;
+  renctx->imgTexture          = 0;
 
-  ctx->render_ctx = renctx;
+  ezv_mesh3d_set_renderer (ctx, renctx);
 
   // compile shaders and build program
-  renctx->cpu_shader =
-      mesh3d_shader_create ("generic.vs", "cpu.gs", "generic.fs");
+  renctx->cpu_shader = ezv_shader_create ("mesh3d/generic.vs", "mesh3d/cpu.gs", "mesh3d/generic.fs");
   renctx->data_shader =
-      mesh3d_shader_create ("generic.vs", "data.gs", "generic.fs");
+      ezv_shader_create ("mesh3d/generic.vs", "mesh3d/data.gs", "mesh3d/generic.fs");
   renctx->dapu_shader =
-      mesh3d_shader_create ("generic.vs", "cpu_data.gs", "generic.fs");
+      ezv_shader_create ("mesh3d/generic.vs", "mesh3d/cpu_data.gs", "mesh3d/generic.fs");
   renctx->picking_shader =
-      mesh3d_shader_create ("generic.vs", "generic.gs", "picking.fs");
-  renctx->hud_shader = mesh3d_shader_create ("hud.vs", NULL, "hud.fs");
-  renctx->clipping_shader =
-      mesh3d_shader_create ("clipping.vs", NULL, "cut.fs");
-  renctx->cut_shader = mesh3d_shader_create ("cut.vs", "cut.gs", "cut.fs");
+      ezv_shader_create ("mesh3d/generic.vs", "mesh3d/generic.gs", "mesh3d/picking.fs");
+  renctx->clipping_shader = ezv_shader_create ("mesh3d/clipping.vs", NULL, "mesh3d/cut.fs");
+  renctx->cut_shader      = ezv_shader_create ("mesh3d/cut.vs", "mesh3d/cut.gs", "mesh3d/cut.fs");
 
   // Uniform parameters
-  mesh3d_shader_get_uniform_loc (renctx->cpu_shader, "TriangleInfo",
-                                 &renctx->cpu_info_loc);
-  mesh3d_shader_get_uniform_loc (renctx->cpu_shader, "RGBAColors",
-                                 &renctx->cpu_colors_loc);
+  ezv_shader_get_uniform_loc (renctx->cpu_shader, "TriangleInfo",
+                              &renctx->cpu_info_loc);
+  ezv_shader_get_uniform_loc (renctx->cpu_shader, "RGBAColors",
+                              &renctx->cpu_colors_loc);
 
-  mesh3d_shader_get_uniform_loc (renctx->data_shader, "TriangleInfo",
-                                 &renctx->data_info_loc);
-  mesh3d_shader_get_uniform_loc (renctx->data_shader, "Values",
-                                 &renctx->data_values_loc);
-  mesh3d_shader_get_uniform_loc (renctx->data_shader, "paletteSize",
-                                 &renctx->data_palettesize_loc);
+  ezv_shader_get_uniform_loc (renctx->data_shader, "TriangleInfo",
+                              &renctx->data_info_loc);
+  ezv_shader_get_uniform_loc (renctx->data_shader, "Values",
+                              &renctx->data_values_loc);
+  ezv_shader_get_uniform_loc (renctx->data_shader, "paletteSize",
+                              &renctx->data_palettesize_loc);
 
-  mesh3d_shader_get_uniform_loc (renctx->dapu_shader, "TriangleInfo",
-                                 &renctx->dapu_info_loc);
-  mesh3d_shader_get_uniform_loc (renctx->dapu_shader, "RGBAColors",
-                                 &renctx->dapu_colors_loc);
-  mesh3d_shader_get_uniform_loc (renctx->dapu_shader, "Values",
-                                 &renctx->dapu_values_loc);
-  mesh3d_shader_get_uniform_loc (renctx->dapu_shader, "paletteSize",
-                                 &renctx->dapu_palettesize_loc);
-  mesh3d_shader_get_uniform_loc (renctx->dapu_shader, "dataBrightness",
-                                 &renctx->dapu_brightness_loc);
+  ezv_shader_get_uniform_loc (renctx->dapu_shader, "TriangleInfo",
+                              &renctx->dapu_info_loc);
+  ezv_shader_get_uniform_loc (renctx->dapu_shader, "RGBAColors",
+                              &renctx->dapu_colors_loc);
+  ezv_shader_get_uniform_loc (renctx->dapu_shader, "Values",
+                              &renctx->dapu_values_loc);
+  ezv_shader_get_uniform_loc (renctx->dapu_shader, "paletteSize",
+                              &renctx->dapu_palettesize_loc);
+  ezv_shader_get_uniform_loc (renctx->dapu_shader, "dataBrightness",
+                              &renctx->dapu_brightness_loc);
 
-  mesh3d_shader_get_uniform_loc (renctx->hud_shader, "digitTexture",
-                                 &renctx->hud_digitex_loc);
-  mesh3d_shader_get_uniform_loc (renctx->hud_shader, "digits",
-                                 &renctx->hud_digits_loc);
-  mesh3d_shader_get_uniform_loc (renctx->hud_shader, "line",
-                                 &renctx->hud_line_loc);
-
-  mesh3d_shader_get_uniform_loc (renctx->cut_shader, "TriangleInfo",
-                                 &renctx->cut_info_loc);
+  ezv_shader_get_uniform_loc (renctx->cut_shader, "TriangleInfo",
+                              &renctx->cut_info_loc);
 
   // Uniform Object Buffers
-  mesh3d_shader_bind_uniform_buf (renctx->data_shader, "ColorBuf",
-                                  BINDING_POINT_COLORBUF);
-  mesh3d_shader_bind_uniform_buf (renctx->dapu_shader, "ColorBuf",
-                                  BINDING_POINT_COLORBUF);
+  ezv_shader_bind_uniform_buf (renctx->data_shader, "ColorBuf",
+                               BINDING_POINT_COLORBUF);
+  ezv_shader_bind_uniform_buf (renctx->dapu_shader, "ColorBuf",
+                               BINDING_POINT_COLORBUF);
 
-  mesh3d_shader_bind_uniform_buf (renctx->cpu_shader, "CustomColors",
-                                  BINDING_POINT_CUSTOM_COLORS);
-  mesh3d_shader_bind_uniform_buf (renctx->dapu_shader, "CustomColors",
-                                  BINDING_POINT_CUSTOM_COLORS);
-  mesh3d_shader_bind_uniform_buf (renctx->data_shader, "CustomColors",
-                                  BINDING_POINT_CUSTOM_COLORS);
-  mesh3d_shader_bind_uniform_buf (renctx->clipping_shader, "CustomColors",
-                                  BINDING_POINT_CUSTOM_COLORS);
-  mesh3d_shader_bind_uniform_buf (renctx->cut_shader, "CustomColors",
-                                  BINDING_POINT_CUSTOM_COLORS);
+  ezv_shader_bind_uniform_buf (renctx->cpu_shader, "CustomColors",
+                               BINDING_POINT_CUSTOM_COLORS);
+  ezv_shader_bind_uniform_buf (renctx->dapu_shader, "CustomColors",
+                               BINDING_POINT_CUSTOM_COLORS);
+  ezv_shader_bind_uniform_buf (renctx->data_shader, "CustomColors",
+                               BINDING_POINT_CUSTOM_COLORS);
+  ezv_shader_bind_uniform_buf (renctx->clipping_shader, "CustomColors",
+                               BINDING_POINT_CUSTOM_COLORS);
+  ezv_shader_bind_uniform_buf (renctx->cut_shader, "CustomColors",
+                               BINDING_POINT_CUSTOM_COLORS);
 
-  mesh3d_shader_bind_uniform_buf (renctx->cpu_shader, "Clipping",
-                                  BINDING_POINT_CLIPPING);
-  mesh3d_shader_bind_uniform_buf (renctx->data_shader, "Clipping",
-                                  BINDING_POINT_CLIPPING);
-  mesh3d_shader_bind_uniform_buf (renctx->dapu_shader, "Clipping",
-                                  BINDING_POINT_CLIPPING);
-  mesh3d_shader_bind_uniform_buf (renctx->picking_shader, "Clipping",
-                                  BINDING_POINT_CLIPPING);
-  mesh3d_shader_bind_uniform_buf (renctx->clipping_shader, "Clipping",
-                                  BINDING_POINT_CLIPPING);
-  mesh3d_shader_bind_uniform_buf (renctx->cut_shader, "Clipping",
-                                  BINDING_POINT_CLIPPING);
-
-  mesh3d_shader_bind_uniform_buf (renctx->hud_shader, "HudInfo",
-                                  BINDING_POINT_HUDINFO);
+  ezv_shader_bind_uniform_buf (renctx->cpu_shader, "Clipping",
+                               BINDING_POINT_CLIPPING);
+  ezv_shader_bind_uniform_buf (renctx->data_shader, "Clipping",
+                               BINDING_POINT_CLIPPING);
+  ezv_shader_bind_uniform_buf (renctx->dapu_shader, "Clipping",
+                               BINDING_POINT_CLIPPING);
+  ezv_shader_bind_uniform_buf (renctx->picking_shader, "Clipping",
+                               BINDING_POINT_CLIPPING);
+  ezv_shader_bind_uniform_buf (renctx->clipping_shader, "Clipping",
+                               BINDING_POINT_CLIPPING);
+  ezv_shader_bind_uniform_buf (renctx->cut_shader, "Clipping",
+                               BINDING_POINT_CLIPPING);
 
   // Bind Matrices to all shaders
-  mesh3d_shader_bind_uniform_buf (renctx->cpu_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
-  mesh3d_shader_bind_uniform_buf (renctx->data_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
-  mesh3d_shader_bind_uniform_buf (renctx->dapu_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
-  mesh3d_shader_bind_uniform_buf (renctx->picking_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
-  mesh3d_shader_bind_uniform_buf (renctx->hud_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
-  mesh3d_shader_bind_uniform_buf (renctx->clipping_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
-  mesh3d_shader_bind_uniform_buf (renctx->cut_shader, "Matrices",
-                                  BINDING_POINT_MATRICES);
+  ezv_shader_bind_uniform_buf (renctx->cpu_shader, "Matrices",
+                               BINDING_POINT_MATRICES);
+  ezv_shader_bind_uniform_buf (renctx->data_shader, "Matrices",
+                               BINDING_POINT_MATRICES);
+  ezv_shader_bind_uniform_buf (renctx->dapu_shader, "Matrices",
+                               BINDING_POINT_MATRICES);
+  ezv_shader_bind_uniform_buf (renctx->picking_shader, "Matrices",
+                               BINDING_POINT_MATRICES);
+  ezv_shader_bind_uniform_buf (renctx->clipping_shader, "Matrices",
+                               BINDING_POINT_MATRICES);
+  ezv_shader_bind_uniform_buf (renctx->cut_shader, "Matrices",
+                               BINDING_POINT_MATRICES);
 
   if (ctx->picking_enabled)
     mesh3d_picking_init (ctx);
-
-  if (ctx->hud_enabled)
-    mesh3d_renderer_hud_init (ctx);
 
   if (ctx->clipping_enabled)
     mesh3d_zplane_init (ctx);
 }
 
-void mesh3d_renderer_set_mesh (mesh3d_ctx_t ctx)
+void mesh3d_renderer_set_mesh (ezv_ctx_t ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
 
-  // mesh is now known
-  mesh3d_obj_t *mesh = ctx->mesh;
+  ezv_switch_to_context (ctx);
 
   // Initialize 'Matrices'
   mesh3d_renderer_mvp_init (ctx);
-
-  mesh3d_switch_to_context (ctx);
 
   if (mesh->mesh_type == MESH3D_TYPE_VOLUME) {
     glEnable (GL_CULL_FACE);
@@ -660,20 +507,41 @@ void mesh3d_renderer_set_mesh (mesh3d_ctx_t ctx)
   glProgramUniform1i (renctx->cut_shader, renctx->cut_info_loc, 2);
 }
 
-void mesh3d_renderer_use_cpu_palette (mesh3d_ctx_t ctx)
+void ezv_mesh3d_refresh_mesh (ezv_ctx_t ctx[], unsigned nb_ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  for (int c = 0; c < nb_ctx; c++) {
+    mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx[c]);
+    mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx[c]);
 
-  if (!mesh3d_palette_is_defined (&ctx->cpu_palette))
+    ezv_switch_to_context (ctx[c]);
+
+    glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, renctx->VBO_IND);
+    glBufferSubData (GL_ELEMENT_ARRAY_BUFFER, 0,
+                     mesh->nb_triangles * 3 * sizeof (int), mesh->triangles);
+
+    // Texture Buffer Object containing per-triangle info
+    glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_INFO);
+    glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_triangles * sizeof (int),
+                     mesh->triangle_info);
+  }
+}
+
+void mesh3d_renderer_use_cpu_palette (ezv_ctx_t ctx)
+{
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
+
+  if (!ezv_palette_is_defined (&ctx->cpu_palette))
     exit_with_error ("CPU palette not defined");
 
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
   // Texture Buffer Object containing RGBA colors
   glGenBuffers (1, &renctx->TBO_COL);
   glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_COL);
-  glBufferData (GL_TEXTURE_BUFFER, ctx->mesh->nb_cells * sizeof (int), NULL,
+  glBufferData (GL_TEXTURE_BUFFER, mesh->nb_cells * sizeof (int), NULL,
                 GL_DYNAMIC_DRAW); // To be refreshed regularly
+
   glActiveTexture (GL_TEXTURE1);
   glGenTextures (1, &renctx->tex_color);
   glBindTexture (GL_TEXTURE_BUFFER, renctx->tex_color);
@@ -684,17 +552,21 @@ void mesh3d_renderer_use_cpu_palette (mesh3d_ctx_t ctx)
   glProgramUniform1i (renctx->dapu_shader, renctx->dapu_colors_loc, 1);
 }
 
-void mesh3d_renderer_use_data_palette (mesh3d_ctx_t ctx)
+void mesh3d_renderer_use_data_palette (ezv_ctx_t ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
 
-  if (!mesh3d_palette_is_defined (&ctx->data_palette))
+  if (!ezv_palette_is_defined (&ctx->data_palette))
     exit_with_error ("Data palette not defined");
+
+  if (ctx->data_palette.name == EZV_PALETTE_RGBA_PASSTHROUGH)
+    exit_with_error ("RGBA passthrough not supported yet");
 
   if (renctx->UBO_DATACOL != 0)
     exit_with_error ("data palette already set");
 
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
   // Discrete Color Palette
   glGenBuffers (1, &renctx->UBO_DATACOL);
@@ -712,13 +584,14 @@ void mesh3d_renderer_use_data_palette (mesh3d_ctx_t ctx)
                       ctx->data_palette.max_colors);
 
   // Data brightness
-  glProgramUniform1f (renctx->dapu_shader, renctx->dapu_brightness_loc, DEFAULT_DATA_BRIGHTNESS);
+  glProgramUniform1f (renctx->dapu_shader, renctx->dapu_brightness_loc,
+                      DEFAULT_DATA_BRIGHTNESS);
 
   // Texture Buffer Objects containing float data values [0.0 … 1.0]
   glGenBuffers (2, renctx->TBO_DATACOL);
   for (int i = 0; i < 2; i++) {
     glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_DATACOL[i]);
-    glBufferData (GL_TEXTURE_BUFFER, ctx->mesh->nb_cells * sizeof (float), NULL,
+    glBufferData (GL_TEXTURE_BUFFER, mesh->nb_cells * sizeof (float), NULL,
                   GL_DYNAMIC_DRAW); // To be refreshed regularly
   }
 
@@ -734,62 +607,64 @@ void mesh3d_renderer_use_data_palette (mesh3d_ctx_t ctx)
   glProgramUniform1i (renctx->dapu_shader, renctx->dapu_values_loc, 3);
 }
 
-void mesh3d_set_data_brightness (mesh3d_ctx_t ctx, float brightness)
+void mesh3d_set_data_brightness (ezv_ctx_t ctx, float brightness)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
 
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
-  glProgramUniform1f (renctx->dapu_shader, renctx->dapu_brightness_loc, brightness);
+  glProgramUniform1f (renctx->dapu_shader, renctx->dapu_brightness_loc,
+                      brightness);
 }
 
-void mesh3d_switch_data_color_buffer (mesh3d_ctx_t ctx)
+void mesh3d_switch_data_color_buffer (ezv_ctx_t ctx)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
 
   renctx->current_datacol = 1 - renctx->current_datacol;
-  mesh3d_switch_to_context (ctx);
+
+  ezv_switch_to_context (ctx);
 
   glActiveTexture (GL_TEXTURE3);
-  glBindTexture (GL_TEXTURE_BUFFER, renctx->tex_datacol);
   glTexBuffer (GL_TEXTURE_BUFFER, GL_R32F,
                renctx->TBO_DATACOL[renctx->current_datacol]);
 }
 
-void mesh3d_get_sharable_buffer_ids (mesh3d_ctx_t ctx, int buffer_ids[])
+void mesh3d_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[])
 {
-  if (!mesh3d_palette_is_defined (&ctx->data_palette))
+  if (!ezv_palette_is_defined (&ctx->data_palette))
     exit_with_error ("Data palette not defined");
 
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
 
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
   for (int i = 0; i < 2; i++)
     buffer_ids[i] = renctx->TBO_DATACOL[i];
 }
 
-void mesh3d_set_data_colors (mesh3d_ctx_t ctx, float *values)
+void mesh3d_set_data_colors (ezv_ctx_t ctx, void *values)
 {
-  if (!mesh3d_palette_is_defined (&ctx->data_palette))
+  if (!ezv_palette_is_defined (&ctx->data_palette))
     exit_with_error ("Data palette not defined");
 
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
 
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
   glBindBuffer (GL_TEXTURE_BUFFER,
                 renctx->TBO_DATACOL[renctx->current_datacol]);
-  glBufferSubData (GL_TEXTURE_BUFFER, 0, ctx->mesh->nb_cells * sizeof (float),
+  glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_cells * sizeof (float),
                    values);
 }
 
-int mesh3d_renderer_do_picking (mesh3d_ctx_t ctx, int x, int y)
+int mesh3d_renderer_do_picking (ezv_ctx_t ctx, int x, int y)
 {
-  mesh3d_render_ctx_t *renctx = ctx->render_ctx;
-  mesh3d_obj_t *mesh          = ctx->mesh;
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
 
-  mesh3d_switch_to_context (ctx);
+  ezv_switch_to_context (ctx);
 
   glUseProgram (renctx->picking_shader);
 
@@ -824,49 +699,80 @@ int mesh3d_renderer_do_picking (mesh3d_ctx_t ctx, int x, int y)
   return sel;
 }
 
-void mesh3d_render (mesh3d_ctx_t ctx[], unsigned nb_ctx)
+void mesh3d_render (ezv_ctx_t ctx)
 {
-  for (int c = 0; c < nb_ctx; c++) {
-    mesh3d_obj_t *mesh          = ctx[c]->mesh;
-    mesh3d_render_ctx_t *renctx = ctx[c]->render_ctx;
+  mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx);
+  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
 
-    mesh3d_switch_to_context (ctx[c]);
+  ezv_switch_to_context (ctx);
 
-    glClearColor (0.0f, 0.2f, 0.2f, 1.0f);
-    glClear (GL_COLOR_BUFFER_BIT |
-             GL_DEPTH_BUFFER_BIT); // also clear the depth buffer now!
+#ifdef WHITE_BACKGROUND
+  glClearColor (1.0f, 1.f, 1.0f, 1.0f);
+#else
+  glClearColor (0.0f, 0.2f, 0.2f, 1.0f);
+#endif
+  glClear (GL_COLOR_BUFFER_BIT |
+           GL_DEPTH_BUFFER_BIT); // also clear the depth buffer now!
 
-    if (mesh3d_palette_is_defined (&ctx[c]->cpu_palette)) {
+  if (ezv_palette_is_defined (&ctx->cpu_palette)) {
 
-      glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_COL);
-      glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_cells * sizeof (int),
-                       ctx[c]->cpu_colors);
+    glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_COL);
+    glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_cells * sizeof (int),
+                     ctx->cpu_colors);
 
-      if (mesh3d_palette_is_defined (&ctx[c]->data_palette))
-        // Both CPU and Data colors are used
-        glUseProgram (renctx->dapu_shader);
-      else
-        // CPU colors only
-        glUseProgram (renctx->cpu_shader);
+    if (ezv_palette_is_defined (&ctx->data_palette))
+      // Both CPU and Data colors are used
+      glUseProgram (renctx->dapu_shader);
+    else
+      // CPU colors only
+      glUseProgram (renctx->cpu_shader);
 
-      glDrawElements (GL_TRIANGLES, mesh->nb_triangles * 3, GL_UNSIGNED_INT, 0);
+    glDrawElements (GL_TRIANGLES, mesh->nb_triangles * 3, GL_UNSIGNED_INT, 0);
 
-    } else if (mesh3d_palette_is_defined (&ctx[c]->data_palette)) {
-      // Data colors only
-      glUseProgram (renctx->data_shader);
+  } else if (ezv_palette_is_defined (&ctx->data_palette)) {
+    // Data colors only
+    glUseProgram (renctx->data_shader);
 
-      glDrawElements (GL_TRIANGLES, mesh->nb_triangles * 3, GL_UNSIGNED_INT, 0);
-    }
-
-    if (ctx[c]->hud_enabled)
-      // On-Screen Head Up Display
-      mesh3d_hud_display (ctx[c]);
-
-    if (ctx[c]->clipping_enabled && ctx[c]->clipping_active)
-      // Show z clipping plane
-      mesh3d_zplane_display (ctx[c]);
-
-    SDL_GL_SwapWindow (ctx[c]->win);
+    glDrawElements (GL_TRIANGLES, mesh->nb_triangles * 3, GL_UNSIGNED_INT, 0);
   }
+
+  if (ctx->hud_enabled) {
+    // On-Screen Head Up Display
+    ezv_hud_display (ctx);
+    glBindVertexArray (renctx->VAO);
+  }
+
+  if (ctx->clipping_enabled && ctx->clipping_active)
+    // Show z clipping plane
+    mesh3d_zplane_display (ctx);
+
+  SDL_GL_SwapWindow (ctx->win);
 }
 
+int mesh3d_renderer_zoom (ezv_ctx_t ctx[], unsigned nb_ctx,
+                          unsigned shift_mod, unsigned in)
+{
+  if (shift_mod) {
+    // move clipping plane forward
+    if (ctx[0]->clipping_active) {
+      mesh3d_renderer_zplane_update (ctx, nb_ctx, in ? +0.01f : -0.01f);
+      return 1;
+    }
+  } else {
+    // Zoom in
+    mesh3d_renderer_mvp_update (ctx, nb_ctx, 0.0f, 0.0f, in ? +.02f : -.02f);
+    return 1;
+  }
+  return 0;
+}
+
+int mesh3d_renderer_motion (ezv_ctx_t ctx[], unsigned nb_ctx, int dx, int dy,
+                            unsigned wheel)
+{
+  if (wheel)
+    mesh3d_renderer_mvp_update (ctx, nb_ctx, 1.5f * dy, 1.5f * dx, 0.0f);
+  else
+    mesh3d_renderer_mvp_update (ctx, nb_ctx, 0.2f * dy, 0.2f * dx, 0.0f);
+
+  return 1;
+}

@@ -55,7 +55,7 @@ void main ()
 
     col = texelFetch (RGBAColors, ind).r;
 
-    theColor = unpackUnorm4x8 (uint (col)).wzyx;
+    theColor = unpackUnorm4x8 (uint (col));
 
     // Compute barycentric distances
     vec2 display = vec2 (width, height);

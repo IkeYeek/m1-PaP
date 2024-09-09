@@ -15,7 +15,7 @@ POBJECTS	:= $(PSOURCES:test/%.c=obj/%.o)
 PDEPENDS	:= $(PSOURCES:test/%.c=deps/%.d)
 PROGRAMS	:= $(PSOURCES:test/%.c=%)
 
-LIB			:= lib/libmesh3d.a
+LIB			:= lib/libezv.a
 
 SOURCES		:= $(wildcard src/*.c)
 OBJECTS		:= $(SOURCES:src/%.c=obj/%.o)

@@ -1,5 +1,5 @@
-#ifndef MESH3D_OBJ_IS_DEF
-#define MESH3D_OBJ_IS_DEF
+#ifndef MESH3D_OBJ_H
+#define MESH3D_OBJ_H
 
 #include <cglm/cglm.h>
 
@@ -34,6 +34,7 @@ typedef struct
 typedef struct
 {
   bbox_t bbox;
+  unsigned bbox_set;
   mesh3d_type_t mesh_type;
   float *vertices;
   unsigned nb_vertices;
@@ -48,10 +49,13 @@ typedef struct
   unsigned *index_first_neighbor;
   unsigned nb_patches;
   unsigned *patch_first_cell;
+  unsigned nb_metap;
+  unsigned *metap_first_patch;
 } mesh3d_obj_t;
 
 void mesh3d_obj_init (mesh3d_obj_t *mesh);
 void mesh3d_obj_build_default (mesh3d_obj_t *mesh);
+void mesh3d_obj_compute_bounding_box (mesh3d_obj_t *mesh);
 
 void mesh3d_obj_build_cube (mesh3d_obj_t *mesh, unsigned group_size);
 void mesh3d_obj_build_torus (mesh3d_obj_t *mesh, unsigned group_size);
@@ -70,6 +74,13 @@ void mesh3d_obj_store (const char *filename, mesh3d_obj_t *mesh,
 
 void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart,
                            int flag);
+void mesh3d_reorder_partitions (mesh3d_obj_t *mesh, int newpos[]);
+void mesh3d_shuffle_cells_in_partitions (mesh3d_obj_t *mesh);
+void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh);
+
+void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_partitionner);
+int mesh3d_obj_get_metap_of_patch (mesh3d_obj_t *mesh, unsigned p);
+
 int mesh3d_obj_get_patch_of_cell (mesh3d_obj_t *mesh, unsigned cell);
 void mesh3d_obj_get_bbox_of_cell (mesh3d_obj_t *mesh, unsigned cell, bbox_t *box);
 void mesh3d_obj_get_barycenter (mesh3d_obj_t *mesh, unsigned cell,

@@ -3,8 +3,8 @@
 #include "error.h"
 #include "global.h"
 #include "gpu.h"
-#include "monitoring.h"
 #include "mesh_data.h"
+#include "monitoring.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -22,12 +22,16 @@ void_func_t the_first_touch                      = NULL;
 draw_func_t the_draw                             = NULL;
 void_func_t the_finalize                         = NULL;
 int_func_t the_compute                           = NULL;
-void_func_t the_refresh_img                      = NULL;
 void_func_t the_tile_check                       = NULL;
 cuda_kernel_func_t the_cuda_kernel               = NULL;
 cuda_kernel_finish_func_t the_cuda_kernel_finish = NULL;
-int_func_t the_picking                           = NULL;
+debug_1d_t the_1d_debug                          = NULL;
+debug_2d_t the_2d_debug                          = NULL;
+debug_1d_t the_1d_overlay                        = NULL;
+debug_2d_t the_2d_overlay                        = NULL;
+void_func_t the_send_data                        = NULL;
 
+static void_func_t the_refresh_img = NULL;
 static tile_func_t the_tile_func   = NULL;
 static patch_func_t the_patch_func = NULL;
 
@@ -48,7 +52,7 @@ void *bind_it (char *kernel, char *s, char *variant, int print_error)
 
   fun = hooks_find_symbol (buffer);
   if (fun != NULL)
-    PRINT_DEBUG ('c', "Found [%s]\n", buffer);
+    PRINT_DEBUG ('h', "Found [%s]\n", buffer);
   else {
     if (print_error == 2)
       exit_with_error ("Cannot resolve function [%s]", buffer);
@@ -57,7 +61,7 @@ void *bind_it (char *kernel, char *s, char *variant, int print_error)
     fun = hooks_find_symbol (buffer);
 
     if (fun != NULL)
-      PRINT_DEBUG ('c', "Found [%s]\n", buffer);
+      PRINT_DEBUG ('h', "Found [%s]\n", buffer);
     else if (print_error)
       exit_with_error ("Cannot resolve function [%s]", buffer);
   }
@@ -84,7 +88,7 @@ static void *bind_tile (char *kernel)
     sprintf (buffer, "%s_do_tile_%s", kernel, tile_name);
     fun = hooks_find_symbol (buffer);
     if (fun != NULL) {
-      PRINT_DEBUG ('c', "Found requested tiling func [%s]\n", buffer);
+      PRINT_DEBUG ('h', "Found requested tiling func [%s]\n", buffer);
       return fun;
     }
     // requested tile_name didn't work
@@ -104,7 +108,7 @@ static void *bind_tile (char *kernel)
           sprintf (buffer, "%s_do_tile_%s", kernel, flavor);
           fun = hooks_find_symbol (buffer);
           if (fun != NULL) {
-            PRINT_DEBUG ('c', "Found preferred tiling func [%s]\n", buffer);
+            PRINT_DEBUG ('h', "Found preferred tiling func [%s]\n", buffer);
             tile_name = malloc (strlen (flavor) + 1);
             strcpy (tile_name, flavor);
             return fun;
@@ -125,7 +129,7 @@ static void *bind_tile (char *kernel)
   sprintf (buffer, "%s_do_tile_default", kernel);
   fun = hooks_find_symbol (buffer);
   if (fun != NULL) {
-    PRINT_DEBUG ('c', "Found [%s]\n", buffer);
+    PRINT_DEBUG ('h', "Found [%s]\n", buffer);
     tile_name = "default";
     return fun;
   }
@@ -155,7 +159,7 @@ static void *bind_patch (char *kernel)
     sprintf (buffer, "%s_do_patch_%s", kernel, tile_name);
     fun = hooks_find_symbol (buffer);
     if (fun != NULL) {
-      PRINT_DEBUG ('c', "Found requested patch func [%s]\n", buffer);
+      PRINT_DEBUG ('h', "Found requested patch func [%s]\n", buffer);
       return fun;
     }
     // requested tile_name didn't work
@@ -175,7 +179,7 @@ static void *bind_patch (char *kernel)
           sprintf (buffer, "%s_do_patch_%s", kernel, flavor);
           fun = hooks_find_symbol (buffer);
           if (fun != NULL) {
-            PRINT_DEBUG ('c', "Found preferred patch func [%s]\n", buffer);
+            PRINT_DEBUG ('h', "Found preferred patch func [%s]\n", buffer);
             tile_name = malloc (strlen (flavor) + 1);
             strcpy (tile_name, flavor);
             return fun;
@@ -196,7 +200,7 @@ static void *bind_patch (char *kernel)
   sprintf (buffer, "%s_do_patch_default", kernel);
   fun = hooks_find_symbol (buffer);
   if (fun != NULL) {
-    PRINT_DEBUG ('c', "Found [%s]\n", buffer);
+    PRINT_DEBUG ('h', "Found [%s]\n", buffer);
     tile_name = "default";
     return fun;
   }
@@ -220,16 +224,19 @@ void hooks_establish_bindings (int silent)
   the_draw        = bind_it (kernel_name, "draw", variant_name, 0);
   the_finalize    = bind_it (kernel_name, "finalize", variant_name, 0);
   the_refresh_img = bind_it (kernel_name, "refresh_img", variant_name, 0);
-  the_picking     = bind_it (kernel_name, "debug", variant_name, 0);
 
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
     the_tile_func  = bind_tile (kernel_name);
     the_tile_check = bind_it (kernel_name, "tile_check", tile_name, 0);
     the_patch_func = no_patch_func;
+    the_2d_debug   = bind_it (kernel_name, "debug", variant_name, 0);
+    the_2d_overlay = bind_it (kernel_name, "overlay", variant_name, 0);
   } else if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
     the_patch_func = bind_patch (kernel_name);
     the_tile_check = bind_it (kernel_name, "patch_check", tile_name, 0);
-    the_tile_func = no_tile_func;
+    the_tile_func  = no_tile_func;
+    the_1d_debug   = bind_it (kernel_name, "debug", variant_name, 0);
+    the_1d_overlay = bind_it (kernel_name, "overlay", variant_name, 0);
   }
 
   if (!silent)
@@ -249,12 +256,22 @@ void hooks_draw_helper (char *suffix, void_func_t default_func)
     f = hooks_find_symbol (func_name);
 
     if (f == NULL) {
-      PRINT_DEBUG ('g', "Cannot resolve draw function: %s\n", func_name);
+      PRINT_DEBUG ('h', "Cannot resolve draw function: %s\n", func_name);
       f = default_func;
     }
   }
 
   f ();
+}
+
+int hooks_refresh_img (void)
+{
+  if (the_refresh_img) {
+    the_refresh_img ();
+    PRINT_DEBUG ('h', "refresh_img hook called\n");
+    return 1;
+  } else
+    return 0;
 }
 
 int do_tile_id (int x, int y, int width, int height, int who)
@@ -274,7 +291,8 @@ int do_patch_id (int patch, int who)
 
   int r = the_patch_func (patch_start (patch), patch_end (patch));
 
-  monitoring_end_tile (clock, patch_start (patch), 0, patch_size (patch), 0, who);
+  monitoring_end_tile (clock, patch_start (patch), 0, patch_size (patch), 0,
+                       who);
 
   return r;
 }

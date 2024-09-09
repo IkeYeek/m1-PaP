@@ -3,15 +3,18 @@
 _easypap_completions()
 {
     local LONG_OPTIONS=("--help" "--load-image" "--size" "--kernel" "--variant" "--monitoring" "--thumbnails"
-                        "--trace" "--no-display" "--iterations" "--nb-tiles" "--tile-size" "--arg" "--first-touch"
+                        "--trace" "--no-display" "--iterations" "--multi-gpu" "--nb-tiles" "--tile-size" "--arg" "--first-touch"
                         "--label" "--mpirun" "--soft-rendering" "--show-devices" "--tile-width" "--tile-height"
-                        "--trace-iter" "--thumbnails-iter" "--with-tile" "--counters" "--show-hash" "--gpu"
-                        "--load-mesh" "--pause" "--show-iterations" "--debug")
+                        "--trace-iter" "--thumbnails-iter" "--with-tile" "--perf-counters" "--show-hash" "--gpu"
+                        "--load-mesh" "--pause" "--show-iterations" "--multi-gpu" "--debug" "--multi-gpu"
+                        "--no-gl-buffer-share" "--no-vsync" "--config")
     local SHORT_OPTIONS=("-h" "-l" "-s" "-k" "-v" "-m" "-tn"
                          "-t" "-n" "-i" "-nt" "-ts" "-a" "-ft"
                          "-lb" "-mpi" "-sr" "-sd" "-tw" "-th"
-                         "-ti" "-tni" "-wt" "-c" "-sh" "-g"
-                         "-lm" "-p" "-si" "-d")
+                         "-ti" "-tni" "-wt" "-pc" "-sh" "-g"
+                         "-lm" "-p" "-si" "-d" "-mg"
+                         "-nbs" "-nvs" "-c")
+
     local NB_OPTIONS=${#LONG_OPTIONS[@]}
 
     local exclude_l=(2 26) # load-image excludes size and load-mesh
@@ -26,6 +29,8 @@ _easypap_completions()
     local exclude_tw=(10 11) # tile-width excludes nb-tiles and tile-size
     local exclude_th=(10 11) # tile-height excludes nb-tiles and tile-size
     local exclude_ti=(5 6 7 21) # trace-iter excludes monitoring, trace, thumbnails and thumbnails-iter
+    local exclude_g=(30) # gpu excludes multi-gpu
+    local exlcude_mg=(25) # multi-gpu excludes gpu
     local exclude_tni=(6 7 20) # thumbnails-iter excludes thumbnails, trace and trace-iter
     local only_in_first_place_h=1 # --help should only be suggested as the very first argument position
     local only_in_first_place_sd=1 # --show-devices should only be suggested as the very first argument position
@@ -62,12 +67,12 @@ _easypap_completions()
             -l|--load-image)
                 compopt -o filenames
                 if [[ -z "$cur" ]]; then
-                    COMPREPLY=($(compgen -f -X '!*.png' -- "images/"))
+                    COMPREPLY=($(compgen -f -X '!*.png' -- "data/img/"))
                 else
                     COMPREPLY=($(compgen -o plusdirs -f -X '!*.png' -- $cur))
                 fi
                 ;;
-            -lm|--load-mesh)
+            -lm|--load-mesh|-lms)
                 if [[ -z "$cur" ]]; then
                     COMPREPLY=($(compgen -f -X '!*.obj' -- "data/mesh/"))
                 else
@@ -136,7 +141,7 @@ _easypap_completions()
                                 k=${COMP_WORDS[i+1]}
                             fi
                             ;;
-                        -g|--gpu)
+                        -g|--gpu|-mg|--multi-gpu)
                             gpu=1
                             ;;
                         *)
@@ -160,7 +165,8 @@ _easypap_completions()
                 ;;
             -n|--no-display|-m|--monitoring|-t|--trace|-th|--thumbs|\
             -ft|--first-touch|-du|--dump|-p|--pause|-sr|--soft-rendering|\
-            -g|--gpu|-c|--cache|-sh|--show-hash|-si|--show-iterations)
+            -g|--gpu|-pc|--perf-counters|-sh|--show-hash|-si|--show-iterations|\
+            -mg|--multi-gpu)
                 # After options taking no argument, we can suggest another option
                 if [[ "$cur" =~ ^--.* ]]; then
                     _easypap_option_suggest "${LONG_OPTIONS[@]}"

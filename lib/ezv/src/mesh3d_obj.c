@@ -9,7 +9,6 @@
 
 #include "error.h"
 #include "mesh3d_obj.h"
-#include "mesh3d_palette.h"
 #include "tinyobj_loader_c.h"
 #ifdef USE_SCOTCH
 #include "scotch.h"
@@ -23,6 +22,7 @@ static unsigned nbv = 0;
 void mesh3d_obj_init (mesh3d_obj_t *mesh)
 {
   mesh->mesh_type            = MESH3D_TYPE_SURFACE;
+  mesh->bbox_set             = 0;
   mesh->vertices             = NULL;
   mesh->nb_vertices          = 0;
   mesh->triangles            = NULL;
@@ -37,6 +37,8 @@ void mesh3d_obj_init (mesh3d_obj_t *mesh)
   mesh->index_first_neighbor = NULL;
   mesh->nb_patches           = 0;
   mesh->patch_first_cell     = NULL;
+  mesh->nb_metap             = 0;
+  mesh->metap_first_patch    = NULL;
 
   vi  = 0;
   ti  = 0;
@@ -44,7 +46,7 @@ void mesh3d_obj_init (mesh3d_obj_t *mesh)
   nbt = 0;
 }
 
-static void calculate_bounding_box (mesh3d_obj_t *mesh)
+void mesh3d_obj_compute_bounding_box (mesh3d_obj_t *mesh)
 {
   bbox_t *bbox = &mesh->bbox;
 
@@ -58,9 +60,8 @@ static void calculate_bounding_box (mesh3d_obj_t *mesh)
       if (mesh->vertices[3 * v + c] > bbox->max[c])
         bbox->max[c] = mesh->vertices[3 * v + c];
     }
-  // Debug:
-  // printf ("Min[%f,%f,%f] -> Max[%f,%f,%f]\n", bbox->min[0], bbox->min[1],
-  // bbox->min[2], bbox->max[0], bbox->max[1], bbox->max[2]);
+  
+  mesh->bbox_set = 1;
 }
 
 static void display_stats (mesh3d_obj_t *mesh)
@@ -236,7 +237,7 @@ void mesh3d_obj_build_cube (mesh3d_obj_t *mesh, unsigned group_size)
     exit_with_error ("Not yet implemented");
   }
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 }
 
 static void build_cubus_volumus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby,
@@ -280,12 +281,12 @@ static void build_cubus_volumus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby,
                      "the initial one (%d)",
                      nbv, mesh->nb_vertices);
 
-  float v[8];
-
   // Now create triangles
   for (int z = 0; z < nbz; z++) {
     for (int y = 0; y < nby; y++) {
       for (int x = 0; x < nbx; x++) {
+        unsigned v[8];
+
         v[0] = z * surface + y * line + x;
         v[1] = z * surface + y * line + (x + 1);
         v[2] = z * surface + (y + 1) * line + x;
@@ -360,7 +361,7 @@ static void build_cubus_volumus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby,
         "the initial one (%d)",
         nbt, mesh->nb_triangles);
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 }
 
 // /////////////// Wall
@@ -400,11 +401,11 @@ static void build_wall (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby)
                      "the initial one (%d)",
                      nbv, mesh->nb_vertices);
 
-  float v[4];
-
   // Now create triangles
   for (int y = 0; y < nby; y++) {
     for (int x = 0; x < nbx; x++) {
+      unsigned v[4];
+
       v[0] = y * line + x;
       v[1] = y * line + (x + 1);
       v[2] = (y + 1) * line + x;
@@ -422,7 +423,7 @@ static void build_wall (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby)
         "the initial one (%d)",
         nbt, mesh->nb_triangles);
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 }
 
 // /////////////// Torus
@@ -474,11 +475,11 @@ static void build_torus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby)
                      "the initial one (%d)",
                      nbv, mesh->nb_vertices);
 
-  float v[4];
-
   // Now create triangles
   for (int x = 0; x < nbx; x++) {
     for (int y = 0; y < nby; y++) {
+      unsigned v[4];
+
       v[0] = y * circle + x;
       v[1] = y * circle + ((x + 1) % nbx);
       v[2] = ((y + 1) % nby) * circle + x;
@@ -496,7 +497,7 @@ static void build_torus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby)
         "the initial one (%d)",
         nbt, mesh->nb_triangles);
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 }
 
 static void build_torus_volumus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby,
@@ -546,12 +547,12 @@ static void build_torus_volumus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby,
                      "the initial one (%d)",
                      nbv, mesh->nb_vertices);
 
-  float v[8];
-
   // Now create triangles
   for (int z = 0; z < nbz; z++) {
     for (int y = 0; y < nby; y++) {
       for (int x = 0; x < nbx; x++) {
+        unsigned v[8];
+
         v[0] = z * enveloppe + y * circle + x;
         v[1] = z * enveloppe + y * circle + ((x + 1) % nbx);
         v[2] = z * enveloppe + ((y + 1) % nby) * circle + x;
@@ -618,7 +619,7 @@ static void build_torus_volumus (mesh3d_obj_t *mesh, unsigned nbx, unsigned nby,
         "the initial one (%d)",
         nbt, mesh->nb_triangles);
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 }
 
 static void build_cylinder_volumus (mesh3d_obj_t *mesh, unsigned nbx,
@@ -667,11 +668,11 @@ static void build_cylinder_volumus (mesh3d_obj_t *mesh, unsigned nbx,
                      "the initial one (%d)",
                      nbv, mesh->nb_vertices);
 
-  float v[8];
-
   // Now create triangles
   for (int y = 0; y < nby; y++) {
     for (int x = 0; x < nbx; x++) {
+      unsigned v[8];
+
       v[0] = y * circle + x;
       v[1] = y * circle + ((x + 1) % nbx);
       v[2] = (y + 1) * circle + x;
@@ -733,7 +734,7 @@ static void build_cylinder_volumus (mesh3d_obj_t *mesh, unsigned nbx,
         "the initial one (%d)",
         nbt, mesh->nb_triangles);
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 }
 
 static unsigned morton2d (unsigned x, unsigned y)
@@ -1439,7 +1440,7 @@ static void load_obj_file (const char *filename, mesh3d_obj_t *mesh)
           indc, mesh->nb_cells);
   }
 
-  calculate_bounding_box (mesh);
+  mesh3d_obj_compute_bounding_box (mesh);
 
   // find_neighbors_triangles (mesh);
 
@@ -1622,6 +1623,92 @@ static void reorder_cells (mesh3d_obj_t *mesh, int newpos[])
           TIMESPEC2USEC (t2) - TIMESPEC2USEC (t1));
 }
 
+void mesh3d_reorder_partitions (mesh3d_obj_t *mesh, int newpos[])
+{
+  int *oldpos          = malloc (mesh->nb_patches * sizeof (int));
+  int *cell_npos       = malloc (mesh->nb_cells * sizeof (int));
+  unsigned *first_cell = malloc ((mesh->nb_patches + 1) * sizeof (unsigned));
+  int index            = 0;
+
+  for (int p = 0; p < mesh->nb_patches; p++)
+    oldpos[newpos[p]] = p;
+
+  for (int p = 0; p < mesh->nb_patches; p++) {
+    first_cell[p] = index;
+    for (int c = mesh->patch_first_cell[oldpos[p]];
+         c < mesh->patch_first_cell[oldpos[p] + 1]; c++)
+      cell_npos[c] = index++;
+  }
+  first_cell[mesh->nb_patches] = index;
+
+  free (oldpos);
+
+  if (index != mesh->nb_cells)
+    exit_with_error ("index (%d) does not match #cells (%d)", index, mesh->nb_cells);
+
+  // switch to new 'first cell' array
+  free (mesh->patch_first_cell);
+  mesh->patch_first_cell = first_cell;
+
+  reorder_cells (mesh, cell_npos);
+
+  free (cell_npos);
+}
+
+void mesh3d_shuffle_cells_in_partitions (mesh3d_obj_t *mesh)
+{
+  int *cell_npos = malloc (mesh->nb_cells * sizeof (int));
+
+  for (int c = 0; c < mesh->nb_cells; c++)
+    cell_npos[c] = c;
+
+  for (int p = 0; p < mesh->nb_patches; p++) {
+    int start = mesh->patch_first_cell[p];
+    int n = mesh->patch_first_cell[p + 1] - start;
+    for (int c = 0; c < n; c++) {
+      int i = start + c;
+      int j = start + random () % n;
+      int tmp = cell_npos[i];
+      cell_npos[i] = cell_npos[j];
+      cell_npos[j] = tmp;
+    }
+  }
+
+  reorder_cells (mesh, cell_npos);
+
+  free (cell_npos);
+}
+
+void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh)
+{
+  int *cell_npos = malloc (mesh->nb_cells * sizeof (int));
+
+  for (int c = 0; c < mesh->nb_cells; c++)
+    cell_npos[c] = c;
+
+  for (int c = 0; c < mesh->nb_cells; c++) {
+    int j = random () % mesh->nb_cells;
+    if (c != j) {
+      int tmp = cell_npos[c];
+      cell_npos[c] = cell_npos[j];
+      cell_npos[j] = tmp;
+    }
+  }
+
+  reorder_cells (mesh, cell_npos);
+
+  free (cell_npos);
+
+  if (mesh->nb_patches > 0) {
+    printf ("Cancelling existing partitionning…\n");
+    if (mesh->patch_first_cell != NULL) {
+      free (mesh->patch_first_cell);
+      mesh->patch_first_cell = NULL;
+    }
+    mesh->nb_patches = 0;
+  }
+}
+
 static void do_partition (mesh3d_obj_t *mesh, unsigned nbpart,
                           int use_partitionner)
 {
@@ -1664,8 +1751,8 @@ static void do_partition (mesh3d_obj_t *mesh, unsigned nbpart,
     if (r != 0)
       exit_with_error ("SCOTCH_graphBuild");
 
-    int *parttab  = (int *)calloc (mesh->nb_cells, sizeof (int));
-    int *newpos   = (int *)calloc (mesh->nb_cells, sizeof (int));
+    int *parttab  = calloc (mesh->nb_cells, sizeof (int));
+    int *newpos   = calloc (mesh->nb_cells, sizeof (int));
     int *partsize = calloc (nbpart, sizeof (int));
     int *prefix   = calloc (nbpart + 1, sizeof (int));
 
@@ -1733,6 +1820,24 @@ static void do_partition (mesh3d_obj_t *mesh, unsigned nbpart,
   }
 }
 
+static void mesh3d_obj_mark_frontiers (mesh3d_obj_t *mesh, int *cellclass)
+{
+  // Find external frontiers of classes
+  for (int c = 0; c < mesh->nb_cells; c++)
+    for (int t1 = mesh->cells[c]; t1 < mesh->cells[c + 1]; t1++) {
+      int edge_info = 0;
+      for (int n = mesh->index_first_neighbor[c];
+           n < mesh->index_first_neighbor[c + 1]; n++)
+        if (cellclass[c] == cellclass[mesh->neighbors[n]])
+          for (int t2 = mesh->cells[mesh->neighbors[n]];
+               t2 < mesh->cells[mesh->neighbors[n] + 1]; t2++)
+            edge_info |= triangles_common_edges (mesh, t1, t2);
+      // edge_info indicates shared edges between cells of the same class
+      // so to hightlight frontiers, we need to invert edge_info bits
+      mesh->triangle_info[t1] |= ((edge_info ^ 7U) << FRONTIER_SHIFT);
+    }
+}
+
 void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag)
 {
   // Do actual partition
@@ -1746,22 +1851,54 @@ void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag)
            c++)
         parttab[c] = p;
 
-    // Find external frontiers of partitions
-    for (int c = 0; c < mesh->nb_cells; c++)
-      for (int t1 = mesh->cells[c]; t1 < mesh->cells[c + 1]; t1++) {
-        int edge_info = 0;
-        for (int n = mesh->index_first_neighbor[c];
-             n < mesh->index_first_neighbor[c + 1]; n++)
-          if (parttab[c] == parttab[mesh->neighbors[n]])
-            for (int t2 = mesh->cells[mesh->neighbors[n]];
-                 t2 < mesh->cells[mesh->neighbors[n] + 1]; t2++)
-              edge_info |= triangles_common_edges (mesh, t1, t2);
-        // edge_info indicates shared edges between cells of the same partition
-        // so to hightlight frontiers, we need to invert edge_info bits
-        mesh->triangle_info[t1] |= ((edge_info ^ 7U) << FRONTIER_SHIFT);
-      }
-
+    mesh3d_obj_mark_frontiers (mesh, parttab);
+    
     free (parttab);
+  }
+}
+
+void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_partitionner)
+{
+  if (nbpart == 0)
+    return;
+
+  if (mesh->nb_patches == 0)
+    exit_with_error ("Mesh is not partitionned");
+
+  if (mesh->nb_metap != 0) {
+    printf ("Overriding existing meta-partitionning…\n");
+    if (mesh->metap_first_patch != NULL) {
+      free (mesh->metap_first_patch);
+      mesh->metap_first_patch = NULL;
+    }
+  }
+
+  mesh->nb_metap          = nbpart;
+  mesh->metap_first_patch = malloc ((nbpart + 1) * sizeof (int));
+
+#ifdef USE_SCOTCH
+  if (use_partitionner) {
+    // TODO
+    exit_with_error ("Not yet implemented");
+  } else
+#endif
+  {
+    if (use_partitionner)
+      printf ("Warning: Falling back to a simple contiguous distribution "
+              "of patches (USE_SCOTCH is not enabled)");
+
+    // Build a straighforward array of meta-patches (without changing order of patches)
+    const int chunk = mesh->nb_patches / nbpart;
+    const int rem   = mesh->nb_patches % nbpart;
+
+    int index = 0;
+    for (int mp = 0; mp < nbpart; mp++) {
+      mesh->metap_first_patch[mp] = index;
+      index += chunk + (mp < rem ? 1 : 0);
+    }
+    mesh->metap_first_patch[nbpart] = index;
+
+    printf ("Mesh meta-partitionned into %d chunks of contiguous patches\n", nbpart);
   }
 }
 
@@ -1784,6 +1921,27 @@ int mesh3d_obj_get_patch_of_cell (mesh3d_obj_t *mesh, unsigned cell)
   else
     return -1;
 }
+
+int mesh3d_obj_get_metap_of_patch (mesh3d_obj_t *mesh, unsigned p)
+{
+  unsigned first = 0;
+  unsigned last  = mesh->nb_metap - 1;
+
+  while (first < last) {
+    unsigned mid = (first + last) / 2;
+    if (p >= mesh->metap_first_patch[mid + 1])
+      first = mid + 1;
+    else
+      last = mid;
+  }
+
+  if (p >= mesh->metap_first_patch[first] &&
+      p < mesh->metap_first_patch[first + 1])
+    return first;
+  else
+    return -1;
+}
+
 
 void mesh3d_obj_get_bbox_of_cell (mesh3d_obj_t *mesh, unsigned cell,
                                   bbox_t *box)

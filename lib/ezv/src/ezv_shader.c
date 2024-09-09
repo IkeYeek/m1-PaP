@@ -5,9 +5,9 @@
 #include <unistd.h>
 
 #include "error.h"
-#include "mesh3d_shader.h"
+#include "ezv_shader.h"
 
-const char *mesh3d_prefix = NULL;
+const char *ezv_prefix = NULL;
 
 static size_t file_size (const char *filename)
 {
@@ -27,7 +27,7 @@ static char *file_load (const char *file)
   size_t r;
 
   char filename[1024];
-  sprintf (filename, "%s/shaders/%s", (mesh3d_prefix ? mesh3d_prefix : "."),
+  sprintf (filename, "%s/shaders/%s", (ezv_prefix ? ezv_prefix : "."),
            file);
 
   s = file_size (filename);
@@ -85,7 +85,7 @@ static void link_program (unsigned int shader_program)
   }
 }
 
-GLuint mesh3d_shader_create (const char *vertex_shader,
+GLuint ezv_shader_create (const char *vertex_shader,
                              const char *geometry_shader,
                              const char *fragment_shader)
 {
@@ -128,7 +128,7 @@ GLuint mesh3d_shader_create (const char *vertex_shader,
   return program;
 }
 
-void mesh3d_shader_get_uniform_loc (GLuint program, const char *name,
+void ezv_shader_get_uniform_loc (GLuint program, const char *name,
                                     GLuint *location)
 {
   GLuint loc = glGetUniformLocation (program, name);
@@ -136,7 +136,7 @@ void mesh3d_shader_get_uniform_loc (GLuint program, const char *name,
   *location = loc;
 }
 
-void mesh3d_shader_bind_uniform_buf (GLuint program, const char *name,
+void ezv_shader_bind_uniform_buf (GLuint program, const char *name,
                                      GLuint blockbinding)
 {
   GLuint index = glGetUniformBlockIndex (program, name);

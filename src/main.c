@@ -1,18 +1,16 @@
-#ifdef ENABLE_SDL
-#include "mesh3d_sdl_gl.h"
-#endif
 
 #include "constants.h"
 #include "cpustat.h"
 #include "easypap.h"
 #include "events.h"
 #include "gpu.h"
-#include "graphics.h"
 #include "hooks.h"
 #include "trace_record.h"
 #ifdef ENABLE_SHA
 #include "hash.h"
 #endif
+#include "ezp_colors.h"
+#include "ezp_ctx.h"
 
 #include <fcntl.h>
 #include <hwloc.h>
@@ -28,17 +26,19 @@
 #define MAX_FILENAME 1024
 #define MAX_LABEL 64
 
-int max_iter            = 0;
-unsigned refresh_rate   = -1;
-unsigned do_display     = 1;
-unsigned vsync          = 1;
-unsigned soft_rendering = 0;
+int max_iter             = 0;
+unsigned refresh_rate    = 0;
+unsigned do_display      = 1;
+unsigned vsync           = 1;
+unsigned soft_rendering  = 0;
+unsigned picking_enabled = 0;
 
 static char *progname    = NULL;
 char *variant_name       = NULL;
 char *kernel_name        = NULL;
 char *tile_name          = NULL;
 char *draw_param         = NULL;
+char *config_param       = NULL;
 char *easypap_image_file = NULL;
 char *easypap_mesh_file  = NULL;
 
@@ -48,6 +48,7 @@ static char *output_file           = "./data/perf/data.csv";
 static char trace_label[MAX_LABEL] = {0};
 
 unsigned gpu_used                                              = 0;
+unsigned use_multiple_gpu                                      = 0;
 unsigned easypap_mpirun                                        = 0;
 unsigned easypap_gl_buffer_sharing                             = 1;
 static int _easypap_mpi_rank                                   = 0;
@@ -64,8 +65,9 @@ static unsigned list_gpu_variants                              = 0;
 static unsigned trace_starting_iteration                       = 1;
 static unsigned show_sha256_signature __attribute__ ((unused)) = 0;
 static unsigned show_iterations                                = 0;
-static unsigned use_scotch                                     = 0;
+unsigned use_scotch                                            = 0;
 static unsigned data_sync_on_host                              = 1;
+static unsigned do_shuffle_cells                               = 0;
 
 static hwloc_topology_t topology;
 
@@ -79,10 +81,9 @@ unsigned easypap_requested_number_of_threads (void)
     return atoi (str);
 }
 
-unsigned easypap_gpu_lane (task_type_t task_type)
+unsigned easypap_gpu_lane (task_type_t task_type, unsigned gpu_no)
 {
-  return easypap_requested_number_of_threads () +
-         (task_type == TASK_TYPE_COMPUTE ? 0 : 1);
+  return easypap_requested_number_of_threads () + gpu_no;
 }
 
 char *easypap_omp_schedule (void)
@@ -222,77 +223,6 @@ static void usage (int val);
 
 static void filter_args (int *argc, char *argv[]);
 
-static unsigned default_tile_size (void)
-{
-  return gpu_used ? DEFAULT_GPU_TILE_SIZE : DEFAULT_CPU_TILE_SIZE;
-}
-
-static void check_tile_size (void)
-{
-  if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
-    if (TILE_W == 0) {
-      if (NB_TILES_X == 0) {
-        TILE_W     = default_tile_size ();
-        NB_TILES_X = DIM / TILE_W;
-      } else {
-        TILE_W = DIM / NB_TILES_X;
-      }
-    } else if (NB_TILES_X == 0) {
-      NB_TILES_X = DIM / TILE_W;
-    } else if (NB_TILES_X * TILE_W != DIM) {
-      exit_with_error (
-          "Inconsistency detected: NB_TILES_X (%d) x TILE_W (%d) != DIM (%d).",
-          NB_TILES_X, TILE_W, DIM);
-    }
-
-    if (DIM % TILE_W)
-      exit_with_error ("DIM (%d) is not a multiple of TILE_W (%d)!", DIM,
-                       TILE_W);
-
-    if (TILE_H == 0) {
-      if (NB_TILES_Y == 0) {
-        TILE_H     = default_tile_size ();
-        NB_TILES_Y = DIM / TILE_H;
-      } else {
-        TILE_H = DIM / NB_TILES_Y;
-      }
-    } else if (NB_TILES_Y == 0) {
-      NB_TILES_Y = DIM / TILE_H;
-    } else if (NB_TILES_Y * TILE_H != DIM) {
-      exit_with_error (
-          "Inconsistency detected: NB_TILES_Y (%d) x TILE_H (%d) != DIM (%d).",
-          NB_TILES_Y, TILE_H, DIM);
-    }
-
-    if (DIM % TILE_H)
-      exit_with_error ("DIM (%d) is not a multiple of TILE_H (%d)!", DIM,
-                       TILE_H);
-  }
-}
-
-static void check_patch_size (void)
-{
-  if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-    NB_PATCHES = NB_TILES_X;
-
-    if (NB_PATCHES == 0) {
-      if (TILE_W > 0) // -ts or -tw used
-        NB_PATCHES = NB_CELLS / TILE_W;
-      else {
-        if (mesh.nb_patches > 0)
-          NB_PATCHES = 0;
-        else
-          NB_PATCHES = 2; // default = 2 patches
-        use_scotch = 1;
-      }
-    }
-
-    if (NB_PATCHES > NB_CELLS)
-      exit_with_error ("NB_PATCHES (%d) is greater than NB_CELLS (%d)!",
-                       NB_PATCHES, NB_CELLS);
-  }
-}
-
 static void generate_log_name (char *dest, size_t size, const char *prefix,
                                const char *extension, const int iterations)
 {
@@ -361,93 +291,93 @@ static void init_phases (void)
 
   hooks_establish_bindings (show_gpu_config | list_gpu_variants);
 
+  if (debug_enabled ('d')) {
+    picking_enabled = 1;
+    if (gpu_used)
+      easypap_gl_buffer_sharing = 0; // Force data sync on host in data debugging mode
+  }
+
   if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
     int flags = 0;
 
     mesh_data_init ();
-    check_patch_size ();
 
     if (use_scotch)
       flags |= MESH3D_PART_USE_SCOTCH;
-    if (debug_enabled ('m'))
+    if (debug_enabled ('m') | picking_enabled)
       flags |= MESH3D_PART_SHOW_FRONTIERS;
 
+    if (do_shuffle_cells) {
+      if (!NB_PATCHES) // force repartitionning
+        NB_PATCHES = easypap_mesh_desc.nb_patches;
+      mesh3d_shuffle_all_cells (&easypap_mesh_desc);
+    }
+
     // NB_PATCHES == 0  =>  do not repartition
-    mesh3d_obj_partition (&mesh, NB_PATCHES, flags);
-    NB_PATCHES = mesh.nb_patches;
+    mesh3d_obj_partition (&easypap_mesh_desc, NB_PATCHES, flags);
+    NB_PATCHES = easypap_mesh_desc.nb_patches;
+  } else {
+    img_data_init ();
   }
 
-#ifdef ENABLE_SDL
   master_do_display = do_display;
 
   if (!(debug_enabled ('M') || easypap_proc_is_master ()))
     do_display = 0;
 
-  if (!do_display)
+  if (!do_display) {
     do_gmonitor = 0;
+    picking_enabled = 0;
+  }
+
+  ezp_colors_init ();
 
   // Create window, initialize rendering, preload image if appropriate
-  {
-    char title[1024];
-    SDL_Window *win = NULL;
-    int x, y, w;
-    const char *subtitle =
-        (easypap_mode == EASYPAP_MODE_3D_MESHES) ? "Patching" : "Tiling";
+  if (do_display) {
+    ezp_ctx_init ();
 
-    if (easypap_mpirun) {
-      sprintf (title,
-               "EasyPAP -- Process: [%d/%d]   Kernel: [%s]   Variant: [%s]   "
-               "%s: [%s]",
-               easypap_mpi_rank (), easypap_mpi_size (), kernel_name,
-               variant_name, subtitle, tile_name);
-    } else
-      sprintf (title, "EasyPAP -- Kernel: [%s]   Variant: [%s]   %s: [%s]",
-               kernel_name, variant_name, subtitle, tile_name);
+    ezp_ctx_create ((easypap_mode == EASYPAP_MODE_3D_MESHES)
+                        ? EZV_CTX_TYPE_MESH3D
+                        : EZV_CTX_TYPE_IMG2D);
 
     if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-      if (do_display) {
-        int flags = MESH3D_ENABLE_HUD | MESH3D_ENABLE_CLIPPING;
-        if (vsync)
-          flags |= MESH3D_ENABLE_VSYNC;
-        if (debug_enabled ('m')) {
-          flags |= MESH3D_ENABLE_PICKING;
-          picking_enabled = 1;
-        }
-        mesh3d_init ("lib/mesh3d");
-        ctx[nb_ctx++] = mesh3d_ctx_create (title, 0, 0, 1280, 960, flags);
-        mesh_data_init_hud (show_iterations);
-        mesh3d_set_mesh (ctx[0], &mesh);
+      ezv_mesh3d_set_mesh (ctx[0], &easypap_mesh_desc);
 
-        if (picking_enabled) // Use CPU colors to display debug information
-          mesh3d_use_cpu_colors (ctx[0]); // (selected patch, etc.)
-
-        win = mesh3d_sdl_window (ctx[0]);
-      }
+      mesh_data_init_huds (show_iterations);
     } else {
-      // graphics_init must be called even if do_display == FALSE
-      win = graphics_init (title);
-      if (show_iterations)
-        graphics_toggle_display_iteration_number ();
-    }
-#ifdef ENABLE_MONITORING
-    if (do_gmonitor) {
-      SDL_GetWindowPosition (win, &x, &y);
-      SDL_GetWindowSize (win, &w, NULL);
+      ezv_img2d_set_img (ctx[0], &easypap_img_desc);
 
-      gmonitor_init (x + w, y);
-
-      SDL_RaiseWindow (win);
+      img_data_init_huds (show_iterations);
     }
-#endif
+
+    if (picking_enabled) // Use CPU colors to display debug information
+      ezv_use_cpu_colors (ctx[0]); // (selected patch, etc.)
   }
-#else
-  if (!DIM)
-    DIM = DEFAULT_DIM;
-  PRINT_DEBUG ('i', "Init phase 0: DIM = %d\n", DIM);
-#endif
 
-  // At this point, we know the value of DIM (too late for cells!)
-  check_tile_size ();
+  if (the_config != NULL) {
+    the_config (config_param);
+    PRINT_DEBUG ('i', "Init phase 1: config() hook called\n");
+  } else {
+    PRINT_DEBUG ('i', "Init phase 1: [no config() hook defined]\n");
+  }
+
+  if (do_display) {
+    if (easypap_mode == EASYPAP_MODE_3D_MESHES)
+      mesh_data_set_default_palette_if_none_defined ();
+    else
+      img_data_set_default_palette_if_none_defined ();
+  }
+
+  if (the_tile_check != NULL)
+    the_tile_check ();
+
+  if (gpu_used) {
+    gpu_init (show_gpu_config, list_gpu_variants);
+    gpu_build_program (list_gpu_variants);
+    gpu_alloc_buffers ();
+    PRINT_DEBUG ('i', "Init phase 2: GPU initialized\n");
+  } else
+    PRINT_DEBUG ('i', "Init phase 2: [GPU init not required]\n");
 
 #ifdef ENABLE_MONITORING
 #ifdef ENABLE_TRACE
@@ -463,37 +393,27 @@ static void init_phases (void)
 
     set_default_trace_label ();
 
-    unsigned nb_gpus = 0;
-    if (gpu_used)
-      nb_gpus = easypap_number_of_gpus ();
-
     trace_record_init (filename, easypap_requested_number_of_threads (),
-                       nb_gpus, DIM, trace_label, trace_starting_iteration,
-                       do_cache);
+                       easypap_number_of_gpus (), DIM, trace_label,
+                       trace_starting_iteration, do_cache);
 
-    if (easypap_mesh_file != NULL)
+    if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
       trace_record_set_meshfile (easypap_mesh_file);
+
+      ezv_palette_name_t pal = mesh_data_get_palette ();
+      if (pal != EZV_PALETTE_UNDEFINED && pal != EZV_PALETTE_CUSTOM)
+        trace_record_set_palette (pal);
+    }
   }
 #endif
 #endif
 
-  if (the_config != NULL) {
-    the_config (draw_param);
-    PRINT_DEBUG ('i', "Init phase 1: config() hook called\n");
-  } else {
-    PRINT_DEBUG ('i', "Init phase 1: [no config() hook defined]\n");
+#ifdef ENABLE_MONITORING
+  if (do_gmonitor) {
+    gmonitor_init ();
+    ezv_ctx_raise (ctx[0]);
   }
-
-  if (the_tile_check != NULL)
-    the_tile_check ();
-
-  if (gpu_used) {
-    gpu_init (show_gpu_config, list_gpu_variants);
-    gpu_build_program (list_gpu_variants);
-    gpu_alloc_buffers ();
-    PRINT_DEBUG ('i', "Init phase 2: GPU initialized\n");
-  } else
-    PRINT_DEBUG ('i', "Init phase 2: [GPU init not required]\n");
+#endif
 
   // OpenCL context is initialized, so we can safely call kernel dependent
   // init() func which may allocate additional buffers.
@@ -526,24 +446,18 @@ static void init_phases (void)
   } else
     PRINT_DEBUG ('i', "Init phase 5: [first-touch policy not activated]\n");
 
-#ifdef ENABLE_SDL
+  // First touch has potentially been performed, so we can load the requested
+  // image (if any)
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
-    // Allocate surfaces and textures
-    graphics_alloc_images ();
-#endif
+    img_data_imgload ();
 
   // Appel de la fonction de dessin spécifique, si elle existe
   if (the_draw != NULL) {
     the_draw (draw_param);
     PRINT_DEBUG ('i', "Init phase 6: kernel-specific draw() hook called\n");
-  } else {
-#ifndef ENABLE_SDL
-    if (!do_first_touch || (the_first_touch == NULL))
-      img_data_replicate (); // touch the data
-#endif
+  } else
     PRINT_DEBUG ('i',
                  "Init phase 6: [no kernel-specific draw() hook defined]\n");
-  }
 
   if (gpu_used) {
     gpu_send_data ();
@@ -555,9 +469,53 @@ static inline void display_refresh (unsigned iter)
 {
   if (do_display) {
     if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
-      graphics_refresh (iter);
+      img_data_refresh (iter);
     else
       mesh_data_refresh (iter);
+  }
+}
+
+static void handle_events (SDL_Event *evt, int pause, int iterations)
+{
+  if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
+    mesh_data_process_event (evt, NULL);
+    if (pause)
+      mesh_data_refresh (iterations);
+  } else {
+    img_data_process_event (evt, NULL);
+    if (pause)
+      img_data_refresh (iterations);
+  }
+}
+
+static void force_data_sync (void)
+{
+  if (!data_sync_on_host) {
+    if (!hooks_refresh_img()) {
+      if (gpu_used)
+      gpu_retrieve_data ();
+    }
+  }
+  data_sync_on_host = 1;
+}
+
+static void do_data_sync_if_required (void)
+{
+  if (data_sync_on_host)
+    return;
+
+  if (gpu_used) {
+    if (easypap_gl_buffer_sharing)
+      return; // data displayed "in place" on GPU device
+
+    if (!hooks_refresh_img())  // call refresh_img in priority if defined
+      gpu_retrieve_data ();   // fall back to retrieve_data
+
+    data_sync_on_host = 1;
+  } else {
+    // On the CPU side, just check if refresh_img must be called
+    if (hooks_refresh_img ())
+      data_sync_on_host = 1;
   }
 }
 
@@ -589,21 +547,17 @@ int main (int argc, char **argv)
 
   iter_no = trace_starting_iteration;
 
-#ifdef ENABLE_SDL
   // version graphique
   if (master_do_display) {
     unsigned do_pause     = 0;
     unsigned step_by_step = 0;
 
-    if (gpu_used && easypap_mode == EASYPAP_MODE_2D_IMAGES)
-      graphics_share_texture_buffers ();
-
-    if (the_refresh_img && !(gpu_used && easypap_gl_buffer_sharing))
-      the_refresh_img ();
+    if (!(gpu_used && easypap_gl_buffer_sharing))
+      hooks_refresh_img ();
 
     display_refresh (iterations);
 
-    if (refresh_rate == -1)
+    if (refresh_rate == 0)
       refresh_rate = 1;
 
     if (start_in_pause && easypap_proc_is_master ()) {
@@ -612,7 +566,6 @@ int main (int argc, char **argv)
     }
 
     for (int quit = 0; !quit;) {
-
       int r = 0;
 
       if (step_by_step)
@@ -624,7 +577,6 @@ int main (int argc, char **argv)
           SDL_Event evt;
 
           r = easypap_get_event (&evt, do_pause | stable);
-
           if (r > 0) {
             switch (evt.type) {
 
@@ -657,17 +609,10 @@ int main (int argc, char **argv)
                 gmonitor_toggle_heat_mode ();
                 break;
               case SDLK_i:
-                if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
-                  graphics_toggle_display_iteration_number ();
-                else
-                  mesh_data_toggle_hud ();
+                ezp_ctx_ithud_toggle ();
                 break;
               default:
-                if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-                  mesh_data_process_event (&evt, NULL);
-                  if (do_pause)
-                    display_refresh (iterations);
-                }
+                handle_events (&evt, do_pause, iterations);
               }
               break;
 
@@ -677,20 +622,12 @@ int main (int argc, char **argv)
                 quit = 1;
                 break;
               default:
-                if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-                  mesh_data_process_event (&evt, NULL);
-                  if (do_pause)
-                    display_refresh (iterations);
-                }
+                handle_events (&evt, do_pause, iterations);
               }
               break;
 
             default:
-              if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-                mesh_data_process_event (&evt, NULL);
-                if (do_pause)
-                  display_refresh (iterations);
-              }
+              handle_events (&evt, do_pause, iterations);
             }
           }
 
@@ -734,31 +671,14 @@ int main (int argc, char **argv)
               iterations += refresh_rate;
 
             // Prepare screen refresh
-            if (the_refresh_img && !(gpu_used && easypap_gl_buffer_sharing)) {
-              the_refresh_img (); // priority is to call refresh_img if defined
-              data_sync_on_host = 1;
-            } else if (gpu_used) {
-              if ((picking_enabled && the_picking != NULL) ||
-                  !easypap_gl_buffer_sharing) {
-                gpu_retrieve_data ();
-                data_sync_on_host = 1;
-              }
-            }
+            do_data_sync_if_required ();
 
             if (do_thumbs && iterations >= trace_starting_iteration) {
-
-              if (!data_sync_on_host) {
-                if (the_refresh_img) {
-                  the_refresh_img ();
-                } else if (gpu_used) {
-                  gpu_retrieve_data ();
-                }
-              }
-              data_sync_on_host = 1;
+              force_data_sync ();
 
               if (easypap_proc_is_master ()) {
                 if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
-                  graphics_save_thumbnail (iter_no++);
+                  img_data_save_thumbnail (iter_no++);
                 else
                   mesh_data_save_thumbnail (iter_no++);
               }
@@ -770,19 +690,16 @@ int main (int argc, char **argv)
       if (stable && quit_when_done)
         quit = 1;
     }
-  } else
-#endif // ENABLE_SDL
-  {
-    // Version non graphique
+  } else {
+    // Version non graphique (--no-display)
     long temps;
     struct timeval t1, t2;
     int n;
 
-    if (trace_may_be_used | do_thumbs)
-      refresh_rate = 1;
-
-    if (refresh_rate == -1) {
-      if (max_iter)
+    if (refresh_rate == 0) {
+      if (trace_may_be_used | do_thumbs)
+        refresh_rate = 1;
+      else if (max_iter)
         refresh_rate = max_iter;
       else
         refresh_rate = INT_MAX;
@@ -795,7 +712,6 @@ int main (int argc, char **argv)
         iterations = max_iter;
         stable     = 1;
       } else {
-
         if (max_iter && iterations + refresh_rate > max_iter)
           refresh_rate = max_iter - iterations;
 
@@ -818,26 +734,17 @@ int main (int argc, char **argv)
         } else
           iterations += refresh_rate;
 
-#ifdef ENABLE_SDL
         if (do_thumbs && iterations >= trace_starting_iteration) {
 
-          if (!data_sync_on_host) {
-            if (the_refresh_img) {
-              the_refresh_img ();
-            } else if (gpu_used) {
-              gpu_retrieve_data ();
-            }
-          }
-          data_sync_on_host = 1;
+          force_data_sync ();
 
           if (easypap_proc_is_master ()) {
             if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
-              graphics_save_thumbnail (iter_no++);
+              img_data_save_thumbnail (iter_no++);
             else
               mesh_data_save_thumbnail (iter_no++);
           }
         }
-#endif
       }
     }
 
@@ -869,14 +776,7 @@ int main (int argc, char **argv)
   if (show_sha256_signature) {
     char filename[MAX_FILENAME];
 
-    if (!data_sync_on_host) {
-      if (the_refresh_img) {
-        the_refresh_img ();
-      } else if (gpu_used) {
-        gpu_retrieve_data ();
-      }
-    }
-    data_sync_on_host = 1;
+    force_data_sync ();
 
     if (easypap_proc_is_master ()) {
       generate_log_name (filename, MAX_FILENAME, "data/hash/", "sha256",
@@ -894,14 +794,7 @@ int main (int argc, char **argv)
   // Check if final image should be dumped on disk
   if (do_dump) {
 
-    if (!data_sync_on_host) {
-      if (the_refresh_img) {
-        the_refresh_img ();
-      } else if (gpu_used) {
-        gpu_retrieve_data ();
-      }
-    }
-    data_sync_on_host = 1;
+    force_data_sync ();
 
     if (easypap_proc_is_master ()) {
       char filename[MAX_FILENAME];
@@ -909,7 +802,8 @@ int main (int argc, char **argv)
       if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
         generate_log_name (filename, MAX_FILENAME, "data/dump/", "png",
                            iterations);
-        graphics_dump_image_to_file (filename);
+        img_data_dump_to_file (filename);
+        printf ("Image data dumped to %s\n", filename);
       } else {
         generate_log_name (filename, MAX_FILENAME, "data/dump/", "raw",
                            iterations);
@@ -928,10 +822,6 @@ int main (int argc, char **argv)
 
   if (the_finalize != NULL)
     the_finalize ();
-
-#ifdef ENABLE_SDL
-  graphics_clean ();
-#endif
 
   img_data_free ();
 
@@ -957,7 +847,7 @@ static void usage (int val)
       stderr,
       "options can be:\n"
       "\t-a\t| --arg <string>\t: pass argument <string> to draw function\n"
-      "\t-c\t| --counters\t\t: collect performance counters \n"
+      "\t-c\t| --config <string>\t: pass config argument <string> to config function\n"
       "\t-d\t| --debug <flags>\t: enable debug messages (see debug.h)\n"
       "\t-du\t| --dump\t\t: dump final image to disk\n"
       "\t-ft\t| --first-touch\t\t: touch memory on different cores\n"
@@ -968,8 +858,10 @@ static void usage (int val)
       "\t-lb\t| --label <name>\t: assign name <label> to current run\n"
       "\t-lgv\t| --list-gpu-variants\t: list GPU variants\n"
       "\t-l\t| --load-image <file>\t: use PNG image <file>\n"
-      "\t-lm\t| --load-mesh <file>\t: load 3D mesh from <file>\n"
+      "\t-lm(s)\t| --load-mesh <file>\t: load 3D mesh from <file> (use -lms to "
+      "shuffle cells)\n"
       "\t-m \t| --monitoring\t\t: enable graphical thread monitoring\n"
+      "\t-mg\t| --multi-gpu\t\t: use multiple GPUs if available\n"
       "\t-mpi\t| --mpirun <args>\t: pass <args> to the mpirun MPI process "
       "launcher\n"
       "\t-n\t| --no-display\t\t: avoid graphical display overhead\n"
@@ -980,6 +872,7 @@ static void usage (int val)
       "\t-of\t| --output-file <file>\t: output performance numbers in <file>\n"
       "\t-p\t| --pause\t\t: pause between iterations (press space to "
       "continue)\n"
+      "\t-pc\t| --perf-counters\t: collect performance counters \n"
       "\t-q\t| --quit\t\t: exit once iterations are done\n"
       "\t-r\t| --refresh-rate <N>\t: display only 1/Nth of images\n"
       "\t-s\t| --size <DIM>\t\t: use image of size DIM x DIM\n"
@@ -1053,11 +946,7 @@ static void filter_args (int *argc, char *argv[])
       warning (*argv, "ENABLE_OPENCL", "ENABLE_CUDA");
 #endif
     } else if (!strcmp (*argv, "--show-iterations") || !strcmp (*argv, "-si")) {
-#ifdef ENABLE_SDL
       show_iterations = 1;
-#else
-      warning (*argv, "ENABLE_SDL", NULL);
-#endif
     } else if (!strcmp (*argv, "--show-hash") || !strcmp (*argv, "-sh")) {
 #ifdef ENABLE_SHA
       show_sha256_signature = 1;
@@ -1076,18 +965,14 @@ static void filter_args (int *argc, char *argv[])
     } else if (!strcmp (*argv, "--first-touch") || !strcmp (*argv, "-ft")) {
       do_first_touch = 1;
     } else if (!strcmp (*argv, "--monitoring") || !strcmp (*argv, "-m")) {
-#ifndef ENABLE_SDL
-      warning (*argv, "ENABLE_SDL", NULL);
-#else
       do_gmonitor = 1;
-#endif
     } else if (!strcmp (*argv, "--trace") || !strcmp (*argv, "-t")) {
 #ifndef ENABLE_TRACE
       warning (*argv, "ENABLE_TRACE", NULL);
 #else
       trace_may_be_used = 1;
 #endif
-    } else if (!strcmp (*argv, "--counters") || !strcmp (*argv, "-c")) {
+    } else if (!strcmp (*argv, "--perf-counters") || !strcmp (*argv, "-pc")) {
 #ifndef ENABLE_PAPI
       warning (*argv, "ENABLE_PAPI", NULL);
 #else
@@ -1130,35 +1015,29 @@ static void filter_args (int *argc, char *argv[])
       trace_may_be_used        = 1;
 #endif
     } else if (!strcmp (*argv, "--thumbnails") || !strcmp (*argv, "-tn")) {
-#ifndef ENABLE_SDL
-      warning (*argv, "ENABLE_SDL", NULL);
-#else
       do_thumbs = 1;
-#endif
     } else if (!strcmp (*argv, "--thumbnails-iter") ||
                !strcmp (*argv, "-tni")) {
       if (*argc == 1)
         usage_error ("Error: starting iteration is missing");
       (*argc)--;
       argv++;
-#ifndef ENABLE_SDL
-      warning (*argv, "ENABLE_SDL", NULL);
-#else
       trace_starting_iteration = atoi (*argv);
       do_thumbs                = 1;
-#endif
     } else if (!strcmp (*argv, "--dump") || !strcmp (*argv, "-du")) {
-#ifndef ENABLE_SDL
-      warning (*argv, "ENABLE_SDL", NULL);
-#else
       do_dump = 1;
-#endif
     } else if (!strcmp (*argv, "--arg") || !strcmp (*argv, "-a")) {
       if (*argc == 1)
         usage_error ("Error: parameter string is missing");
       (*argc)--;
       argv++;
       draw_param = *argv;
+    } else if (!strcmp (*argv, "--config") || !strcmp (*argv, "-c")) {
+      if (*argc == 1)
+        usage_error ("Error: parameter string is missing");
+      (*argc)--;
+      argv++;
+      config_param = *argv;
     } else if (!strcmp (*argv, "--label") || !strcmp (*argv, "-lb")) {
       if (*argc == 1)
         usage_error ("Error: parameter string is missing");
@@ -1183,6 +1062,14 @@ static void filter_args (int *argc, char *argv[])
 #else
       warning (*argv, "ENABLE_OPENCL", "ENABLE_CUDA");
 #endif
+    } else if (!strcmp (*argv, "--multi-gpu") || !strcmp (*argv, "-mg")) {
+#if defined(ENABLE_OPENCL) || defined(ENABLE_CUDA)
+      gpu_used                  = GPU_CAN_BE_USED;
+      use_multiple_gpu          = 1;
+      easypap_gl_buffer_sharing = 0; // disable OpenGL buffer sharing
+#else
+      warning (*argv, "ENABLE_OPENCL", "ENABLE_CUDA");
+#endif
     } else if (!strcmp (*argv, "--kernel") || !strcmp (*argv, "-k")) {
       if (*argc == 1)
         usage_error ("Error: kernel name is missing");
@@ -1196,11 +1083,6 @@ static void filter_args (int *argc, char *argv[])
       argv++;
       tile_name = *argv;
     } else if (!strcmp (*argv, "--load-image") || !strcmp (*argv, "-l")) {
-#ifndef ENABLE_SDL
-      warning (*argv, "ENABLE_SDL", NULL);
-      (*argc)--;
-      argv++;
-#else
       if (easypap_image_file != NULL)
         usage_error ("Error: --load-image used multiple times");
       if (easypap_mesh_file != NULL)
@@ -1211,8 +1093,8 @@ static void filter_args (int *argc, char *argv[])
       (*argc)--;
       argv++;
       easypap_image_file = *argv;
-#endif
-    } else if (!strcmp (*argv, "--load-mesh") || !strcmp (*argv, "-lm")) {
+    } else if (!strcmp (*argv, "--load-mesh") || !strcmp (*argv, "-lm") ||
+               !strcmp (*argv, "-lms")) {
       if (easypap_mesh_file != NULL)
         usage_error ("Error: --load-mesh used multiple times");
       if (easypap_image_file != NULL)
@@ -1220,6 +1102,8 @@ static void filter_args (int *argc, char *argv[])
                      "exclusive options");
       if (*argc == 1)
         usage_error ("Error: filename is missing");
+      if (!strcmp (*argv, "-lms"))
+        do_shuffle_cells = 1;
       (*argc)--;
       argv++;
       easypap_mesh_file = *argv;
@@ -1275,23 +1159,16 @@ static void filter_args (int *argc, char *argv[])
       argv++;
       max_iter = atoi (*argv);
     } else if (!strcmp (*argv, "--refresh-rate") || !strcmp (*argv, "-r")) {
-#ifndef ENABLE_SDL
-      warning (*argv, "ENABLE_SDL", NULL);
-      (*argc)--;
-      argv++;
-#else
       if (*argc == 1)
         usage_error ("Error: refresh rate is missing");
       (*argc)--;
       argv++;
       refresh_rate = atoi (*argv);
-#endif
     } else if (!strcmp (*argv, "--debug") || !strcmp (*argv, "-d")) {
       if (*argc == 1)
         usage_error ("Error: debug flags list is missing");
       (*argc)--;
       argv++;
-
       debug_init (*argv);
     } else if (!strcmp (*argv, "--output-file") || !strcmp (*argv, "-of")) {
       if (*argc == 1)

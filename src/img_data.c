@@ -2,13 +2,19 @@
 #include <string.h>
 #include <sys/mman.h>
 
+#include "constants.h"
+#include "cppdefs.h"
 #include "debug.h"
 #include "error.h"
 #include "global.h"
+#include "gpu.h"
+#include "hooks.h"
 #include "img_data.h"
-#include "cppdefs.h"
 
-uint32_t *RESTRICT image = NULL, *RESTRICT alt_image = NULL;
+#define THUMBNAILS_SIZE 512
+
+uint32_t *RESTRICT image     = NULL;
+uint32_t *RESTRICT alt_image = NULL;
 
 unsigned DIM = 0;
 
@@ -16,6 +22,81 @@ unsigned TILE_W     = 0;
 unsigned TILE_H     = 0;
 unsigned NB_TILES_X = 0;
 unsigned NB_TILES_Y = 0;
+
+static ezv_palette_name_t the_data_palette = EZV_PALETTE_UNDEFINED;
+
+img2d_obj_t easypap_img_desc;
+
+static int picked_x  = -1;
+static int picked_y  = -1;
+static int coord_hud = -1;
+static int tile_hud  = -1;
+static int val_hud   = -1;
+
+static unsigned default_tile_size (void)
+{
+  return gpu_used ? DEFAULT_GPU_TILE_SIZE : DEFAULT_CPU_TILE_SIZE;
+}
+
+static void check_tile_size (void)
+{
+  if (TILE_W == 0) {
+    if (NB_TILES_X == 0) {
+      TILE_W     = default_tile_size ();
+      NB_TILES_X = DIM / TILE_W;
+    } else {
+      TILE_W = DIM / NB_TILES_X;
+    }
+  } else if (NB_TILES_X == 0) {
+    NB_TILES_X = DIM / TILE_W;
+  } else if (NB_TILES_X * TILE_W != DIM) {
+    exit_with_error (
+        "Inconsistency detected: NB_TILES_X (%d) x TILE_W (%d) != DIM (%d).",
+        NB_TILES_X, TILE_W, DIM);
+  }
+
+  if (DIM % TILE_W)
+    exit_with_error ("DIM (%d) is not a multiple of TILE_W (%d)!", DIM, TILE_W);
+
+  if (TILE_H == 0) {
+    if (NB_TILES_Y == 0) {
+      TILE_H     = default_tile_size ();
+      NB_TILES_Y = DIM / TILE_H;
+    } else {
+      TILE_H = DIM / NB_TILES_Y;
+    }
+  } else if (NB_TILES_Y == 0) {
+    NB_TILES_Y = DIM / TILE_H;
+  } else if (NB_TILES_Y * TILE_H != DIM) {
+    exit_with_error (
+        "Inconsistency detected: NB_TILES_Y (%d) x TILE_H (%d) != DIM (%d).",
+        NB_TILES_Y, TILE_H, DIM);
+  }
+
+  if (DIM % TILE_H)
+    exit_with_error ("DIM (%d) is not a multiple of TILE_H (%d)!", DIM, TILE_H);
+}
+
+void img_data_init (void)
+{
+  if (easypap_image_file != NULL) {
+    img2d_obj_init_from_file (&easypap_img_desc, easypap_image_file);
+    if (easypap_img_desc.width != easypap_img_desc.height)
+      exit_with_error ("EasyPAP only supports square images so far (width: %d "
+                       "!= height: %d)",
+                       easypap_img_desc.width, easypap_img_desc.height);
+    DIM = easypap_img_desc.height;
+  } else {
+    if (!DIM)
+      DIM = DEFAULT_DIM;
+
+    img2d_obj_init (&easypap_img_desc, DIM, DIM);
+  }
+
+  check_tile_size ();
+
+  PRINT_DEBUG ('i', "Init phase 0 (IMG2D mode) : DIM = %d\n", DIM);
+}
 
 void img_data_alloc (void)
 {
@@ -30,6 +111,12 @@ void img_data_alloc (void)
     exit_with_error ("Cannot allocate alternate image: mmap failed");
 
   PRINT_DEBUG ('i', "Init phase 4: images allocated\n");
+}
+
+void img_data_imgload (void)
+{
+  if (easypap_image_file != NULL)
+    img2d_obj_load (&easypap_img_desc, easypap_image_file, image);
 }
 
 void img_data_free (void)
@@ -50,130 +137,165 @@ void img_data_replicate (void)
   memcpy (alt_image, image, DIM * DIM * sizeof (uint32_t));
 }
 
-unsigned heat_to_rgb (float h) // 0.0 = cold, 1.0 = hot
+void img_data_set_default_palette_if_none_defined (void)
 {
-  int i;
-  float f, q, t;
+  if (do_display) {
+    if (nb_ctx < 1)
+      exit_with_error ("No img2d ctx created yet");
 
-  h = (1.0 - h) * 3.999999; // sector 0.0 to 4.0
-  i = h;
-  f = h - i; // factorial part of h
-  q = (1 - f);
-  t = (1 - q);
-
-  switch (i) {
-  case 0:
-    return rgba (255, t * 255, 0, 255);
-  case 1:
-    return rgba (q * 255, 255, 0, 255);
-  case 2:
-    return rgba (0, 255, t * 255, 255);
-  default:
-    return rgba (0, q * 255, 255, 255);
+    if (the_data_palette == EZV_PALETTE_UNDEFINED) {
+      the_data_palette = EZV_PALETTE_RGBA_PASSTHROUGH;
+      ezv_use_data_colors_predefined (ctx[0], the_data_palette);
+    }
   }
 }
 
-unsigned hsv_to_rgb (float h, float s, float v)
+void img_data_init_huds (int show)
 {
-  int i;
-  float f, p, q, t;
-  if (s == 0) {
-    // achromatic (grey)
-    int c = v * 255;
-    return rgba (c, c, c, 255);
-  }
+  ezp_ctx_ithud_init (show);
 
-  h *= 6; // sector 0 to 5
-  if (h == 6.0)
-    h = 0.0;
-  i = h;
-  f = h - i; // factorial part of h
-  p = v * (1 - s);
-  q = v * (1 - s * f);
-  t = v * (1 - s * (1 - f));
-
-  switch (i) {
-  case 0:
-    return rgba (v * 255, t * 255, p * 255, 255);
-  case 1:
-    return rgba (q * 255, v * 255, p * 255, 255);
-  case 2:
-    return rgba (p * 255, v * 255, t * 255, 255);
-  case 3:
-    return rgba (p * 255, q * 255, v * 255, 255);
-  case 4:
-    return rgba (t * 255, p * 255, v * 255, 255);
-  default: // case 5:
-    return rgba (v * 255, p * 255, q * 255, 255);
+  if (picking_enabled) {
+    coord_hud = ezv_hud_alloc (ctx[0]);
+    tile_hud  = ezv_hud_alloc (ctx[0]);
+    if (the_2d_debug == NULL) {
+      val_hud = ezv_hud_alloc (ctx[0]);
+      ezv_hud_on (ctx[0], val_hud);
+    }
   }
 }
 
-static int cmap[] = {
-    0,   0,   255, 0,   0,   255, 1,   2,   254, 2,   4,   253, 3,   6,   252,
-    4,   9,   251, 5,   12,  250, 6,   16,  249, 7,   21,  248, 8,   26,  247,
-    9,   32,  246, 10,  39,  245, 11,  46,  244, 12,  53,  243, 13,  61,  242,
-    14,  69,  241, 15,  78,  240, 16,  87,  239, 17,  96,  238, 18,  105, 237,
-    19,  114, 236, 20,  123, 235, 21,  133, 234, 22,  142, 233, 23,  151, 232,
-    24,  160, 231, 25,  169, 230, 26,  178, 229, 27,  186, 228, 28,  194, 227,
-    29,  202, 226, 30,  209, 225, 31,  216, 224, 32,  223, 223, 33,  229, 222,
-    34,  234, 221, 35,  239, 220, 36,  243, 219, 37,  246, 218, 38,  249, 217,
-    39,  251, 216, 40,  253, 215, 41,  253, 214, 42,  253, 213, 43,  253, 212,
-    44,  252, 211, 45,  250, 210, 46,  247, 209, 47,  244, 208, 48,  240, 207,
-    49,  235, 206, 50,  230, 205, 51,  225, 204, 52,  218, 203, 53,  212, 202,
-    54,  205, 201, 55,  197, 200, 56,  189, 199, 57,  181, 198, 58,  172, 197,
-    59,  163, 196, 60,  154, 195, 61,  145, 194, 62,  136, 193, 63,  127, 192,
-    64,  117, 191, 65,  108, 190, 66,  99,  189, 67,  90,  188, 68,  81,  187,
-    69,  72,  186, 70,  64,  185, 71,  56,  184, 72,  48,  183, 73,  41,  182,
-    74,  35,  181, 75,  28,  180, 76,  23,  179, 77,  18,  178, 78,  13,  177,
-    79,  9,   176, 80,  6,   175, 81,  3,   174, 82,  1,   173, 83,  0,   172,
-    84,  0,   171, 85,  0,   170, 86,  0,   169, 87,  2,   168, 88,  4,   167,
-    89,  7,   166, 90,  10,  165, 91,  14,  164, 92,  19,  163, 93,  24,  162,
-    94,  30,  161, 95,  37,  160, 96,  44,  159, 97,  51,  158, 98,  59,  157,
-    99,  67,  156, 100, 75,  155, 101, 84,  154, 102, 93,  153, 103, 102, 152,
-    104, 111, 151, 105, 120, 150, 106, 130, 149, 107, 139, 148, 108, 148, 147,
-    109, 157, 146, 110, 166, 145, 111, 175, 144, 112, 184, 143, 113, 192, 142,
-    114, 200, 141, 115, 207, 140, 116, 214, 139, 117, 221, 138, 118, 227, 137,
-    119, 232, 136, 120, 237, 135, 121, 241, 134, 122, 245, 133, 123, 248, 132,
-    124, 250, 131, 125, 252, 130, 126, 253, 129, 127, 254, 128, 128, 253, 127,
-    129, 252, 126, 130, 250, 125, 131, 248, 124, 132, 245, 123, 133, 241, 122,
-    134, 237, 121, 135, 232, 120, 136, 227, 119, 137, 221, 118, 138, 214, 117,
-    139, 207, 116, 140, 200, 115, 141, 192, 114, 142, 184, 113, 143, 175, 112,
-    144, 166, 111, 145, 157, 110, 146, 148, 109, 147, 139, 108, 148, 130, 107,
-    149, 120, 106, 150, 111, 105, 151, 102, 104, 152, 93,  103, 153, 84,  102,
-    154, 75,  101, 155, 67,  100, 156, 59,  99,  157, 51,  98,  158, 44,  97,
-    159, 37,  96,  160, 30,  95,  161, 24,  94,  162, 19,  93,  163, 14,  92,
-    164, 10,  91,  165, 7,   90,  166, 4,   89,  167, 2,   88,  168, 0,   87,
-    169, 0,   86,  170, 0,   85,  171, 0,   84,  172, 1,   83,  173, 3,   82,
-    174, 6,   81,  175, 9,   80,  176, 13,  79,  177, 18,  78,  178, 23,  77,
-    179, 28,  76,  180, 35,  75,  181, 41,  74,  182, 48,  73,  183, 56,  72,
-    184, 64,  71,  185, 72,  70,  186, 81,  69,  187, 90,  68,  188, 99,  67,
-    189, 108, 66,  190, 117, 65,  191, 126, 64,  192, 136, 63,  193, 145, 62,
-    194, 154, 61,  195, 163, 60,  196, 172, 59,  197, 181, 58,  198, 189, 57,
-    199, 197, 56,  200, 205, 55,  201, 212, 54,  202, 218, 53,  203, 225, 52,
-    204, 230, 51,  205, 235, 50,  206, 240, 49,  207, 244, 48,  208, 247, 47,
-    209, 250, 46,  210, 252, 45,  211, 253, 44,  212, 253, 43,  213, 253, 42,
-    214, 253, 41,  215, 251, 40,  216, 249, 39,  217, 246, 38,  218, 243, 37,
-    219, 239, 36,  220, 234, 35,  221, 229, 34,  222, 223, 33,  223, 216, 32,
-    224, 209, 31,  225, 202, 30,  226, 194, 29,  227, 186, 28,  228, 178, 27,
-    229, 169, 26,  230, 160, 25,  231, 151, 24,  232, 142, 23,  233, 133, 22,
-    234, 123, 21,  235, 114, 20,  236, 105, 19,  237, 96,  18,  238, 87,  17,
-    239, 78,  16,  240, 69,  15,  241, 61,  14,  242, 53,  13,  243, 46,  12,
-    244, 39,  11,  245, 32,  10,  246, 26,  9,   247, 21,  8,   248, 16,  7,
-    249, 12,  6,   250, 8,   5,   251, 5,   4,   252, 3,   3,   253, 1,   2,
-    255, 0,   1,   255, 0,   0};
+void img_data_refresh (unsigned iter)
+{
+  ezp_ctx_ithud_set (iter);
+
+  if (picking_enabled) {
+    if (the_2d_debug != NULL)
+      the_2d_debug (picked_x, picked_y);
+    else {
+      if (picked_x == -1 || picked_y == -1)
+        ezv_hud_set (ctx[0], val_hud, NULL);
+      else {
+        uint32_t v = cur_img (picked_y, picked_x);
+        ezv_hud_set (ctx[0], val_hud, "RGBA: %02X %02X %02X %02X", ezv_c2r (v),
+                     ezv_c2g (v), ezv_c2b (v), ezv_c2a (v));
+      }
+    }
+  }
+
+  // If computations were performed on CPU (that is, in the 'image' array), copy
+  // data into texture buffer Otherwise (GPU), data are already in place
+  if (!gpu_used || !easypap_gl_buffer_sharing)
+    ezv_set_data_colors (ctx[0], image);
+  else
+    gpu_update_texture ();
+
+  ezv_render (ctx, nb_ctx);
+}
+
+void img_data_dump_to_file (char *filename)
+{
+  img2d_obj_store (&easypap_img_desc, filename, image);
+}
+
+void img_data_save_thumbnail (unsigned iteration)
+{
+  char filename[1024];
+
+  sprintf (filename, "%s/thumb_%04d.png", DEFAULT_EZV_TRACE_DIR, iteration);
+
+  if (easypap_img_desc.width > THUMBNAILS_SIZE) {
+    img2d_obj_store_resized (&easypap_img_desc, filename, image,
+                             THUMBNAILS_SIZE, THUMBNAILS_SIZE);
+  } else {
+    // Image is small enough, so store as is
+    img2d_obj_store (&easypap_img_desc, filename, image);
+  }
+}
+
+static void img_data_do_pick (void)
+{
+  int px, py;
+
+  ezv_perform_2D_picking (ctx, 1, &px, &py);
+
+  if (px != picked_x || py != picked_y) { // focus has changed
+    picked_x = px;
+    picked_y = py;
+
+    ezv_reset_cpu_colors (ctx[0]);
+
+    if (px != -1 && py != -1) {
+      ezv_hud_on (ctx[0], coord_hud);
+      ezv_hud_set (ctx[0], coord_hud, "xy: (%d, %d)", px, py);
+
+      int tilex = px / TILE_W;
+      int tiley = py / TILE_H;
+
+      ezv_hud_on (ctx[0], tile_hud);
+      ezv_hud_set (ctx[0], tile_hud, "Tilexy: (%d, %d)", tilex, tiley);
+
+      if (the_2d_overlay != NULL)
+        the_2d_overlay (px, py);
+      else {
+        // highlight tile
+        ezv_set_cpu_color_2D (ctx[0], tilex * TILE_W, TILE_W, tiley * TILE_H,
+                              TILE_H, ezv_rgba (0xFF, 0xFF, 0xFF, 0xA0));
+        // highlight pixel
+        ezv_set_cpu_color_2D (ctx[0], px, 1, py, 1,
+                              ezv_rgba (0xFF, 0x00, 0x00, 0xC0));
+      }
+    } else {
+      ezv_hud_off (ctx[0], coord_hud);
+      ezv_hud_off (ctx[0], tile_hud);
+    }
+  }
+}
+
+void img_data_process_event (SDL_Event *event, int *refresh)
+{
+  int pick;
+  ezv_process_event (ctx, nb_ctx, event, refresh, &pick);
+  if (picking_enabled && pick)
+    img_data_do_pick ();
+}
+
+// Color utilities
+
+const int heat_size       = 5;
+static vec4 heat_colors[] = {{0.0f, 0.0f, 1.0f, 1.0f},  // blue
+                             {0.0f, 1.0f, 1.0f, 1.0f},  // cyan
+                             {0.0f, 1.0f, 0.0f, 1.0f},  // green
+                             {1.0f, 1.0f, 0.0f, 1.0f},  // yellow
+                             {1.0f, 0.0f, 0.0f, 1.0f}}; // red
+
+unsigned val_to_rgba (float h, vec4 colors[], int size)
+{
+  float scale = h * (float)(size - 1);
+  int ind     = scale;
+  float frac  = scale - ind;
+
+  vec4 theColor;
+  glm_vec4_mix (colors[ind], colors[ind + 1], frac, theColor);
+  glm_vec4_scale (theColor, 255.0, theColor);
+
+  return ezv_rgba (theColor[0], theColor[1], theColor[2], theColor[3]);
+}
+
+unsigned heat_to_rgb (float v) // 0.0 = cold, 1.0 = hot
+{
+  return val_to_rgba (v, heat_colors, heat_size);
+}
+
+const int gauss_size       = 7;
+static vec4 gauss_colors[] = {{0.0,    0.0, 1.0,    1.0},       // blue
+                              {0.1667, 1.0, 0.8333, 1.0}, //
+                              {0.3333, 0.0, 0.6666, 1.0}, //
+                              {0.5,    0.0, 0.5,    1.0}, //
+                              {0.6666, 1.0, 0.3333, 1.0},       //
+                              {0.8333, 1.0, 0.1667, 1.0}, //
+                              {1.0,    0.0, 0.0,    1.0}};      // red
 
 unsigned heat_to_3gauss_rgb (double v) // v is between 0.0 and 1.0
 {
-  int index = v * 255;
-
-  if (index == 256)
-    return rgba (cmap[3 * index], cmap[3 * index + 1], cmap[3 * index + 2],
-                 255);
-
-  double frac = v * 256 - index;
-  int r       = (1 - frac) * cmap[3 * index] + frac * cmap[3 * (index + 1)];
-  int g = (1 - frac) * cmap[3 * index + 1] + frac * cmap[3 * (index + 1) + 1];
-  int b = (1 - frac) * cmap[3 * index + 2] + frac * cmap[3 * (index + 1) + 2];
-
-  return rgba (r, g, b, 255);
+  return val_to_rgba (v, gauss_colors, gauss_size);
 }

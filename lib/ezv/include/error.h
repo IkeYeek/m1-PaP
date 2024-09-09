@@ -1,6 +1,6 @@
 
-#ifndef ERROR_IS_DEF
-#define ERROR_IS_DEF
+#ifndef ERROR_H
+#define ERROR_H
 
 #include <stdio.h>
 #include <stdlib.h>

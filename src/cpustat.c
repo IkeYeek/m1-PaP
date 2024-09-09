@@ -1,11 +1,11 @@
 #include "cpustat.h"
 #include "debug.h"
 #include "error.h"
+#include "ezp_colors.h"
+#include "ezv_rgba.h"
 #include "global.h"
 #include "gpu.h"
-#include "graphics.h"
 #include "time_macros.h"
-#include "trace_common.h"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -34,6 +34,13 @@ static unsigned MAX_WINDOW_HEIGHT     = 0;
 static unsigned WINDOW_HEIGHT         = 0;
 static unsigned WINDOW_WIDTH          = 0;
 static unsigned INITIAL_WINDOW_HEIGHT = 0;
+
+#define RMASK ezv_red_mask ()
+#define GMASK ezv_green_mask ()
+#define BMASK ezv_blue_mask ()
+#define AMASK ezv_alpha_mask ()
+#define BLACK_COL ezv_rgb (0, 0, 0)
+#define WHITE_COL ezv_rgb (255, 255, 255)
 
 static SDL_Window *win           = NULL;
 static SDL_Renderer *ren         = NULL;
@@ -72,22 +79,21 @@ static void cpustat_create_cpu_textures (void)
   Uint32 *restrict img =
       malloc (PERFMETER_WIDTH * PERFMETER_HEIGHT * sizeof (Uint32));
 
-  perf_frame = malloc (MAX_COLORS * sizeof (SDL_Texture *));
-  perf_fill  = malloc (MAX_COLORS * sizeof (SDL_Texture *));
+  perf_frame = malloc (EZP_MAX_COLORS * sizeof (SDL_Texture *));
+  perf_fill  = malloc (EZP_MAX_COLORS * sizeof (SDL_Texture *));
 
-  SDL_Surface *s =
-      SDL_CreateRGBSurfaceFrom (img, PERFMETER_WIDTH, PERFMETER_HEIGHT, 32,
-                                PERFMETER_WIDTH * sizeof (Uint32), 0xff000000,
-                                0x00ff0000, 0x0000ff00, 0x000000ff);
+  SDL_Surface *s = SDL_CreateRGBSurfaceFrom (
+      img, PERFMETER_WIDTH, PERFMETER_HEIGHT, 32,
+      PERFMETER_WIDTH * sizeof (Uint32), RMASK, GMASK, BMASK, AMASK);
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom failed: %s", SDL_GetError ());
 
-  for (int c = 0; c < MAX_COLORS; c++) {
+  for (int c = 0; c < EZP_MAX_COLORS; c++) {
     bzero (img, PERFMETER_WIDTH * PERFMETER_HEIGHT * sizeof (Uint32));
 
     for (int i = 0; i < PERFMETER_HEIGHT; i++)
       for (int j = 0; j < PERFMETER_WIDTH; j++)
-        img[i * PERFMETER_WIDTH + j] = cpu_colors[c];
+        img[i * PERFMETER_WIDTH + j] = ezp_cpu_colors[c];
 
     perf_fill[c] = SDL_CreateTextureFromSurface (ren, s);
 
@@ -115,21 +121,12 @@ static void cpustat_create_idleness_textures (void)
     exit_with_error ("SDL_CreateTexture failed: %s", SDL_GetError ());
 }
 
-static void unsigned_to_sdl_color (unsigned color, SDL_Color *sdlc)
-{
-  sdlc->a = color & 0xFF;
-  sdlc->b = (color >> 8) & 0xFF;
-  sdlc->g = (color >> 16) & 0xFF;
-  sdlc->r = color >> 24;
-}
-
 static void cpustat_create_text_texture (void)
 {
   SDL_Color col = {255, 255, 255, 255};
 
-  SDL_Surface *surface =
-      SDL_CreateRGBSurface (0, LEFT_MARGIN, WINDOW_HEIGHT, 32, 0xff000000,
-                            0x00ff0000, 0x0000ff00, 0x000000ff);
+  SDL_Surface *surface = SDL_CreateRGBSurface (0, LEFT_MARGIN, WINDOW_HEIGHT,
+                                               32, RMASK, GMASK, BMASK, AMASK);
   if (surface == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -199,10 +196,10 @@ static void cpustat_draw_perfmeters (void)
   dst.h = PERFMETER_HEIGHT;
 
   for (int c = 0; c < NBCORES + NBGPUS; c++) {
-    SDL_RenderCopy (ren, perf_frame[c % MAX_COLORS], &src, &dst);
+    SDL_RenderCopy (ren, perf_frame[c % EZP_MAX_COLORS], &src, &dst);
     dst.w = cpustat_activity_ratio (c) * PERFMETER_WIDTH;
     src.w = dst.w;
-    SDL_RenderCopy (ren, perf_fill[c % MAX_COLORS], &src, &dst);
+    SDL_RenderCopy (ren, perf_fill[c % EZP_MAX_COLORS], &src, &dst);
     dst.w = PERFMETER_WIDTH;
     src.w = dst.w;
     dst.y += PERFMETER_HEIGHT + INTERMARGIN;
@@ -227,9 +224,9 @@ static void cpustat_draw_idleness (void)
   {
     float idleness  = idle_total ();
     unsigned HEIGHT = idleness * BAR_HEIGHT;
-    unsigned red    = idleness * 255;
-    unsigned green  = (1.0 - idleness) * 255;
-    unsigned color  = (green << 8) + red;
+    uint8_t red     = idleness * 255;
+    uint8_t green   = (1.0 - idleness) * 255;
+    uint32_t color  = ezv_rgb (red, green, 0);
 
     for (int i = HISTOGRAM_HEIGHT - HEIGHT; i < HISTOGRAM_HEIGHT; i++)
       for (int j = HISTOGRAM_WIDTH - BAR_WIDTH; j < HISTOGRAM_WIDTH - 1; j++)
@@ -392,14 +389,14 @@ void cpustat_clean (void)
   }
 
   if (perf_fill != NULL) {
-    for (int c = 0; c < MAX_COLORS; c++)
+    for (int c = 0; c < EZP_MAX_COLORS; c++)
       free (perf_fill[c]);
     free (perf_fill);
     perf_fill = NULL;
   }
 
   if (perf_frame != NULL) {
-    for (int c = 0; c < MAX_COLORS; c++)
+    for (int c = 0; c < EZP_MAX_COLORS; c++)
       free (perf_frame[c]);
     free (perf_frame);
     perf_frame = NULL;

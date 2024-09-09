@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #include "error.h"
-#include "mesh3d.h"
+#include "ezv.h"
 
 // settings
 const unsigned int SCR_WIDTH  = 1024;
@@ -13,17 +13,18 @@ const unsigned int SCR_HEIGHT = 768;
 #define MAX_CTX 2
 
 static mesh3d_obj_t mesh;
-static mesh3d_ctx_t ctx[MAX_CTX] = {NULL, NULL};
-static unsigned nb_ctx           = 1;
-static int hud                   = -1;
+static ezv_ctx_t ctx[MAX_CTX] = {NULL, NULL};
+static unsigned nb_ctx        = 1;
+static int hud                = -1;
 
 static void do_pick (void)
 {
-  int p = mesh3d_perform_picking (ctx, nb_ctx);
+  int p = ezv_perform_1D_picking (ctx, nb_ctx);
   if (p == -1)
-    mesh3d_hud_set (ctx[0], hud, NULL);
+    ezv_hud_set (ctx[0], hud, NULL);
   else
-    mesh3d_hud_set (ctx[0], hud, "Part: %d", mesh3d_obj_get_patch_of_cell(&mesh, p));
+    ezv_hud_set (ctx[0], hud, "Part: %d",
+                 mesh3d_obj_get_patch_of_cell (&mesh, p));
 }
 
 static inline int get_event (SDL_Event *event, int blocking)
@@ -79,7 +80,7 @@ static void process_events (void)
 
   if (r > 0) {
     int pick;
-    mesh3d_process_event (ctx, nb_ctx, &event, NULL, &pick);
+    ezv_process_event (ctx, nb_ctx, &event, NULL, &pick);
     if (pick)
       do_pick ();
   }
@@ -109,38 +110,38 @@ static void load_mesh (int argc, char *argv[], mesh3d_obj_t *mesh)
     else if (!strcmp (argv[1], "--cylinder-volumus") ||
              !strcmp (argv[1], "-cy"))
       mesh3d_obj_build_cylinder_volume (mesh, 400, 200);
-    else if (!strcmp (argv[1], "--wall") ||
-             !strcmp (argv[1], "-w"))
+    else if (!strcmp (argv[1], "--wall") || !strcmp (argv[1], "-w"))
       mesh3d_obj_build_wall (mesh, 8);
     else
       mesh3d_obj_load (argv[1], mesh);
   } else
     mesh3d_obj_build_default (mesh);
 
-  mesh3d_obj_partition (mesh, (nb_patches == -1 ? 2 : nb_patches), MESH3D_PART_USE_SCOTCH | MESH3D_PART_SHOW_FRONTIERS);
+  mesh3d_obj_partition (mesh, (nb_patches == -1 ? 2 : nb_patches),
+                        MESH3D_PART_USE_SCOTCH | MESH3D_PART_SHOW_FRONTIERS);
 }
 
 int main (int argc, char *argv[])
 {
+  ezv_init (NULL);
+
   mesh3d_obj_init (&mesh);
   load_mesh (argc, argv, &mesh);
 
   mesh3d_obj_store ("output.obj", &mesh, 1);
 
-  mesh3d_init (NULL);
-
   // Create SDL windows and initialize OpenGL context
-  ctx[0] = mesh3d_ctx_create ("Mesh", SDL_WINDOWPOS_CENTERED,
-                              SDL_WINDOWPOS_UNDEFINED, SCR_WIDTH, SCR_HEIGHT,
-                              MESH3D_ENABLE_PICKING | MESH3D_ENABLE_HUD |
-                                  MESH3D_ENABLE_CLIPPING);
-  hud    = mesh3d_hud_alloc (ctx[0]);
-  mesh3d_hud_toggle (ctx[0], hud);
+  ctx[0] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "Mesh", SDL_WINDOWPOS_CENTERED,
+                           SDL_WINDOWPOS_UNDEFINED, SCR_WIDTH, SCR_HEIGHT,
+                           EZV_ENABLE_PICKING | EZV_ENABLE_HUD |
+                               EZV_ENABLE_CLIPPING);
+  hud    = ezv_hud_alloc (ctx[0]);
+  ezv_hud_toggle (ctx[0], hud);
 
   // Attach mesh
-  mesh3d_set_mesh (ctx[0], &mesh);
+  ezv_mesh3d_set_mesh (ctx[0], &mesh);
 
-  mesh3d_configure_data_colors_predefined (ctx[0], MESH3D_PALETTE_RAINBOW);
+  ezv_use_data_colors_predefined (ctx[0], EZV_PALETTE_RAINBOW);
 
   float values[mesh.nb_cells];
 
@@ -148,12 +149,12 @@ int main (int argc, char *argv[])
     values[i] = (float)mesh3d_obj_get_patch_of_cell (&mesh, i) /
                 (float)(mesh.nb_patches - 1);
 
-  mesh3d_set_data_colors (ctx[0], values);
+  ezv_set_data_colors (ctx[0], values);
 
   // render loop
   while (1) {
     process_events ();
-    mesh3d_render (ctx, nb_ctx);
+    ezv_render (ctx, nb_ctx);
   }
 
   return 0;

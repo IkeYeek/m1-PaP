@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #include "error.h"
-#include "mesh3d.h"
+#include "ezv.h"
 
 #define CPU_COLORS 28
 static unsigned cpu_colors[CPU_COLORS] __attribute__ ((unused)) = {
@@ -46,15 +46,15 @@ const unsigned int SCR_HEIGHT = 768;
 #define MAX_CTX 2
 
 static mesh3d_obj_t mesh;
-static mesh3d_ctx_t ctx[MAX_CTX] = {NULL, NULL};
+static ezv_ctx_t ctx[MAX_CTX] = {NULL, NULL};
 
 static unsigned nb_ctx = 2;
 
 static void do_pick (void)
 {
-  int p = mesh3d_perform_picking (ctx, nb_ctx);
+  int p = ezv_perform_1D_picking (ctx, nb_ctx);
   if (p != -1)
-    mesh3d_set_cpu_color (ctx[1], p, 1, 0xFFFFFFFF);
+    ezv_set_cpu_color_1D (ctx[1], p, 1, 0xFFFFFFFF);
 }
 
 static inline int get_event (SDL_Event *event, int blocking)
@@ -110,7 +110,7 @@ static void process_events (void)
 
   if (r > 0) {
     int pick;
-    mesh3d_process_event (ctx, nb_ctx, &event, NULL, &pick);
+    ezv_process_event (ctx, nb_ctx, &event, NULL, &pick);
     if (pick)
       do_pick ();
   }
@@ -145,18 +145,22 @@ static void load_mesh (int argc, char *argv[], mesh3d_obj_t *mesh)
 
 int main (int argc, char *argv[])
 {
+  ezv_init (NULL);
+
   mesh3d_obj_init (&mesh);
   load_mesh (argc, argv, &mesh);
 
-  mesh3d_init (NULL);
-
   // Create SDL windows and initialize OpenGL context
-  ctx[0] =
-      mesh3d_ctx_create ("Data view", SDL_WINDOWPOS_CENTERED,
-                         SDL_WINDOWPOS_UNDEFINED, SCR_WIDTH, SCR_HEIGHT, MESH3D_ENABLE_CLIPPING);
+  ctx[0] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "Data view",
+                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_UNDEFINED,
+                           SCR_WIDTH, SCR_HEIGHT, EZV_ENABLE_CLIPPING);
+  ctx[1] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "CPU view",
+                           SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                           512, 384, EZV_ENABLE_PICKING | EZV_ENABLE_CLIPPING);
 
   // Attach mesh
-  mesh3d_set_mesh (ctx[0], &mesh);
+  ezv_mesh3d_set_mesh (ctx[0], &mesh);
+  ezv_mesh3d_set_mesh (ctx[1], &mesh);
 
   // Heat Palette (as simple as defining these five key colors)
   float colors[] = {0.0f, 0.0f, 1.0f, 1.0f,  // blue
@@ -165,7 +169,7 @@ int main (int argc, char *argv[])
                     1.0f, 1.0f, 0.0f, 1.0f,  // yellow
                     1.0f, 0.0f, 0.0f, 1.0f}; // red
 
-  mesh3d_configure_data_colors (ctx[0], colors, 5);
+  ezv_use_data_colors (ctx[0], colors, 5);
 
   float values[mesh.nb_cells];
 
@@ -174,25 +178,19 @@ int main (int argc, char *argv[])
     values[i] = (float)d / (float)(mesh.nb_cells / 2);
   }
 
-  mesh3d_set_data_colors (ctx[0], values);
-
-  ctx[1] = mesh3d_ctx_create ("CPU view", SDL_WINDOWPOS_UNDEFINED,
-                              SDL_WINDOWPOS_UNDEFINED, 512, 384,
-                              MESH3D_ENABLE_PICKING | MESH3D_ENABLE_CLIPPING);
-
-  mesh3d_set_mesh (ctx[1], &mesh);
+  ezv_set_data_colors (ctx[0], values);
 
   // Color cell according to CPU
-  mesh3d_use_cpu_colors (ctx[1]);
+  ezv_use_cpu_colors (ctx[1]);
 
   // Some initial colors…
   for (int c = 0; c < mesh.nb_cells; c++)
-    mesh3d_set_cpu_color (ctx[1], c, 1, cpu_colors[c % 14 + 14]);
+    ezv_set_cpu_color_1D (ctx[1], c, 1, cpu_colors[c % 14 + 14]);
 
   // render loop
   while (1) {
     process_events ();
-    mesh3d_render (ctx, nb_ctx);
+    ezv_render (ctx, nb_ctx);
   }
 
   return 0;
