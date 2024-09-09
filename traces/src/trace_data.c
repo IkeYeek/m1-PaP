@@ -4,7 +4,7 @@
 
 #include "error.h"
 #include "trace_data.h"
-#include "mesh3d.h"
+#include "ezv.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -46,7 +46,7 @@ void trace_data_init (trace_t *tr, unsigned num)
   tr->first_iteration = 1;
   tr->label           = NULL;
   tr->mesh_file       = NULL;
-  tr->palette         = MESH3D_PALETTE_LINEAR;
+  tr->palette         = EZV_PALETTE_LINEAR;
   tr->task_ids        = NULL;
   tr->task_ids_count  = 0;
   tr->has_cache_data  = 0;
@@ -88,7 +88,7 @@ void trace_data_set_meshfile (trace_t *tr, char *filename)
   strcpy (tr->mesh_file, filename);
 }
 
-void trace_data_set_palette (trace_t *tr, mesh3d_palette_name_t palette)
+void trace_data_set_palette (trace_t *tr, ezv_palette_name_t palette)
 {
   tr->palette = palette;
 }

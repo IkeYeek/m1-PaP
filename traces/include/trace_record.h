@@ -17,7 +17,7 @@ void trace_record_declare_task_ids (char *task_ids[]);
 void trace_record_commit_task_ids (void);
 void __trace_record_start_iteration ();
 void __trace_record_end_iteration ();
-void __trace_record_start_tile (long time, unsigned cpu);
+void __trace_record_start_tile (long time, unsigned cpu, task_type_t task_type);
 void __trace_record_end_tile (long time, unsigned cpu, unsigned x, unsigned y,
                               unsigned w, unsigned h, int task_type,
                               int task_id, int64_t *counters);
@@ -38,10 +38,10 @@ void trace_record_finalize (void);
       __trace_record_end_iteration ();                                         \
   } while (0)
 
-#define trace_record_start_tile(t, c)                                          \
+#define trace_record_start_tile(t, c, tt)                                      \
   do {                                                                         \
     if (do_trace)                                                              \
-      __trace_record_start_tile ((t), (c));                                    \
+      __trace_record_start_tile ((t), (c), (tt));                              \
   } while (0)
 
 #define trace_record_end_tile(t, c, x, y, w, h, tt, tid, counters)             \

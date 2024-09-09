@@ -1,5 +1,5 @@
 
-#include "mesh3d_sdl_gl.h"
+#include "ezv_sdl_gl.h"
 #include "error.h"
 #include "trace_common.h"
 #include "trace_data.h"

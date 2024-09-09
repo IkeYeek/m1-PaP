@@ -6,7 +6,7 @@
 #include "list.h"
 #include "trace_common.h"
 #include "perfcounter.h"
-#include "mesh3d.h"
+#include "ezv.h"
 
 typedef int64_t perfcounter_array_t[EASYPAP_NB_COUNTERS];
 
@@ -44,7 +44,7 @@ typedef struct
   unsigned has_cache_data;
   char *label;
   char *mesh_file;
-  mesh3d_palette_name_t palette;
+  ezv_palette_name_t palette;
   char **task_ids;
   unsigned task_ids_count;
   struct list_head *per_cpu;
@@ -65,7 +65,7 @@ void trace_data_set_do_cache (trace_t *tr, unsigned use_cache);
 void trace_data_set_first_iteration (trace_t *tr, unsigned it);
 void trace_data_set_label (trace_t *tr, char *label);
 void trace_data_set_meshfile (trace_t *tr, char *filename);
-void trace_data_set_palette (trace_t *tr, mesh3d_palette_name_t palette);
+void trace_data_set_palette (trace_t *tr, ezv_palette_name_t palette);
 
 void trace_data_alloc_task_ids (trace_t *tr, unsigned count);
 void trace_data_add_taskid (trace_t *tr, char *id);

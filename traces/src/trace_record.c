@@ -25,11 +25,14 @@ unsigned trace_may_be_used = 0;
 static unsigned cache_activated = 0;
 
 static unsigned task_ids_count = 0;
+static unsigned NB_CPUS        = 0;
 
 void trace_record_init (char *file, unsigned cpu, unsigned gpu, unsigned dim,
                         char *label, unsigned starting_iteration,
                         unsigned is_cache_enabled)
 {
+  NB_CPUS = cpu;
+
   fut_set_filename (file);
   enable_fut_flush ();
 
@@ -103,9 +106,18 @@ void __trace_record_end_iteration ()
   FUT_DO_PROBE0 (TRACE_END_ITER);
 }
 
-void __trace_record_start_tile (long time, unsigned cpu)
+static int cpu_to_lane (int cpu, task_type_t task_type)
 {
-  FUT_DO_PROBE2 (TRACE_BEGIN_TILE, time, cpu);
+  if (cpu < NB_CPUS)
+    return cpu;
+
+  return NB_CPUS + 2 * (cpu - NB_CPUS) +
+         (task_type == TASK_TYPE_COMPUTE ? 0 : 1);
+}
+
+void __trace_record_start_tile (long time, unsigned cpu, task_type_t task_type)
+{
+  FUT_DO_PROBE2 (TRACE_BEGIN_TILE, time, cpu_to_lane (cpu, task_type));
 }
 
 void __trace_record_end_tile (long time, unsigned cpu, unsigned x, unsigned y,
@@ -119,12 +131,14 @@ void __trace_record_end_tile (long time, unsigned cpu, unsigned x, unsigned y,
         (task_ids_count == 1)
             ? ". Probable cause: monitoring_declare_task_ids not called"
             : "");
+
   if (cache_activated)
-    FUT_DO_PROBE9 (TRACE_END_TILE, time, cpu, x, y, w, h,
-                   INT_COMBINE (task_type, task_id), counters[0], counters[1]);
+    FUT_DO_PROBE9 (TRACE_END_TILE, time, cpu_to_lane (cpu, task_type), x, y, w,
+                   h, INT_COMBINE (task_type, task_id), counters[0],
+                   counters[1]);
   else
-    FUT_DO_PROBE7 (TRACE_END_TILE, time, cpu, x, y, w, h,
-                   INT_COMBINE (task_type, task_id));
+    FUT_DO_PROBE7 (TRACE_END_TILE, time, cpu_to_lane (cpu, task_type), x, y, w,
+                   h, INT_COMBINE (task_type, task_id));
 }
 
 void __trace_record_tile (long start_time, unsigned cpu, unsigned x, unsigned y,
@@ -138,10 +152,13 @@ void __trace_record_tile (long start_time, unsigned cpu, unsigned x, unsigned y,
         (task_ids_count == 1)
             ? ". Probable cause: monitoring_declare_task_ids not called"
             : "");
+
   if (cache_activated)
-    FUT_DO_PROBE7 (TRACE_TILE, start_time, cpu, INT_COMBINE(x, y), INT_COMBINE(w, h),
+    FUT_DO_PROBE7 (TRACE_TILE, start_time, cpu_to_lane (cpu, task_type),
+                   INT_COMBINE (x, y), INT_COMBINE (w, h),
                    INT_COMBINE (task_type, task_id), counters[0], counters[1]);
   else
-    FUT_DO_PROBE5 (TRACE_TILE, start_time, cpu, INT_COMBINE(x, y), INT_COMBINE(w, h),
+    FUT_DO_PROBE5 (TRACE_TILE, start_time, cpu_to_lane (cpu, task_type),
+                   INT_COMBINE (x, y), INT_COMBINE (w, h),
                    INT_COMBINE (task_type, task_id));
 }

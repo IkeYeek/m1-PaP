@@ -1,8 +1,7 @@
 #include "trace_graphics.h"
 #include "error.h"
-#include "mesh3d.h"
-#include "mesh3d_renderer.h"
-#include "trace_common.h"
+#include "ezp_colors.h"
+#include "ezv.h"
 
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
@@ -41,14 +40,14 @@ enum
 #define MAX_TASK_HEIGHT 44
 
 #define MAX_PREVIEW_DIM 512
-#define MIN_PREVIEW_DIM 256
+#define MIN_PREVIEW_DIM 128
 
 #define MAX_CACHE_WIDTH (100 + 2)
 
 #define MAGNIFICATION 2
 #define Y_MARGIN 2
 #define cpu_row_height(taskh) ((taskh) + 2 * Y_MARGIN + 1)
-#define task_height(space) ((space)-2 * Y_MARGIN - 1)
+#define task_height(space) ((space) - 2 * Y_MARGIN - 1)
 
 #define GANTT_WIDTH                                                            \
   (WINDOW_WIDTH -                                                              \
@@ -64,6 +63,13 @@ enum
 #define TILE_ALPHA 0x80
 #define BUTTON_ALPHA 60
 
+#define RMASK ezv_red_mask ()
+#define GMASK ezv_green_mask ()
+#define BMASK ezv_blue_mask ()
+#define AMASK ezv_alpha_mask ()
+#define BLACK_COL ezv_rgb (0, 0, 0)
+#define WHITE_COL ezv_rgb (255, 255, 255)
+
 static SDL_Texture **square_tex_bright = NULL;
 static SDL_Texture **square_tex_dark   = NULL;
 static SDL_Texture *black_square       = NULL;
@@ -71,12 +77,6 @@ static SDL_Texture *white_square       = NULL;
 static SDL_Texture *stat_frame_tex     = NULL;
 static SDL_Texture *stat_caption_tex   = NULL;
 static SDL_Texture *stat_background    = NULL;
-
-#define NB_CACHE_LEVELS 3
-
-static SDL_Texture *cache_tex[NB_CACHE_LEVELS] = {NULL, NULL, NULL};
-static unsigned cache_colors[NB_CACHE_LEVELS]  = {0xFFFF00FF, 0xFFC600FF,
-                                                  0xBF9503FF};
 
 static SDL_Texture **thumb_tex[MAX_TRACES] = {NULL, NULL};
 
@@ -162,8 +162,8 @@ struct
 
 // 3D meshes
 static mesh3d_obj_t mesh;
-static mesh3d_ctx_t ctx[MAX_TRACES] = {NULL, NULL};
-static int picked = -1;
+static ezv_ctx_t ctx[MAX_TRACES] = {NULL, NULL};
+static int picked                = -1;
 
 static inline unsigned layout_get_min_width (void)
 {
@@ -373,7 +373,7 @@ static inline int point_in_rect (const SDL_Point *p, const SDL_Rect *r)
 static inline int point_inside_mosaic (const SDL_Point *p, unsigned trace_num)
 {
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-    return mesh3d_ctx_is_in_focus (ctx[trace_num]);
+    return ezv_ctx_is_in_focus (ctx[trace_num]);
   } else
     return point_in_rect (p, &trace_display_info[trace_num].mosaic);
 }
@@ -533,11 +533,11 @@ static void create_task_textures (unsigned nb_cores)
 {
   Uint32 *restrict img = malloc (GANTT_WIDTH * TASK_HEIGHT * sizeof (Uint32));
 
-  perf_fill = malloc ((MAX_COLORS + 1) * sizeof (SDL_Texture *));
+  perf_fill = malloc ((EZP_MAX_COLORS + 1) * sizeof (SDL_Texture *));
 
-  SDL_Surface *s = SDL_CreateRGBSurfaceFrom (
-      img, GANTT_WIDTH, TASK_HEIGHT, 32, GANTT_WIDTH * sizeof (Uint32),
-      0xff000000, 0x00ff0000, 0x0000ff00, 0x000000ff);
+  SDL_Surface *s = SDL_CreateRGBSurfaceFrom (img, GANTT_WIDTH, TASK_HEIGHT, 32,
+                                             GANTT_WIDTH * sizeof (Uint32),
+                                             RMASK, GMASK, BMASK, AMASK);
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom () failed");
 
@@ -546,17 +546,17 @@ static void create_task_textures (unsigned nb_cores)
   float attenuation_depart         = 1.0;
   float attenuation_finale         = 0.3;
 
-  for (int c = 0; c < MAX_COLORS + 1; c++) {
+  for (int c = 0; c < EZP_MAX_COLORS + 1; c++) {
     bzero (img, GANTT_WIDTH * TASK_HEIGHT * sizeof (Uint32));
 
-    if (c == MAX_COLORS) // special treatment for white color
+    if (c == EZP_MAX_COLORS) // special treatment for white color
       attenuation_finale = 0.5;
 
     for (int j = 0; j < GANTT_WIDTH; j++) {
-      unsigned couleur = cpu_colors[c];
-      unsigned r       = couleur >> 24;
-      unsigned g       = couleur >> 16 & 255;
-      unsigned b       = couleur >> 8 & 255;
+      uint32_t couleur = ezp_cpu_colors[c];
+      uint8_t r       = ezv_c2r (couleur);
+      uint8_t g       = ezv_c2g (couleur);
+      uint8_t b       = ezv_c2b (couleur);
 
       if (j >= largeur_couleur_origine) {
         float coef =
@@ -569,7 +569,7 @@ static void create_task_textures (unsigned nb_cores)
       }
 
       for (int i = 0; i < TASK_HEIGHT; i++)
-        img[i * GANTT_WIDTH + j] = (r << 24) | (g << 16) | (b << 8) | 255;
+        img[i * GANTT_WIDTH + j] = ezv_rgb (r, g, b);
     }
 
     perf_fill[c] = SDL_CreateTextureFromSurface (renderer, s);
@@ -584,7 +584,7 @@ static void create_task_textures (unsigned nb_cores)
 
   img = malloc (width * height * sizeof (Uint32));
   s = SDL_CreateRGBSurfaceFrom (img, width, height, 32, width * sizeof (Uint32),
-                                0xff000000, 0x00ff0000, 0x0000ff00, 0x000000ff);
+                                RMASK, GMASK, BMASK, AMASK);
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom () failed");
 
@@ -592,19 +592,20 @@ static void create_task_textures (unsigned nb_cores)
   attenuation_finale = 1.0;
 
   for (int j = 0; j < width; j++) {
-    unsigned r = 130; // 106;
-    unsigned g = 130; // 106;
-    unsigned b = 165; // 138;
+    uint8_t r = 130;
+    uint8_t g = 130;
+    uint8_t b = 165;
 
     float coef =
         attenuation_depart +
         (((float)j) / width) * (attenuation_finale - attenuation_depart);
+
     r = r * coef + backgrd_color.r * (1.0 - coef);
     g = g * coef + backgrd_color.g * (1.0 - coef);
     b = b * coef + backgrd_color.b * (1.0 - coef);
 
     for (int i = 0; i < height; i++)
-      img[i * width + j] = (r << 24) | (g << 16) | (b << 8) | 255;
+      img[i * width + j] = ezv_rgb (r, g, b);
   }
 
   stat_background = SDL_CreateTextureFromSurface (renderer, s);
@@ -615,8 +616,8 @@ static void create_task_textures (unsigned nb_cores)
   // Cache stats frame
   img = malloc (MAX_CACHE_WIDTH * (MIN_TASK_HEIGHT + 2) * sizeof (Uint32));
   s   = SDL_CreateRGBSurfaceFrom (img, MAX_CACHE_WIDTH, MIN_TASK_HEIGHT + 2, 32,
-                                  MAX_CACHE_WIDTH * sizeof (Uint32), 0xff000000,
-                                  0x00ff0000, 0x0000ff00, 0x000000ff);
+                                  MAX_CACHE_WIDTH * sizeof (Uint32), RMASK, GMASK,
+                                  BMASK, AMASK);
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom failed: %s", SDL_GetError ());
 
@@ -624,40 +625,35 @@ static void create_task_textures (unsigned nb_cores)
     for (int j = 0; j < MAX_CACHE_WIDTH; j++)
       if (i == 0 || i == MIN_TASK_HEIGHT + 1 || j == 0 ||
           j == MAX_CACHE_WIDTH - 1)
-        img[i * MAX_CACHE_WIDTH + j] = 0xffffffff;
+        img[i * MAX_CACHE_WIDTH + j] = WHITE_COL;
       else
-        img[i * MAX_CACHE_WIDTH + j] = 0x000000ff;
+        img[i * MAX_CACHE_WIDTH + j] = BLACK_COL;
 
   stat_frame_tex = SDL_CreateTextureFromSurface (renderer, s);
 
   SDL_FreeSurface (s);
   free (img);
 
-  s = SDL_CreateRGBSurface (0, SQUARE_SIZE, SQUARE_SIZE, 32, 0xff000000,
-                            0x00ff0000, 0x0000ff00, 0x000000ff);
+  s = SDL_CreateRGBSurface (0, SQUARE_SIZE, SQUARE_SIZE, 32, RMASK, GMASK,
+                            BMASK, AMASK);
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurface () failed");
 
-  SDL_FillRect (s, NULL, 0x000000FF); // back
+  SDL_FillRect (s, NULL, BLACK_COL); // back
   black_square = SDL_CreateTextureFromSurface (renderer, s);
 
-  SDL_FillRect (s, NULL, 0xFFFFFFFF); // white
+  SDL_FillRect (s, NULL, WHITE_COL); // white
   white_square = SDL_CreateTextureFromSurface (renderer, s);
 
-  square_tex_bright = malloc ((MAX_COLORS + 1) * sizeof (SDL_Texture *));
-  square_tex_dark   = malloc ((MAX_COLORS + 1) * sizeof (SDL_Texture *));
+  square_tex_bright = malloc ((EZP_MAX_COLORS + 1) * sizeof (SDL_Texture *));
+  square_tex_dark   = malloc ((EZP_MAX_COLORS + 1) * sizeof (SDL_Texture *));
 
-  for (int c = 0; c < MAX_COLORS + 1; c++) {
-    SDL_FillRect (s, NULL, cpu_colors[c]);
+  for (int c = 0; c < EZP_MAX_COLORS + 1; c++) {
+    SDL_FillRect (s, NULL, ezp_cpu_colors[c]);
     square_tex_bright[c] = SDL_CreateTextureFromSurface (renderer, s);
     square_tex_dark[c]   = SDL_CreateTextureFromSurface (renderer, s);
     // Dark tiles are semi-transparent
     SDL_SetTextureAlphaMod (square_tex_dark[c], TILE_ALPHA);
-  }
-
-  for (int l = 0; l < NB_CACHE_LEVELS; l++) {
-    SDL_FillRect (s, NULL, cache_colors[l]);
-    cache_tex[l] = SDL_CreateTextureFromSurface (renderer, s);
   }
 
   SDL_FreeSurface (s);
@@ -773,13 +769,10 @@ static void create_task_ids_textures (TTF_Font *font)
 
 static void to_sdl_color (uint32_t src, SDL_Color *dst)
 {
-  dst->a = src & 0xFF;
-  src >>= 8;
-  dst->b = src & 0xFF;
-  src >>= 8;
-  dst->g = src & 0xFF;
-  src >>= 8;
-  dst->r = src;
+  dst->r = ezv_c2r (src);
+  dst->g = ezv_c2g (src);
+  dst->b = ezv_c2b (src);
+  dst->a = ezv_c2a (src);
 }
 
 static void blit_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
@@ -805,9 +798,8 @@ static void blit_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
 
 static void create_cpu_textures (TTF_Font *font)
 {
-  SDL_Surface *surface =
-      SDL_CreateRGBSurface (0, LEFT_MARGIN, WINDOW_HEIGHT, 32, 0xff000000,
-                            0x00ff0000, 0x0000ff00, 0x000000ff);
+  SDL_Surface *surface = SDL_CreateRGBSurface (0, LEFT_MARGIN, WINDOW_HEIGHT,
+                                               32, RMASK, GMASK, BMASK, AMASK);
   if (surface == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -824,7 +816,7 @@ static void create_cpu_textures (TTF_Font *font)
       } else
         snprintf (msg, 32, "CPU %2d ", c);
 
-      blit_on_surface (surface, font, t, c, msg, cpu_colors[c % MAX_COLORS]);
+      blit_on_surface (surface, font, t, c, msg, ezp_cpu_colors[c % EZP_MAX_COLORS]);
     }
   }
 
@@ -841,18 +833,15 @@ static void create_cpu_textures (TTF_Font *font)
 static void create_text_texture (TTF_Font *font)
 {
   create_cpu_textures (font);
-
   create_digit_textures (font);
-
   create_tab_textures (font);
-
   create_task_ids_textures (font);
 }
 
 static void create_misc_tex (void)
 {
-  SDL_Surface *surf = SDL_CreateRGBSurface (0, 2, WINDOW_HEIGHT, 32, 0xff000000,
-                                            0x00ff0000, 0x0000ff00, 0x000000ff);
+  SDL_Surface *surf = SDL_CreateRGBSurface (0, 2, WINDOW_HEIGHT, 32, RMASK,
+                                            GMASK, BMASK, AMASK);
   if (surf == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -861,8 +850,8 @@ static void create_misc_tex (void)
   SDL_SetTextureBlendMode (vertical_line, SDL_BLENDMODE_BLEND);
   SDL_FreeSurface (surf);
 
-  surf = SDL_CreateRGBSurface (0, GANTT_WIDTH, 2, 32, 0xff000000, 0x00ff0000,
-                               0x0000ff00, 0x000000ff);
+  surf =
+      SDL_CreateRGBSurface (0, GANTT_WIDTH, 2, 32, RMASK, GMASK, BMASK, AMASK);
   if (surf == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -909,7 +898,7 @@ static void create_misc_tex (void)
 
   quick_nav_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
-  SDL_SetTextureAlphaMod (quick_nav_tex, quick_nav_mode ? 0xFF : BUTTON_ALPHA);
+  SDL_SetTextureAlphaMod (quick_nav_tex, quick_nav_mode ? 255 : BUTTON_ALPHA);
 
   SDL_QueryTexture (quick_nav_tex, NULL, NULL, &quick_nav_rect.w,
                     &quick_nav_rect.h);
@@ -921,7 +910,7 @@ static void create_misc_tex (void)
   align_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
   SDL_SetTextureAlphaMod (align_tex,
-                          trace_data_align_mode ? 0xFF : BUTTON_ALPHA);
+                          trace_data_align_mode ? 255 : BUTTON_ALPHA);
 
   SDL_QueryTexture (align_tex, NULL, NULL, &align_rect.w, &align_rect.h);
 
@@ -931,7 +920,7 @@ static void create_misc_tex (void)
 
   track_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
-  SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 0xFF : BUTTON_ALPHA);
+  SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 255 : BUTTON_ALPHA);
 
   SDL_QueryTexture (track_tex, NULL, NULL, &track_rect.w, &track_rect.h);
 
@@ -941,7 +930,7 @@ static void create_misc_tex (void)
 
   footprint_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
-  SDL_SetTextureAlphaMod (footprint_tex, footprint_mode ? 0xFF : BUTTON_ALPHA);
+  SDL_SetTextureAlphaMod (footprint_tex, footprint_mode ? 255 : BUTTON_ALPHA);
 
   SDL_QueryTexture (footprint_tex, NULL, NULL, &footprint_rect.w,
                     &footprint_rect.h);
@@ -978,14 +967,14 @@ static void show_tile (trace_t *tr, trace_task_t *t, unsigned cpu,
                        unsigned highlight)
 {
   unsigned task_color =
-      is_lane (tr, cpu) ? gpu_index[t->task_type] : (cpu % MAX_COLORS);
+      is_lane (tr, cpu) ? ezp_gpu_index[t->task_type] : (cpu % EZP_MAX_COLORS);
 
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
     if (t->w) {
-      mesh3d_set_cpu_color (
+      ezv_set_cpu_color_1D (
           ctx[tr->num], t->x, t->w,
-          (highlight ? cpu_colors[task_color]
-                     : (cpu_colors[task_color] & 0xFFFFFF00) | 0xC0));
+          (highlight ? ezp_cpu_colors[task_color]
+                     : (ezp_cpu_colors[task_color] & ezv_rgb_mask ()) | ezv_a2c (0xC0)));
     }
   } else {
     SDL_Rect dst;
@@ -1169,13 +1158,7 @@ static void display_bubble (int x, int y, unsigned long duration,
     SDL_RenderCopy (renderer, bulle_tex, NULL, &dst);
 
     display_cache_histo (counters, dst.x + 8, dst.y + 20, 100, 8);
-#if 0
-    printf ("Caches stats: %lld L1 hit, %lld L2 hit, %lld L3 hit, %lld RAM\n",
-            (counters[EASYPAP_ALL_LOADS] - counters[EASYPAP_L3_MISS] -
-             counters[EASYPAP_L3_HIT] - counters[EASYPAP_L2_HIT]),
-            counters[EASYPAP_L2_HIT], counters[EASYPAP_L3_HIT],
-            counters[EASYPAP_L3_MISS]);
-#endif
+
     display_duration (duration, x - (BUBBLE_WIDTH >> 1) + 1, dst.y + 1,
                       dst.w - 3, with_sigma);
   } else {
@@ -1320,7 +1303,7 @@ static void display_tile_background (int tr)
     if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
       SDL_RenderCopy (renderer, tex[tr], NULL, &trace_display_info[tr].mosaic);
     else
-      mesh3d_set_data_colors (ctx[tr], (float *)tex[tr]);
+      ezv_set_data_colors (ctx[tr], (float *)tex[tr]);
   }
 }
 
@@ -1423,7 +1406,7 @@ static void trace_graphics_display_trace (unsigned _t,
     bzero (cumulated_cache_stat, max_cores * sizeof (perfcounter_array_t));
 
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-    mesh3d_reset_cpu_colors (ctx[_t]);
+    ezv_reset_cpu_colors (ctx[_t]);
   }
 
   // Set clipping region
@@ -1473,7 +1456,7 @@ static void trace_graphics_display_trace (unsigned _t,
       // We get a pointer on the first task executed by
       // CPU 'c' at first displayed iteration
       trace_task_t *first = tr->iteration[first_it].first_cpu_task[c];
-      unsigned task_color = c % MAX_COLORS;
+      unsigned task_color = c % EZP_MAX_COLORS;
 
       if (first != NULL)
         // We follow the list of tasks, starting from this first task
@@ -1505,7 +1488,7 @@ static void trace_graphics_display_trace (unsigned _t,
             if (t->task_type == TASK_TYPE_READ)
               dst.y += TASK_HEIGHT / 2;
 
-            task_color = gpu_index[t->task_type];
+            task_color = ezp_gpu_index[t->task_type];
           }
 
           // Check if mouse is within the bounds of the gantt zone
@@ -1553,7 +1536,7 @@ static void trace_graphics_display_trace (unsigned _t,
                 for (int l = 0; l < EASYPAP_NB_COUNTERS; l++)
                   selected->cumulated_cstats[l] += t->counters[l];
 
-                SDL_RenderCopy (renderer, perf_fill[MAX_COLORS], NULL,
+                SDL_RenderCopy (renderer, perf_fill[EZP_MAX_COLORS], NULL,
                                 &dst); // white
                 if (to_be_emphasized[c] == NULL)
                   to_be_emphasized[c] = t;
@@ -1575,7 +1558,7 @@ static void trace_graphics_display_trace (unsigned _t,
                 target_tile_rect.w = t->w;
                 // Display task a little bigger!
                 magnify (&dst);
-                SDL_RenderCopy (renderer, perf_fill[MAX_COLORS], NULL, &dst);
+                SDL_RenderCopy (renderer, perf_fill[EZP_MAX_COLORS], NULL, &dst);
               } else {
                 SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
               }
@@ -1591,7 +1574,7 @@ static void trace_graphics_display_trace (unsigned _t,
                 }
                 // Display task a little bigger!
                 magnify (&dst);
-                SDL_RenderCopy (renderer, perf_fill[MAX_COLORS], NULL,
+                SDL_RenderCopy (renderer, perf_fill[EZP_MAX_COLORS], NULL,
                                 &dst); // white
               } else
                 SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
@@ -1617,10 +1600,11 @@ static void trace_graphics_display_trace (unsigned _t,
   if (target_tile) {
     if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
       // Highlight cells in mesh
-      mesh3d_set_cpu_color (ctx[_t], target_tile_rect.x, target_tile_rect.w, 0xFFFFFFC0);
+      ezv_set_cpu_color_1D (ctx[_t], target_tile_rect.x, target_tile_rect.w,
+                            ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
     else
       // Display mouse-selected tile in white color
-      SDL_RenderCopy (renderer, square_tex_dark[MAX_COLORS], NULL,
+      SDL_RenderCopy (renderer, square_tex_dark[EZP_MAX_COLORS], NULL,
                       &target_tile_rect);
   } else if (horiz_mode) {
     for (int c = 0; c < tr->nb_cores; c++) {
@@ -1740,7 +1724,7 @@ static void trace_graphics_display (void)
   SDL_RenderPresent (renderer);
 
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-    mesh3d_render (ctx, nb_traces);
+    ezv_render (ctx, nb_traces);
 }
 
 static void trace_graphics_save_screenshot (void)
@@ -1778,7 +1762,8 @@ static void trace_graphics_save_screenshot (void)
     struct tm *tm_info;
     timer   = time (NULL);
     tm_info = localtime (&timer);
-    strftime (filename, MAX_FILENAME, DEFAULT_EZV_DUMP_DIR "/screenshot-%Y_%m_%d-%H_%M_%S.png",
+    strftime (filename, MAX_FILENAME,
+              DEFAULT_EZV_DUMP_DIR "/screenshot-%Y_%m_%d-%H_%M_%S.png",
               tm_info);
   }
 
@@ -1815,7 +1800,7 @@ static void trace_graphics_toggle_footprint_mode (void)
   static unsigned old_horiz, old_track;
 
   footprint_mode ^= 1;
-  SDL_SetTextureAlphaMod (footprint_tex, footprint_mode ? 0xFF : BUTTON_ALPHA);
+  SDL_SetTextureAlphaMod (footprint_tex, footprint_mode ? 255 : BUTTON_ALPHA);
 
   if (footprint_mode) {
     old_horiz     = horiz_mode;
@@ -1826,7 +1811,7 @@ static void trace_graphics_toggle_footprint_mode (void)
     horiz_mode    = old_horiz;
     tracking_mode = old_track;
   }
-  SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 0xFF : BUTTON_ALPHA);
+  SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 255 : BUTTON_ALPHA);
 
   trace_graphics_display ();
 }
@@ -1835,7 +1820,7 @@ static void trace_graphics_toggle_tracking_mode (void)
 {
   if (nb_traces > 1) {
     tracking_mode ^= 1;
-    SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 0xFF : BUTTON_ALPHA);
+    SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 255 : BUTTON_ALPHA);
 
     horiz_mode = 0;
 
@@ -1854,7 +1839,7 @@ static void trace_graphics_set_quick_nav (int nav)
 {
   quick_nav_mode = nav;
 
-  SDL_SetTextureAlphaMod (quick_nav_tex, quick_nav_mode ? 0xFF : BUTTON_ALPHA);
+  SDL_SetTextureAlphaMod (quick_nav_tex, quick_nav_mode ? 255 : BUTTON_ALPHA);
 }
 
 static void set_bounds (long start, long end)
@@ -2230,7 +2215,7 @@ static void trace_graphics_toggle_align_mode ()
   trace_data_align_mode ^= 1;
 
   SDL_SetTextureAlphaMod (align_tex,
-                          trace_data_align_mode ? 0xFF : BUTTON_ALPHA);
+                          trace_data_align_mode ? 255 : BUTTON_ALPHA);
 
   max_time = max (iteration_end_time (trace, trace[0].nb_iterations - 1),
                   iteration_end_time (trace + nb_traces - 1,
@@ -2334,7 +2319,7 @@ void trace_graphics_init (unsigned w, unsigned h)
   for (int d = 0; d < drivers; d++) {
     SDL_RendererInfo info;
     SDL_GetRenderDriverInfo (d, &info);
-    //fprintf (stderr, "Available Renderer %d: [%s]\n", d, info.name);
+    // fprintf (stderr, "Available Renderer %d: [%s]\n", d, info.name);
 #ifdef USE_GLAD
     if (!strcmp (info.name, "opengl"))
       choosen_renderer = d;
@@ -2347,14 +2332,16 @@ void trace_graphics_init (unsigned w, unsigned h)
 
   SDL_RendererInfo info;
   SDL_GetRendererInfo (renderer, &info);
-  //printf ("Renderer used: [%s]\n", info.name);
+  // printf ("Renderer used: [%s]\n", info.name);
 
 #ifdef USE_GLAD
   if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
-    mesh3d_load_opengl ();
+    ezv_load_opengl ();
 #endif
 
-  create_task_textures (min (max_cores, MAX_COLORS));
+  ezp_colors_init ();
+
+  create_task_textures (min (max_cores, EZP_MAX_COLORS));
 
   create_misc_tex ();
 
@@ -2376,7 +2363,7 @@ void trace_graphics_init (unsigned w, unsigned h)
 
   // 3D Meshes
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-    mesh3d_init ("./lib/mesh3d");
+    ezv_init ("./lib/ezv");
 
     mesh3d_obj_init (&mesh);
     mesh3d_obj_load (trace[0].mesh_file, &mesh);
@@ -2387,17 +2374,18 @@ void trace_graphics_init (unsigned w, unsigned h)
     SDL_GetWindowSize (window, &w, NULL);
 
     for (int c = 0; c < nb_traces; c++) {
-      ctx[c] = mesh3d_ctx_create ("Tile Mapping", x + w, y + c * (512 + 96),
-                                  512, 512, MESH3D_ENABLE_PICKING | MESH3D_ENABLE_CLIPPING);
+      ctx[c] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "Tile Mapping", x + w,
+                               y + c * (512 + 96), 512, 512,
+                               EZV_ENABLE_PICKING | EZV_ENABLE_CLIPPING);
 
-      mesh3d_set_mesh (ctx[c], &mesh);
+      ezv_mesh3d_set_mesh (ctx[c], &mesh);
 
       // Color cell according to CPU
-      mesh3d_use_cpu_colors (ctx[c]);
+      ezv_use_cpu_colors (ctx[c]);
 
       if (nbthumbs > 0) {
-        mesh3d_configure_data_colors_predefined (ctx[c], trace[c].palette);
-        mesh3d_set_data_brightness (ctx[c], (float)brightness / 255.0f);
+        ezv_use_data_colors_predefined (ctx[c], trace[c].palette);
+        ezv_set_data_brightness (ctx[c], (float)brightness / 255.0f);
       }
     }
 
@@ -2413,9 +2401,9 @@ void trace_graphics_process_event (SDL_Event *event)
     if (event->wheel.windowID != main_windowID ||
         event->type == SDL_MOUSEWHEEL) {
       // event is for OpenGL tiling window(s)
-      mesh3d_process_event (ctx, nb_traces, event, &refresh, &pick);
+      ezv_process_event (ctx, nb_traces, event, &refresh, &pick);
       if (pick)
-        picked = mesh3d_perform_picking (ctx, nb_traces);
+        picked = ezv_perform_1D_picking (ctx, nb_traces);
       if (refresh | pick)
         trace_graphics_display ();
       return;
@@ -2467,9 +2455,9 @@ void trace_graphics_process_event (SDL_Event *event)
       break;
     default:
       if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-        mesh3d_process_event (ctx, nb_traces, event, &refresh, &pick);
+        ezv_process_event (ctx, nb_traces, event, &refresh, &pick);
         if (pick)
-          picked = mesh3d_perform_picking (ctx, nb_traces);
+          picked = ezv_perform_1D_picking (ctx, nb_traces);
         if (pick | refresh)
           trace_graphics_display ();
       }

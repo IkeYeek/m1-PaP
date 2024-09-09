@@ -48,16 +48,16 @@ CFLAGS		+= $(shell pkg-config --cflags $(PACKAGES))
 LDFLAGS		+= $(shell pkg-config --libs-only-L $(PACKAGES))
 LDLIBS		+= $(shell pkg-config --libs-only-l $(PACKAGES))
 
-# Mesh3d lib
-MESH3D_DIR	:= ../lib/mesh3d
-MESH3D_LIB  := $(MESH3D_DIR)/lib/libmesh3d.a
-LDFLAGS		+= -L$(MESH3D_DIR)/lib
-LDLIBS		+= -lmesh3d -lscotch
-CFLAGS		+= -I$(MESH3D_DIR)/include
+# EZV lib
+EZV_DIR	:= ../lib/ezv
+EZV_LIB  := $(EZV_DIR)/lib/libezv.a
+LDFLAGS		+= -L$(EZV_DIR)/lib
+LDLIBS		+= -lezv -lscotch
+CFLAGS		+= -I$(EZV_DIR)/include
 
 $(OBJECTS): $(MAKEFILES)
 
-$(PROGRAM): $(OBJECTS) $(MESH3D_LIB)
+$(PROGRAM): $(OBJECTS) $(EZV_LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c

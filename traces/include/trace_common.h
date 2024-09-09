@@ -2,11 +2,6 @@
 #define TRACE_COMMON_IS_DEF
 
 
-#define MAX_COLORS 14
-
-extern unsigned cpu_colors[];
-extern unsigned gpu_index[];
-
 #define TRACE_BEGIN_ITER   0x101
 #define TRACE_BEGIN_TILE   0x102
 #define TRACE_END_TILE     0x103
