@@ -10,6 +10,8 @@ typedef int (*tile_func_t) (int, int, int, int);
 typedef int (*patch_func_t) (int, int);
 typedef void (*cuda_kernel_func_t)(unsigned *, unsigned *, unsigned);
 typedef void (*cuda_kernel_finish_func_t)(unsigned);
+typedef void (*debug_1d_t) (int);
+typedef void (*debug_2d_t) (int, int);
 
 extern draw_func_t the_config;
 extern void_func_t the_init;
@@ -17,11 +19,14 @@ extern void_func_t the_first_touch;
 extern draw_func_t the_draw;
 extern void_func_t the_finalize;
 extern int_func_t the_compute;
-extern void_func_t the_refresh_img;
 extern void_func_t the_tile_check;
 extern cuda_kernel_func_t the_cuda_kernel;
 extern cuda_kernel_finish_func_t the_cuda_kernel_finish;
-extern int_func_t the_picking;
+extern debug_1d_t the_1d_debug;
+extern debug_2d_t the_2d_debug;
+extern debug_1d_t the_1d_overlay;
+extern debug_2d_t the_2d_overlay;
+extern void_func_t the_send_data;
 
 void *bind_it (char *kernel, char *s, char *variant, int print_error);
 void *hooks_find_symbol (char *symbol);
@@ -29,6 +34,8 @@ void hooks_establish_bindings (int silent);
 
 // Call function ${kernel}_draw_${suffix}, or default_func if symbol not found
 void hooks_draw_helper (char *suffix, void_func_t default_func);
+
+int hooks_refresh_img (void);
 
 // Call appropriate do_tile_${suffix} function, with calls to monitoring start/end
 int do_tile_id (int x, int y, int width, int height, int who);

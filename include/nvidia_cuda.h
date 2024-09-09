@@ -20,4 +20,6 @@ EXTERN void cuda_map_textures (unsigned tex);
 
 EXTERN void cuda_update_texture (void);
 
+EXTERN void cuda_establish_bindings (void);
+
 #endif // EASYPAP_NVIDIA_CUDA_H

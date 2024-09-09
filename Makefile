@@ -7,7 +7,6 @@ default: $(PROGRAM)
 
 ########## Config Section ##########
 
-ENABLE_SDL			= 1
 ENABLE_MONITORING	= 1
 ENABLE_VECTO		= 1
 ENABLE_TRACE		= 1
@@ -23,6 +22,8 @@ ENABLE_OPENCL		= 1
 # Compilers
 CC				:= gcc
 CXX				:= g++
+#CC				:= clang-mp-18
+#CXX				:= clang++-mp-18
 
 # Optimization level
 CFLAGS 			:= -O3 -march=native
@@ -32,7 +33,7 @@ CFLAGS			+= -Wall -Wno-unused-function
 
 ####################################
 
-CFLAGS			+= -DEASYPAP -I./include -I./traces/include
+CFLAGS			+= -I./include -I./traces/include
 LDLIBS			+= -lm
 
 CXXFLAGS		:= -std=c++11
@@ -42,9 +43,6 @@ ARCH			:= $(shell uname -m | tr a-z A-Z)
 
 SOURCES			:= $(wildcard src/*.c)
 
-ifneq ($(ENABLE_SDL), 1)
-SOURCES			:= $(filter-out src/gmonitor.c src/graphics.c src/cpustat.c, $(SOURCES))
-endif
 
 ifneq ($(ENABLE_PAPI), 1)
 SOURCES			:= $(filter-out src/perfcounter.c, $(SOURCES))
@@ -64,7 +62,7 @@ KERNELS			:= $(wildcard kernel/c/*.c)
 CXX_KERNELS	 	:= $(wildcard kernel/mipp/*.cpp)
 CUDA_KERNELS	:= $(wildcard kernel/cuda/*.cu)
 
-T_SOURCE		:= traces/src/trace_common.c
+T_SOURCE		:= traces/src/ezp_colors.c
 
 ifeq ($(ENABLE_TRACE), 1)
 T_SOURCE		+= traces/src/trace_record.c
@@ -149,17 +147,13 @@ endif
 PACKAGES		:= hwloc
 
 # Simple DirectMedia Layer (SDL)
-ifeq ($(ENABLE_SDL), 1)
-CFLAGS			+= -DENABLE_SDL
 PACKAGES		+= SDL2_image SDL2_ttf
 ifeq ($(OS_NAME), DARWIN)
-#CFLAGS			+= -DUSE_GLAD
 CFLAGS			+= -DGL_SILENCE_DEPRECATION
 LDLIBS			+= -framework OpenGL
 else
 CFLAGS			+= -DUSE_GLAD
 LDLIBS			+= -lGL
-endif
 endif
 
 ifeq ($(ENABLE_TRACE), 1)
@@ -199,7 +193,7 @@ ifeq ($(ENABLE_CUDA), 1)
 CFLAGS			+= -DENABLE_CUDA
 LDLIBS			+= -lcudart
 PACKAGES		+= cuda
-CUDA_CFLAGS 	:= -O3 -I./include -I./traces/include
+CUDA_CFLAGS 	:= -O3 -I./include -I./traces/include -I./lib/ezv/include
 endif
 
 # MyIntrinsics++ (MIPP)
@@ -222,12 +216,12 @@ CFLAGS			+= $(shell pkg-config --cflags $(PACKAGES))
 LDFLAGS			+= $(shell pkg-config --libs-only-L $(PACKAGES))
 LDLIBS			+= $(shell pkg-config --libs-only-l $(PACKAGES))
 
-# Mesh3d lib
-MESH3D_DIR	:= ./lib/mesh3d
-MESH3D_LIB  := $(MESH3D_DIR)/lib/libmesh3d.a
-LDFLAGS		+= -L$(MESH3D_DIR)/lib
-LDLIBS		+= -lmesh3d -lscotch
-CFLAGS		+= -I$(MESH3D_DIR)/include
+# EZV lib
+EZV_DIR			:= ./lib/ezv
+EZV_LIB 		:= $(EZV_DIR)/lib/libezv.a
+LDFLAGS			+= -L$(EZV_DIR)/lib
+LDLIBS			+= -lezv -lscotch
+CFLAGS			+= -I$(EZV_DIR)/include
 
 
 CXXFLAGS		+= $(CFLAGS)
@@ -243,7 +237,7 @@ endif
 
 $(ALL_OBJECTS): $(MAKEFILES)
 
-$(PROGRAM): $(ALL_OBJECTS) $(MESH3D_LIB)
+$(PROGRAM): $(ALL_OBJECTS) $(EZV_LIB)
 	$(LD) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c

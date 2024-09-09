@@ -3,8 +3,12 @@
 
 #include "hooks.h"
 
+#define MAX_NB_GPU 2
+
 #ifdef ENABLE_OPENCL ////////// OPENCL //////////
+
 #include "ocl.h"
+#include "debug.h"
 
 #define GPU_CAN_BE_USED 1
 
@@ -22,21 +26,13 @@
 
 #define gpu_retrieve_data() ocl_retrieve_data ()
 
-#define gpu_map_textures(id) ocl_map_textures (id)
-
 #define gpu_update_texture() ocl_update_texture ()
 
-static inline void gpu_establish_bindings (void)
-{
-  the_compute = bind_it (kernel_name, "invoke", variant_name, 0);
-  if (the_compute == NULL) {
-    the_compute = ocl_invoke_kernel_generic;
-    PRINT_DEBUG ('c', "Using generic [%s] OpenCL kernel launcher\n",
-                 "ocl_compute");
-  }
-}
+#define gpu_establish_bindings() ocl_establish_bindings ()
+
 
 #elif defined(ENABLE_CUDA) ////////// CUDA //////////
+
 #include "nvidia_cuda.h"
 
 #define GPU_CAN_BE_USED 1
@@ -55,21 +51,10 @@ static inline void gpu_establish_bindings (void)
 
 #define gpu_retrieve_data() cuda_retrieve_data ()
 
-#define gpu_map_textures(id) cuda_map_textures (id)
-
 #define gpu_update_texture() cuda_update_texture ()
 
-static inline void gpu_establish_bindings (void)
-{
-  the_compute = bind_it (kernel_name, "invoke", variant_name, 0);
-  if (the_compute == NULL) {
-    the_compute = cuda_compute;
-    PRINT_DEBUG ('c', "Using generic [%s] CUDA kernel launcher\n",
-                 "cuda_compute");
-  }
-  the_cuda_kernel = bind_it (kernel_name, "kernel", variant_name, 1);
-  the_cuda_kernel_finish = bind_it (kernel_name, "finish", variant_name, 0);
-}
+#define gpu_establish_bindings() cuda_establish_bindings ()
+
 
 #else ////////// NO GPU //////////
 

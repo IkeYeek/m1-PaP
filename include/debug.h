@@ -7,12 +7,11 @@
 // chaine contenant des filtres. Ces filtres sont :
 //
 //      '+' -- active tous les messages de debug
-//      'g' -- graphics
-//      'c' -- computations
-//      's' -- scheduler
+//      'd' -- data
+//      'h' -- hooks
 //      't' -- threads
 //      'o' -- OpenCL
-//      'm' -- monitoring
+//      'm' -- meshes
 //      'i' -- initialization sequence
 //      'u' -- user
 //      'M' -- MPI

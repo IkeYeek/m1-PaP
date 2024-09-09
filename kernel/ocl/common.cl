@@ -10,7 +10,89 @@
 #define DIM 1
 #define TILE_W 1
 #define TILE_H 1
+#define PARAM 1
 #endif
+
+#ifdef IS_LITTLE_ENDIAN
+
+static int4 color_to_int4 (unsigned c)
+{
+  uchar4 ci = (*((uchar4 *) &c)).s3210; 
+  return convert_int4 (ci);
+}
+
+static unsigned int4_to_color (int4 i)
+{
+  uchar4 v = (convert_uchar4 (i)).s3210;
+  return *((unsigned *) &v);
+}
+
+static inline unsigned rgb_mask (void)
+{
+  return 0x00FFFFFF;
+}
+
+// Color to component
+
+// Color to red
+static inline uchar c2r (unsigned c)
+{
+  return (uchar)c;
+}
+
+// Color to green
+static inline uchar c2g (unsigned c)
+{
+  return (uchar)(c >> 8);
+}
+
+// Color to blue
+static inline uchar c2b (unsigned c)
+{
+  return (uchar)(c >> 16);
+}
+
+// Color to alpha
+static inline uchar c2a (unsigned c)
+{
+  return (uchar)(c >> 24);
+}
+
+// Component to color
+
+// Red to color
+static inline unsigned r2c (uchar r)
+{
+  return (unsigned)r;
+}
+
+// Green to color
+static inline unsigned g2c (uchar g)
+{
+  return ((unsigned)g) << 8;
+}
+
+// Blue to color
+static inline unsigned b2c (uchar b)
+{
+  return ((unsigned)b) << 16;
+}
+
+// Alpha to color
+static inline unsigned a2c (uchar a)
+{
+  return ((unsigned)a) << 24;
+}
+
+static float4 color_scatter (unsigned c)
+{
+  uchar4 ci;
+
+  ci = *((uchar4 *) &c);
+  return convert_float4 (ci) / (float4) 255;
+}
+
+#else // IS_BIG_ENDIAN
 
 static int4 color_to_int4 (unsigned c)
 {
@@ -24,15 +106,63 @@ static unsigned int4_to_color (int4 i)
   return *((unsigned *) &v);
 }
 
-#ifdef X86_64_ARCH
-static float4 color_scatter (unsigned c)
+static inline unsigned rgb_mask (void)
 {
-  uchar4 ci;
-
-  ci.s0123 = (*((uchar4 *) &c)).s3210;
-  return convert_float4 (ci) / (float4) 255;
+  return 0xFFFFFF00;
 }
-#else
+
+// Color to component
+
+// Color to red
+static inline uchar c2r (unsigned c)
+{
+  return (uchar)(c >> 24);
+}
+
+// Color to green
+static inline uchar c2g (unsigned c)
+{
+  return (uchar)(c >> 16);
+}
+
+// Color to blue
+static inline uchar c2b (unsigned c)
+{
+  return (uchar)(c >> 8);
+}
+
+// Color to alpha
+static inline uchar c2a (unsigned c)
+{
+  return (uchar)c;
+}
+
+// Component to color
+
+// Red to color
+static inline unsigned r2c (uchar r)
+{
+  return ((unsigned)r) << 24;
+}
+
+// Green to color
+static inline unsigned g2c (uchar g)
+{
+  return ((unsigned)g) << 16;
+}
+
+// Blue to color
+static inline unsigned b2c (uchar b)
+{
+  return ((unsigned)b) << 8;
+}
+
+// Alpha to color
+static inline unsigned a2c (uchar a)
+{
+  return (unsigned)a;
+}
+
 static float4 color_scatter (unsigned c)
 {
   uchar4 ci;
@@ -40,7 +170,21 @@ static float4 color_scatter (unsigned c)
   ci.s0123 = (*((uchar4 *) &c)).s1230; 
   return convert_float4 (ci) / (float4) 255;
 }
+
 #endif
+
+// Build color from red, green, blue and alpha (RGBA) components
+static inline unsigned rgba (uchar r, uchar g, uchar b, uchar a)
+{
+  return r2c (r) | g2c (g) | b2c (b) | a2c (a);
+}
+
+// Build color from red, green and blue (RGB) components
+static inline unsigned rgb (uchar r, uchar g, uchar b)
+{
+  return rgba (r, g, b, 255);
+}
+
 
 // This is a generic version of a kernel updating the OpenGL texture buffer.
 // It should work with most of existing kernels.
@@ -57,29 +201,9 @@ __kernel void bench_kernel (void)
 {
 }
 
-static inline int extract_red (unsigned c)
-{
-  return c >> 24;
-}
-
-static inline int extract_green (unsigned c)
-{
-  return (c >> 16) & 255;
-}
-
-static inline int extract_blue (unsigned c)
-{
-  return (c >> 8) & 255;
-}
-
-static inline int extract_alpha (unsigned c)
-{
-  return c & 255;
-}
-
-static inline unsigned rgba (int r, int g, int b, int a)
-{
-  return (r << 24) | (g << 16) | (b << 8) | a;
-}
+#define extract_red(c) c2r (c)
+#define extract_green(c) c2g (c)
+#define extract_blue(c) c2b (c)
+#define extract_alpha(c) c2a (c)
 
 #endif

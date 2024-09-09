@@ -13,8 +13,6 @@ static inline void monitoring_declare_task_ids (char *task_ids[])
   trace_record_declare_task_ids (task_ids);
 }
 
-#ifdef ENABLE_SDL
-
 static inline void monitoring_start_iteration (void)
 {
 #ifdef ENABLE_PAPI
@@ -114,14 +112,12 @@ static inline void monitoring_gpu_tile (unsigned x, unsigned y, unsigned w,
                                         long end, task_type_t task_type)
 {
   if (do_gmonitor | do_trace) {
-    trace_record_start_tile (start, cpu);
+    trace_record_start_tile (start, cpu, task_type);
     if (task_type == TASK_TYPE_COMPUTE)
       gmonitor_tile (start, end, cpu, x, y, w, h);
     trace_record_end_tile (end, cpu, x, y, w, h, task_type, 0, NULL);
   }
 }
-
-#endif
 
 #else
 

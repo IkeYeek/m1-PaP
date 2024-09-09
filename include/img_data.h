@@ -3,6 +3,8 @@
 
 #include "global.h"
 #include "cppdefs.h"
+#include "ezv.h"
+#include "ezp_ctx.h"
 
 #include <stdint.h>
 
@@ -38,39 +40,26 @@ static inline void swap_images (void)
   alt_image = tmp;
 }
 
+void img_data_init (void);
 void img_data_alloc (void);
 void img_data_free (void);
+void img_data_imgload (void);
 void img_data_replicate (void);
+
+extern img2d_obj_t easypap_img_desc;
+
+void img_data_set_default_palette_if_none_defined (void);
+void img_data_init_huds (int show);
+void img_data_refresh (unsigned iter);
+void img_data_dump_to_file (char *filename);
+void img_data_save_thumbnail (unsigned iteration);
+void img_data_process_event (SDL_Event *event, int *refresh);
+
 
 // Useful color functions
 
-static inline int extract_red (uint32_t c)
-{
-  return c >> 24;
-}
-
-static inline int extract_green (uint32_t c)
-{
-  return (c >> 16) & 255;
-}
-
-static inline int extract_blue (uint32_t c)
-{
-  return (c >> 8) & 255;
-}
-
-static inline int extract_alpha (uint32_t c)
-{
-  return c & 255;
-}
-
-static inline uint32_t rgba (int r, int g, int b, int a)
-{
-  return (r << 24) | (g << 16) | (b << 8) | a;
-}
-
-unsigned hsv_to_rgb (float h, float s, float v);
-unsigned heat_to_rgb (float h); // 0.0 = cold, 1.0 = hot
+unsigned heat_to_rgb (float v); // 0.0 = cold, 1.0 = hot
 unsigned heat_to_3gauss_rgb (double v); // 0.0 = cold, 1.0 = hot
+unsigned val_to_rgba (float h, vec4 colors[], int size);
 
 #endif

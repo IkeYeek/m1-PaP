@@ -1,7 +1,10 @@
 #include "cuda_kernels.cuh"
 #include "cppdefs.h"
+EXTERN {
+#include "easypap.h"
+}
 
-EXTERN __global__ void invert_kernel_cuda(unsigned *image, unsigned *alt_image, unsigned DIM) {
+EXTERN __global__ void invert_cuda(unsigned *in, unsigned *out, unsigned DIM) {
   unsigned index = get_index ();
-  alt_image[index] = image[index] ^ 0xFFFFFF00;
+  out[index] = in[index] ^ rgb_invert_mask();
 }

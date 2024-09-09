@@ -18,4 +18,12 @@ __kernel void bench_kernel (void)
 {
 }
 
+__kernel void gather_outgoing_cells (__global float *in, __global unsigned *indexes, __global float *out, unsigned nb)
+{
+  const unsigned index = get_global_id (0);
+
+  if (index < nb)
+    out[index] = in[indexes[index]];
+}
+
 #endif

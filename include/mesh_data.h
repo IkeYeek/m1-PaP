@@ -3,7 +3,7 @@
 
 #include "global.h"
 #include "cppdefs.h"
-#include "mesh3d.h"
+#include "ezv.h"
 #include "minmax.h"
 
 #include <stdint.h>
@@ -34,38 +34,38 @@ void mesh_data_alloc (void);
 void mesh_data_free (void);
 void mesh_data_replicate (void);
 void mesh_data_set_palette (float *data, unsigned size);
-void mesh_data_set_palette_predefined (mesh3d_palette_name_t palette);
-void mesh_data_init_hud (int show);
-void mesh_data_toggle_hud (void);
+void mesh_data_set_palette_predefined (ezv_palette_name_t palette);
+void mesh_data_set_default_palette_if_none_defined (void);
+ezv_palette_name_t mesh_data_get_palette (void);
+void mesh_data_init_huds (int show);
 void mesh_data_refresh (unsigned iter);
 void mesh_data_process_event (SDL_Event *event, int *refresh);
 void mesh_data_dump_to_file (char *filename);
 void mesh_data_save_thumbnail (unsigned iteration);
 void mesh_data_build_neighbors_soa (unsigned round);
-void mesh_data_do_pick (void);
 
-extern mesh3d_obj_t mesh;
-extern mesh3d_ctx_t ctx[];
-extern unsigned nb_ctx;
+void mesh_data_reorder_partitions (int newpos[]);
+
+extern mesh3d_obj_t easypap_mesh_desc;
 
 static inline unsigned min_neighbors (void)
 {
-  return mesh.min_neighbors;
+  return easypap_mesh_desc.min_neighbors;
 }
 
 static inline unsigned max_neighbors (void)
 {
-  return mesh.max_neighbors;
+  return easypap_mesh_desc.max_neighbors;
 }
 
 static inline unsigned neighbor_start (int cell)
 {
-  return mesh.index_first_neighbor[cell];
+  return easypap_mesh_desc.index_first_neighbor[cell];
 }
 
 static inline unsigned neighbor_end (int cell)
 {
-  return mesh.index_first_neighbor[cell + 1];
+  return easypap_mesh_desc.index_first_neighbor[cell + 1];
 }
 
 static inline unsigned nb_neighbors (int cell)
@@ -75,22 +75,22 @@ static inline unsigned nb_neighbors (int cell)
 
 static inline unsigned nth_neighbor (int cell, int n)
 {
-  return mesh.neighbors[neighbor_start (cell) + n];
+  return easypap_mesh_desc.neighbors[neighbor_start (cell) + n];
 }
 
 static inline unsigned neighbor (int n)
 {
-  return mesh.neighbors[n];
+  return easypap_mesh_desc.neighbors[n];
 }
 
 static inline unsigned patch_start (int p)
 {
-  return mesh.patch_first_cell[p];
+  return easypap_mesh_desc.patch_first_cell[p];
 }
 
 static inline unsigned patch_end (int p)
 {
-  return mesh.patch_first_cell[p + 1];
+  return easypap_mesh_desc.patch_first_cell[p + 1];
 }
 
 static inline unsigned patch_size (int p)
