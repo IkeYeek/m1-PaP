@@ -4,9 +4,25 @@
 #include <omp.h>
 
 
+#define MAX_ITERATIONS 4096
+#define ZOOM_SPEED -0.01
+
+static float leftX   = -0.2395;
+static float rightX  = -0.2275;
+static float topY    = .660;
+static float bottomY = .648;
+
+static float xstep;
+static float ystep;
+
 static unsigned compute_one_pixel (int i, int j);
 static void zoom (void);
 
+void mandel_init ()
+{
+  xstep = (rightX - leftX) / DIM;
+  ystep = (topY - bottomY) / DIM;
+}
 
 int mandel_do_tile_default (int x, int y, int width, int height)
 {
@@ -54,29 +70,9 @@ unsigned mandel_compute_tiled (unsigned nb_iter)
 
 /////////////// Mandelbrot basic computation
 
-#define MAX_ITERATIONS 4096
-#define ZOOM_SPEED -0.01
-
-static float leftX   = -0.2395;
-static float rightX  = -0.2275;
-static float topY    = .660;
-static float bottomY = .648;
-
-static float xstep;
-static float ystep;
-
-void mandel_init ()
-{
-  // check tile size's conformity with respect to CPU vector width
-  // easypap_check_vectorization (VEC_TYPE_FLOAT, DIR_HORIZONTAL);
-
-  xstep = (rightX - leftX) / DIM;
-  ystep = (topY - bottomY) / DIM;
-}
-
 static unsigned iteration_to_color (unsigned iter)
 {
-  unsigned r = 0, g = 0, b = 0;
+  uint8_t r = 0, g = 0, b = 0;
 
   if (iter < MAX_ITERATIONS) {
     if (iter < 64) {
@@ -99,7 +95,7 @@ static unsigned iteration_to_color (unsigned iter)
       g = (((iter - 2048) * 63) / 2047) + 192; /* 0xC0FF to 0xFFFF */
     }
   }
-  return rgba (r, g, b, 255);
+  return ezv_rgb (r, g, b);
 }
 
 static void zoom (void)

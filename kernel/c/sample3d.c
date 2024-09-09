@@ -36,7 +36,7 @@ int sample3d_do_patch_default (int start_cell, int end_cell)
 {
   for (int c = start_cell; c < end_cell; c++)
     // Assign a distinct value to each cell
-    cur_data (c) = (float)(c) / (float)(mesh.nb_cells - 1);
+    cur_data (c) = (float)(c) / (float)(NB_CELLS - 1);
 
   return 0;
 }
@@ -67,20 +67,21 @@ void sample3d_config (char *param)
   // Choose color palette
   float colors[] = {0.0f, 0.8f, 0.8f, 1.f,  // cyan
                     0.8f, 0.0f, 0.8f, 1.f}; // pink
-  mesh3d_configure_data_colors (ctx[0], colors, 2);
+
+  mesh_data_set_palette (colors, 2);
 
   if (picking_enabled) {
-    debug_hud = mesh3d_hud_alloc (ctx[0]);
-    mesh3d_hud_on (ctx[0], debug_hud);
+    debug_hud = ezv_hud_alloc (ctx[0]);
+    ezv_hud_on (ctx[0], debug_hud);
   }
 }
 
 void sample3d_debug (int cell)
 {
   if (cell == -1)
-    mesh3d_hud_set (ctx[0], debug_hud, NULL);
+    ezv_hud_set (ctx[0], debug_hud, NULL);
   else
-    mesh3d_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
+    ezv_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
 }
 
 
@@ -88,13 +89,13 @@ void sample3d_debug (int cell)
 // Suggested cmdline(s):
 // ./run -lm <your mesh file> -k sample3d -g -si
 //
-unsigned sample3d_invoke_ocl (unsigned nb_iter)
+unsigned sample3d_compute_ocl (unsigned nb_iter)
 {
   size_t global[1] = {GPU_SIZE}; // global domain size for our calculation
   size_t local[1]  = {TILE};     // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -112,7 +113,7 @@ unsigned sample3d_invoke_ocl (unsigned nb_iter)
   clFinish (queue);
 
   monitoring_end_tile (clock, 0, 0, NB_CELLS, 0,
-                       easypap_gpu_lane (TASK_TYPE_COMPUTE));
+                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   // Stop after first iteration
   return 1;

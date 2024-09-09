@@ -33,8 +33,6 @@ static inline void swap_tables()
   out = tmp;
 }
 
-#define RGB(r, g, b) rgba(r, g, b, 0xFF)
-
 static TYPE max_grains;
 
 void asandPile_refresh_img()
@@ -57,7 +55,7 @@ void asandPile_refresh_img()
       else if (g > 4)
         r = b = 255 - (240 * ((double)g) / (double)max_grains);
 
-      cur_img(i, j) = RGB(r, v, b);
+      cur_img (i, j) = ezv_rgb (r, v, b);
       if (g > max)
         max = g;
     }

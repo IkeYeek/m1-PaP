@@ -90,13 +90,13 @@ unsigned pixelize_compute_seq (unsigned nb_iter)
 
 ///////////////////////////// OpenCL big variant (ocl_big)
 
-unsigned pixelize_invoke_ocl (unsigned nb_iter)
+unsigned pixelize_compute_ocl (unsigned nb_iter)
 {
   size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};
   size_t local[2]  = {TILE_W, TILE_H};
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -113,7 +113,7 @@ unsigned pixelize_invoke_ocl (unsigned nb_iter)
 
   clFinish (queue);
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   return 0;
 }

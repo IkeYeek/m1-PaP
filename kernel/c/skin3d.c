@@ -16,20 +16,20 @@ void skin3d_config (char *param)
                      kernel_name);
 
   // Choose color palette
-  mesh_data_set_palette_predefined (MESH3D_PALETTE_RAINBOW);
+  mesh_data_set_palette_predefined (EZV_PALETTE_RAINBOW);
 
   if (picking_enabled) {
-    debug_hud = mesh3d_hud_alloc (ctx[0]);
-    mesh3d_hud_on (ctx[0], debug_hud);
+    debug_hud = ezv_hud_alloc (ctx[0]);
+    ezv_hud_on (ctx[0], debug_hud);
   }
 }
 
 void skin3d_debug (int cell)
 {
   if (cell == -1)
-    mesh3d_hud_set (ctx[0], debug_hud, NULL);
+    ezv_hud_set (ctx[0], debug_hud, NULL);
   else
-    mesh3d_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
+    ezv_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
 }
 
 void skin3d_init (void)
@@ -55,27 +55,27 @@ unsigned skin3d_compute_seq (unsigned nb_iter)
 void skin3d_draw_cells (void)
 {
   // Unique color per cell
-  for (int c = 0; c < mesh.nb_cells; c++)
-    mesh_data[c] = (float)(c) / (float)(mesh.nb_cells - 1);
+  for (int c = 0; c < NB_CELLS; c++)
+    mesh_data[c] = (float)(c) / (float)(NB_CELLS - 1);
 }
 
 void skin3d_draw_partitions (void)
 {
-  for (int c = 0; c < mesh.nb_cells; c++)
-    mesh_data[c] = (float)mesh3d_obj_get_patch_of_cell (&mesh, c) /
-                   (float)(mesh.nb_patches - 1);
+  for (int c = 0; c < NB_CELLS; c++)
+    mesh_data[c] = (float)mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, c) /
+                   (float)(NB_PATCHES - 1);
 }
 
 void skin3d_draw_z (void)
 {
   // Color cells gradually from 0 to 1 along z-axis
   const int COORD = 2; // z-axis
-  for (int c = 0; c < mesh.nb_cells; c++) {
+  for (int c = 0; c < NB_CELLS; c++) {
     bbox_t box;
-    mesh3d_obj_get_bbox_of_cell (&mesh, c, &box);
+    mesh3d_obj_get_bbox_of_cell (&easypap_mesh_desc, c, &box);
     float z      = (box.min[COORD] + box.max[COORD]) / 2.0f;
-    mesh_data[c] = (z - mesh.bbox.min[COORD]) /
-                   (mesh.bbox.max[COORD] - mesh.bbox.min[COORD]);
+    mesh_data[c] = (z - easypap_mesh_desc.bbox.min[COORD]) /
+                   (easypap_mesh_desc.bbox.max[COORD] - easypap_mesh_desc.bbox.min[COORD]);
   }
 }
 

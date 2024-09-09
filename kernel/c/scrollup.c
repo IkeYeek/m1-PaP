@@ -140,13 +140,13 @@ void scrollup_draw_ocl_ouf (char *param)
   img_data_replicate (); // Perform next_img = cur_img
 }
 
-unsigned scrollup_invoke_ocl_ouf (unsigned nb_iter)
+unsigned scrollup_compute_ocl_ouf (unsigned nb_iter)
 {
   size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y}; // global domain size for our calculation
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
     unsigned color = 0xFF0000FF;
@@ -174,7 +174,7 @@ unsigned scrollup_invoke_ocl_ouf (unsigned nb_iter)
 
   clFinish (queue);
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   return 0;
 }

@@ -121,12 +121,12 @@ static unsigned compute_color (int i, int j)
   float ratio = fabsf ((fmodf (angle, M_PI / 4.0) - (float)(M_PI / 8.0)) /
                        (float)(M_PI / 8.0));
 
-  int r = color_a_r * ratio + color_b_r * (1.0 - ratio);
-  int g = color_a_g * ratio + color_b_g * (1.0 - ratio);
-  int b = color_a_b * ratio + color_b_b * (1.0 - ratio);
-  int a = color_a_a * ratio + color_b_a * (1.0 - ratio);
+  uint8_t r = color_a_r * ratio + color_b_r * (1.0 - ratio);
+  uint8_t g = color_a_g * ratio + color_b_g * (1.0 - ratio);
+  uint8_t b = color_a_b * ratio + color_b_b * (1.0 - ratio);
+  uint8_t a = color_a_a * ratio + color_b_a * (1.0 - ratio);
 
-  return rgba (r, g, b, a);
+  return ezv_rgba (r, g, b, a);
 }
 
 static void rotate (void)

@@ -21,10 +21,10 @@ int blur_do_tile_default (int x, int y, int width, int height)
       for (int yloc = i_d; yloc <= i_f; yloc++)
         for (int xloc = j_d; xloc <= j_f; xloc++) {
           unsigned c = cur_img (yloc, xloc);
-          r += extract_red (c);
-          g += extract_green (c);
-          b += extract_blue (c);
-          a += extract_alpha (c);
+          r += ezv_c2r (c);
+          g += ezv_c2g (c);
+          b += ezv_c2b (c);
+          a += ezv_c2a (c);
           n += 1;
         }
 
@@ -33,9 +33,9 @@ int blur_do_tile_default (int x, int y, int width, int height)
       b /= n;
       a /= n;
 
-      next_img (i, j) = rgba (r, g, b, a);
+      next_img (i, j) = ezv_rgba (r, g, b, a);
     }
-    
+
   return 0;
 }
 

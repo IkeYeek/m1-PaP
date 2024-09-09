@@ -164,7 +164,6 @@ static void recolor (void)
 {
   unsigned nbits = 0;
   unsigned rb, bb, gb;
-  unsigned r_lsb, g_lsb, b_lsb;
   unsigned r_shift, g_shift, b_shift;
   uint8_t r_mask, g_mask, b_mask;
   uint8_t red = 0, blue = 0, green = 0;
@@ -183,36 +182,23 @@ static void recolor (void)
   rb = nbits - 2 * bb;
 
   r_shift = 8 - rb;
-  r_lsb   = (1 << r_shift) - 1;
   g_shift = 8 - gb;
-  g_lsb   = (1 << g_shift) - 1;
   b_shift = 8 - bb;
-  b_lsb   = (1 << b_shift) - 1;
 
   r_mask = (1 << rb) - 1;
   g_mask = (1 << gb) - 1;
   b_mask = (1 << bb) - 1;
 
   PRINT_DEBUG ('g', "nbits : %d (r: %d, g: %d, b: %d)\n", nbits, rb, gb, bb);
-  PRINT_DEBUG ('g', "r_shift: %d, r_lst: %d, r_mask: %d\n", r_shift, r_lsb,
-               r_mask);
-  PRINT_DEBUG ('g', "g_shift: %d, g_lst: %d, g_mask: %d\n", g_shift, g_lsb,
-               g_mask);
-  PRINT_DEBUG ('g', "b_shift: %d, b_lst: %d, b_mask: %d\n", b_shift, b_lsb,
-               b_mask);
 
   for (unsigned y = 0; y < DIM; y++) {
     for (unsigned x = 0; x < DIM; x++) {
-      uint32_t alpha = cur_img (y, x) & 255;
+      uint32_t alpha = ezv_c2a (cur_img (y, x));
 
       if (alpha == 0 || x == 0 || x == DIM - 1 || y == 0 || y == DIM - 1)
         cur_img (y, x) = 0;
       else {
-        uint32_t c = 255; // alpha
-        c |= ((blue << b_shift) | b_lsb) << 8;
-        c |= ((green << g_shift) | g_lsb) << 16;
-        c |= ((red << r_shift) | r_lsb) << 24;
-        cur_img (y, x) = c;
+        cur_img (y, x) = ezv_rgba (red << r_shift, green << g_shift, blue << b_shift, alpha);
       }
 
       red = (red + 1) & r_mask;
@@ -225,10 +211,9 @@ static void recolor (void)
   }
 }
 
-static uint32_t color = 0xFFFF00FF; // Yellow
-
 static void one_spiral (int x, int y, int step, int turns)
 {
+  uint32_t color = ezv_rgb (255, 255, 0); // Yellow
   int i = x, j = y, t;
 
   for (t = 1; t <= turns; t++) {

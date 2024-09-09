@@ -12,20 +12,20 @@ void heat3d_config (char *param)
                      kernel_name);
 
   // Choose color palette
-  mesh_data_set_palette_predefined (MESH3D_PALETTE_HEAT);
+  mesh_data_set_palette_predefined (EZV_PALETTE_HEAT);
 
   if (picking_enabled) {
-    debug_hud = mesh3d_hud_alloc (ctx[0]);
-    mesh3d_hud_on (ctx[0], debug_hud);
+    debug_hud = ezv_hud_alloc (ctx[0]);
+    ezv_hud_on (ctx[0], debug_hud);
   }
 }
 
 void heat3d_debug (int cell)
 {
   if (cell == -1)
-    mesh3d_hud_set (ctx[0], debug_hud, "No selection");
+    ezv_hud_set (ctx[0], debug_hud, "No selection");
   else
-    mesh3d_hud_set (ctx[0], debug_hud, "Temp: %f", cur_data(cell));
+    ezv_hud_set (ctx[0], debug_hud, "Temp: %f", cur_data(cell));
 }
 
 void heat3d_init (void)
@@ -98,11 +98,11 @@ void heat3d_draw_fifty (void)
 
 static void draw_coord (int coord)
 {
-  const float mid = (mesh.bbox.min[coord] + mesh.bbox.max[coord]) / 2.0f;
+  const float mid = (easypap_mesh_desc.bbox.min[coord] + easypap_mesh_desc.bbox.max[coord]) / 2.0f;
 
-  for (int c = 0; c < mesh.nb_cells; c++) {
+  for (int c = 0; c < NB_CELLS; c++) {
     bbox_t box;
-    mesh3d_obj_get_bbox_of_cell (&mesh, c, &box);
+    mesh3d_obj_get_bbox_of_cell (&easypap_mesh_desc, c, &box);
     float f   = (box.min[coord] + box.max[coord]) / 2.0f;
     cur_data (c) = (f <= mid) ? 0.0f : 1.0f;
   }
@@ -139,29 +139,29 @@ void heat3d_init_ocl_naive (void)
   cl_int err;
 
   // Array of all neighbors
-  const int sizen = mesh.total_neighbors * sizeof (unsigned);
+  const int sizen = easypap_mesh_desc.total_neighbors * sizeof (unsigned);
 
   neighbors_buffer = clCreateBuffer (context, CL_MEM_READ_WRITE, sizen, NULL, NULL);
   if (!neighbors_buffer)
     exit_with_error ("Failed to allocate neighbor buffer");
 
-  err = clEnqueueWriteBuffer (queue, neighbors_buffer, CL_TRUE, 0, sizen, mesh.neighbors, 0,
+  err = clEnqueueWriteBuffer (queue, neighbors_buffer, CL_TRUE, 0, sizen, easypap_mesh_desc.neighbors, 0,
                               NULL, NULL);
   check (err, "Failed to write to neighbor buffer");
 
   // indexes
-  const int sizei = (mesh.nb_cells + 1) * sizeof (unsigned);
+  const int sizei = (NB_CELLS + 1) * sizeof (unsigned);
 
   index_buffer = clCreateBuffer (context, CL_MEM_READ_WRITE, sizei, NULL, NULL);
   if (!index_buffer)
     exit_with_error ("Failed to allocate index buffer");
 
-  err = clEnqueueWriteBuffer (queue, index_buffer, CL_TRUE, 0, sizei, mesh.index_first_neighbor, 0,
+  err = clEnqueueWriteBuffer (queue, index_buffer, CL_TRUE, 0, sizei, easypap_mesh_desc.index_first_neighbor, 0,
                               NULL, NULL);
   check (err, "Failed to write to index buffer");
 }
 
-unsigned heat3d_invoke_ocl_naive (unsigned nb_iter)
+unsigned heat3d_compute_ocl_naive (unsigned nb_iter)
 {
   size_t global[1] = {GPU_SIZE}; // global domain size for our calculation
   size_t local[1]  = {TILE};     // local domain size for our calculation
@@ -169,7 +169,7 @@ unsigned heat3d_invoke_ocl_naive (unsigned nb_iter)
 
   ocl_acquire ();
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -194,14 +194,14 @@ unsigned heat3d_invoke_ocl_naive (unsigned nb_iter)
       cur_buffer  = next_buffer;
       next_buffer = tmp;
       if (do_display)
-        mesh3d_switch_data_color_buffer (ctx[0]);
+        ezv_switch_color_buffers (ctx[0]);
     }
   }
 
   clFinish (queue);
 
   monitoring_end_tile (clock, 0, 0, NB_CELLS, 0,
-                       easypap_gpu_lane (TASK_TYPE_COMPUTE));
+                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   ocl_release ();
 

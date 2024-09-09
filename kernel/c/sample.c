@@ -22,13 +22,13 @@ unsigned sample_compute_seq (unsigned nb_iter)
 // Suggested cmdlines:
 // ./run -k sample -o
 //
-unsigned sample_invoke_ocl (unsigned nb_iter)
+unsigned sample_compute_ocl (unsigned nb_iter)
 {
   size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};   // global domain size for our calculation
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -47,7 +47,7 @@ unsigned sample_invoke_ocl (unsigned nb_iter)
 
   clFinish (queue);
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   return 0;
 }

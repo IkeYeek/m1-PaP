@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-static unsigned color = 0xFFFF00FF; // Living cells have the yellow color
+#define LIFE_COLOR (ezv_rgb (255, 255, 0))
 
 typedef unsigned cell_t;
 
@@ -54,7 +54,7 @@ void life_refresh_img (void)
 {
   for (int i = 0; i < DIM; i++)
     for (int j = 0; j < DIM; j++)
-      cur_img (i, j) = cur_table (i, j) * color;
+      cur_img (i, j) = cur_table (i, j) * LIFE_COLOR;
 }
 
 static inline void swap_tables (void)

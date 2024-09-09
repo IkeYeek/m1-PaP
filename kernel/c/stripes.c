@@ -30,18 +30,18 @@ static unsigned scale_component (unsigned c, unsigned percentage)
 
 static unsigned scale_color (unsigned c, unsigned percentage)
 {
-  unsigned r, g, b, a;
+  uint8_t r, g, b, a;
 
-  r = extract_red (c);
-  g = extract_green (c);
-  b = extract_blue (c);
-  a = extract_alpha (c);
+  r = ezv_c2r (c);
+  g = ezv_c2g (c);
+  b = ezv_c2b (c);
+  a = ezv_c2a (c);
 
   r = scale_component (r, percentage);
   g = scale_component (g, percentage);
   b = scale_component (b, percentage);
 
-  return rgba (r, g, b, a);
+  return ezv_rgba (r, g, b, a);
 }
 
 static unsigned brighten (unsigned c)

@@ -3,7 +3,7 @@
 
 #include <omp.h>
 
-#define INV_MASK  ((unsigned)0xFFFFFF00)
+#define INV_MASK (ezv_rgb_mask ())
 
 static inline unsigned compute_color (int i, int j)
 {
