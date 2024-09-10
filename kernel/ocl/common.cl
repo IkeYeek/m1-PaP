@@ -72,29 +72,15 @@ static inline unsigned a2c (uchar a)
   return ((unsigned)a) << 24;
 }
 
-static int4 color_to_int4 (unsigned c)
+// color to vector
+static uchar4 color_to_char4 (unsigned c)
 {
-  uchar4 ci = (*((uchar4 *) &c)); 
-  return convert_int4 (ci);
+  return (*((uchar4 *) &c));
 }
 
-static unsigned int4_to_color (int4 i)
+// vector to color
+static unsigned char4_to_color (uchar4 v)
 {
-  uchar4 v = (convert_uchar4 (i));
-  return *((unsigned *) &v);
-}
-
-static float4 color_to_float4 (unsigned c)
-{
-  uchar4 ci;
-
-  ci = *((uchar4 *) &c);
-  return convert_float4 (ci) / 255.0f;
-}
-
-static unsigned float4_to_color (float4 i)
-{
-  uchar4 v = convert_uchar4 (i * 255.0f);
   return *((unsigned *) &v);
 }
 
@@ -157,31 +143,21 @@ static inline unsigned a2c (uchar a)
   return (unsigned)a;
 }
 
-static int4 color_to_int4 (unsigned c)
+// color to vector
+static uchar4 color_to_char4 (unsigned c)
 {
-  uchar4 ci = (*((uchar4 *) &c)).s3210; 
-  return convert_int4 (ci);
+  return (*((uchar4 *) &c)).s3210;
 }
 
-static unsigned int4_to_color (int4 i)
+// vector to color
+static unsigned char4_to_color (uchar4 v)
 {
-  uchar4 v = convert_uchar4 (i).s3210;
-  return *((unsigned *) &v);
-}
-
-static float4 color_to_float4 (unsigned c)
-{
-  uchar4 ci = (*((uchar4 *) &c)).s3210; 
-  return convert_float4 (ci) / 255.0f;
-}
-
-static unsigned float4_to_color (float4 i)
-{
-  uchar4 v = convert_uchar4 (i * 255.0f).s3210;
-  return *((unsigned *) &v);
+  uchar4 v2 = v.s3210;
+  return *((unsigned *) &v2);
 }
 
 #endif
+
 
 // Build color from red, green, blue and alpha (RGBA) components
 static inline unsigned rgba (uchar r, uchar g, uchar b, uchar a)
@@ -195,6 +171,25 @@ static inline unsigned rgb (uchar r, uchar g, uchar b)
   return rgba (r, g, b, 255);
 }
 
+static int4 color_to_int4 (unsigned c)
+{
+  return convert_int4 (color_to_char4 (c));
+}
+
+static unsigned int4_to_color (int4 v)
+{
+  return char4_to_color (convert_uchar4 (v));
+}
+
+static float4 color_to_float4 (unsigned c)
+{
+  return convert_float4 (color_to_char4 (c)) / 255.0f;
+}
+
+static unsigned float4_to_color (float4 v)
+{
+  return char4_to_color (convert_uchar4 (v * 255.0f));
+}
 
 // This is a generic version of a kernel updating the OpenGL texture buffer.
 // It should work with most of existing kernels.
