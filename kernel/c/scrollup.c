@@ -121,11 +121,11 @@ void scrollup_draw_ocl_ouf (char *param)
         const int r1  = (DIM / 4) * (DIM / 4);
         const int r2  = (DIM / 2) * (DIM / 2);
         if (dist2 < r1)
-          tmp[i * DIM + j] = 0xFF;
+          tmp[i * DIM + j] = ezv_a2c (0xFF);
         else if (dist2 < r2)
-          tmp[i * DIM + j] = ((r2 - dist2) * 255 / (r2 - r1)) & 0xFF;
+          tmp[i * DIM + j] = ezv_a2c ((r2 - dist2) * 255 / (r2 - r1));
         else
-          tmp[i * DIM + j] = 0;
+          tmp[i * DIM + j] = ezv_a2c (0);
       }
   }
   // We send the mask buffer to GPU

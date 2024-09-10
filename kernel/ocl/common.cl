@@ -15,18 +15,6 @@
 
 #ifdef IS_LITTLE_ENDIAN
 
-static int4 color_to_int4 (unsigned c)
-{
-  uchar4 ci = (*((uchar4 *) &c)).s3210; 
-  return convert_int4 (ci);
-}
-
-static unsigned int4_to_color (int4 i)
-{
-  uchar4 v = (convert_uchar4 (i)).s3210;
-  return *((unsigned *) &v);
-}
-
 static inline unsigned rgb_mask (void)
 {
   return 0x00FFFFFF;
@@ -84,27 +72,33 @@ static inline unsigned a2c (uchar a)
   return ((unsigned)a) << 24;
 }
 
-static float4 color_scatter (unsigned c)
-{
-  uchar4 ci;
-
-  ci = *((uchar4 *) &c);
-  return convert_float4 (ci) / (float4) 255;
-}
-
-#else // IS_BIG_ENDIAN
-
 static int4 color_to_int4 (unsigned c)
 {
-  uchar4 ci = *(uchar4 *) &c;
+  uchar4 ci = (*((uchar4 *) &c)); 
   return convert_int4 (ci);
 }
 
 static unsigned int4_to_color (int4 i)
 {
-  uchar4 v = convert_uchar4 (i);
+  uchar4 v = (convert_uchar4 (i));
   return *((unsigned *) &v);
 }
+
+static float4 color_to_float4 (unsigned c)
+{
+  uchar4 ci;
+
+  ci = *((uchar4 *) &c);
+  return convert_float4 (ci) / 255.0f;
+}
+
+static unsigned float4_to_color (float4 i)
+{
+  uchar4 v = convert_uchar4 (i * 255.0f);
+  return *((unsigned *) &v);
+}
+
+#else // IS_BIG_ENDIAN
 
 static inline unsigned rgb_mask (void)
 {
@@ -163,12 +157,28 @@ static inline unsigned a2c (uchar a)
   return (unsigned)a;
 }
 
-static float4 color_scatter (unsigned c)
+static int4 color_to_int4 (unsigned c)
 {
-  uchar4 ci;
+  uchar4 ci = (*((uchar4 *) &c)).s3210; 
+  return convert_int4 (ci);
+}
 
-  ci.s0123 = (*((uchar4 *) &c)).s1230; 
-  return convert_float4 (ci) / (float4) 255;
+static unsigned int4_to_color (int4 i)
+{
+  uchar4 v = convert_uchar4 (i).s3210;
+  return *((unsigned *) &v);
+}
+
+static float4 color_to_float4 (unsigned c)
+{
+  uchar4 ci = (*((uchar4 *) &c)).s3210; 
+  return convert_float4 (ci) / 255.0f;
+}
+
+static unsigned float4_to_color (float4 i)
+{
+  uchar4 v = convert_uchar4 (i * 255.0f).s3210;
+  return *((unsigned *) &v);
 }
 
 #endif
@@ -194,7 +204,7 @@ __kernel void update_texture (__global unsigned *cur, __write_only image2d_t tex
   int y = get_global_id (1);
   int x = get_global_id (0);
 
-  write_imagef (tex, (int2)(x, y), color_scatter (cur [y * DIM + x]));
+  write_imagef (tex, (int2)(x, y), color_to_float4 (cur [y * DIM + x]));
 }
 
 __kernel void bench_kernel (void)

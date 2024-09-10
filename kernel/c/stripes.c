@@ -17,18 +17,18 @@ void stripes_config (char *param)
   }
 }
 
-static unsigned scale_component (unsigned c, unsigned percentage)
+static unsigned scale_component (unsigned c, float ratio)
 {
   unsigned coul;
 
-  coul = c * percentage / 100;
+  coul = c * ratio;
   if (coul > 255)
     coul = 255;
 
   return coul;
 }
 
-static unsigned scale_color (unsigned c, unsigned percentage)
+static unsigned scale_color (unsigned c, float ratio)
 {
   uint8_t r, g, b, a;
 
@@ -37,25 +37,25 @@ static unsigned scale_color (unsigned c, unsigned percentage)
   b = ezv_c2b (c);
   a = ezv_c2a (c);
 
-  r = scale_component (r, percentage);
-  g = scale_component (g, percentage);
-  b = scale_component (b, percentage);
+  r = scale_component (r, ratio);
+  g = scale_component (g, ratio);
+  b = scale_component (b, ratio);
 
   return ezv_rgba (r, g, b, a);
 }
 
 static unsigned brighten (unsigned c)
 {
-  for (int i = 0; i < 15; i++)
-    c = scale_color (c, 101);
+  for (int i = 0; i < 20; i++)
+    c = scale_color (c, 1.5f);
 
   return c;
 }
 
 static unsigned darken (unsigned c)
 {
-  for (int i = 0; i < 15; i++)
-    c = scale_color (c, 99);
+  for (int i = 0; i < 20; i++)
+    c = scale_color (c, 0.5f);
 
   return c;
 }

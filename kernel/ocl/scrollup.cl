@@ -25,17 +25,8 @@ __kernel void scrollup_ocl_ouf (__global unsigned *ina, __global unsigned *inb, 
 
   pixel_color = inb [y * DIM + x] = ina [ysource * DIM + x];
 
-  color_b.x = extract_alpha (framecolor);
-  color_b.y = extract_blue (framecolor);
-  color_b.z = extract_green (framecolor);
-  color_b.w = extract_red (framecolor);
+  color_a = color_to_float4 (pixel_color);
+  color_b = color_to_float4 (framecolor);
 
-  color_a.x = extract_alpha (pixel_color);
-  color_a.y = extract_blue (pixel_color);
-  color_a.z = extract_green (pixel_color);
-  color_a.w = extract_red (pixel_color);
-
-  int4 color = convert_int4(color_a * ratio + color_b * (1.0f - ratio));
-
-  out [y * DIM + x] = int4_to_color(color);
+  out [y * DIM + x] = float4_to_color (color_a * ratio + color_b * (1.0f - ratio));
 }

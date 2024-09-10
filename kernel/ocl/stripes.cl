@@ -1,40 +1,40 @@
 #include "kernel/ocl/common.cl"
 
 
-static unsigned scale_component (unsigned c, unsigned percentage)
+static unsigned scale_component (unsigned c, float ratio)
 {
   unsigned coul;
 
-  coul = c * percentage / 100;
+  coul = c * ratio;
   if (coul > 255)
     coul = 255;
 
   return coul;
 }
 
-static unsigned scale_color (unsigned c, unsigned percentage)
+static unsigned scale_color (unsigned c, float ratio)
 {
   int4 v = color_to_int4 (c);
 
-  v.s1 = scale_component (v.s1, percentage); // Blue
-  v.s2 = scale_component (v.s2, percentage); // Green
-  v.s3 = scale_component (v.s3, percentage); // Red
+  v.s0 = scale_component (v.s0, ratio); // Red
+  v.s1 = scale_component (v.s1, ratio); // Green
+  v.s2 = scale_component (v.s2, ratio); // Blue
 
   return int4_to_color (v);
 }
 
 static unsigned brighten (unsigned c)
 {
-  for (int i = 0; i < 15; i++)
-    c = scale_color (c, 101);
+  for (int i = 0; i < 20; i++)
+    c = scale_color (c, 1.5);
 
   return c;
 }
 
 static unsigned darken (unsigned c)
 {
-  for (int i = 0; i < 15; i++)
-    c = scale_color (c, 99);
+  for (int i = 0; i < 20; i++)
+    c = scale_color (c, 0.5);
 
   return c;
 }

@@ -1,26 +1,55 @@
 
 #include "easypap.h"
 
+
+int sample_do_tile_default (int x, int y, int width, int height)
+{
+  for (int i = y; i < y + height; i++)
+    for (int j = x; j < x + width; j++)
+      cur_img (i, j) = ezv_rgb (j, 0, i);
+
+  return 0;
+}
+
 ///////////////////////////// Simple sequential version (seq)
+// Suggested cmdline(s):
+// ./run --size 1024 --kernel sample --variant seq
+// or
+// ./run -s 1024 -k sample -v seq
+//
 unsigned sample_compute_seq (unsigned nb_iter)
+{
+  for (unsigned it = 1; it <= nb_iter; it++)
+    do_tile (0, 0, DIM, DIM);
+
+  return 0;
+}
+
+///////////////////////////// Tiled sequential version (tiled)
+// Suggested cmdline(s):
+// ./run -k sample -v tiled -g 16 -m
+// or
+// ./run -k sample -v tiled -ts 64 -m
+//
+unsigned sample_compute_tiled (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++) {
 
-    for (int i = 0; i < DIM; i++)
-      for (int j = 0; j < DIM; j++)
-        cur_img (i, j) = 0xFFFF00FF;
-
+    for (int y = 0; y < DIM; y += TILE_H)
+      for (int x = 0; x < DIM; x += TILE_W)
+        do_tile (x, y, TILE_W, TILE_H);
   }
 
   return 0;
 }
+
 
 #ifdef ENABLE_OPENCL
 
 //////////////////////////////////////////////////////////////////////////
 ///////////////////////////// OpenCL version
 // Suggested cmdlines:
-// ./run -k sample -o
+// ./run -k sample -g
 //
 unsigned sample_compute_ocl (unsigned nb_iter)
 {
