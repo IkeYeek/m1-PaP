@@ -3,9 +3,7 @@
 
 #include <omp.h>
 
-static unsigned PIX_BLOC = 16;
-static unsigned LOG_BLOC = 4; // LOG2(PIX_BLOC)
-static unsigned LOG_BLOCx2 = 8; // LOG2(PIX_BLOC)^2 : pour diviser par PIX_BLOC^2 en faisant un shift right
+static unsigned LOG_BLOC = 0; // LOG2(TILE_W^2)
 
 static unsigned log2_of_power_of_2 (unsigned v)
 {
@@ -26,42 +24,34 @@ static unsigned log2_of_power_of_2 (unsigned v)
 // The parameter is used to fix the size of pixelized blocks
 void pixelize_config (char *param)
 {
-  unsigned n;
+  if (TILE_W != TILE_H)
+    exit_with_error ("Tiles should have a square shape (%d != %d)", TILE_W,
+                     TILE_H);
 
-  if (param != NULL) {
-
-    n = atoi (param);
-    if (n > 0) {
-      PIX_BLOC = n;
-      if (PIX_BLOC & (PIX_BLOC - 1))
-        exit_with_error ("PIX_BLOC is not a power of two");
-
-      LOG_BLOC   = log2_of_power_of_2 (PIX_BLOC);
-      LOG_BLOCx2 = 2 * LOG_BLOC;
-    }
-  }
+  LOG_BLOC = 2 * log2_of_power_of_2 (TILE_W);
 }
 
 // Tile computation
 int pixelize_do_tile_default (int x, int y, int width, int height)
 {
-  unsigned r = 0, g = 0, b = 0, a = 0, mean;
+  uint32_t r = 0, g = 0, b = 0, a = 0, mean;
 
   for (int i = y; i < y + height; i++)
     for (int j = x; j < x + width; j++) {
-      unsigned c = cur_img (i, j);
-      r += c >> 24 & 255;
-      g += c >> 16 & 255;
-      b += c >> 8 & 255;
-      a += c & 255;
+      uint32_t c = cur_img (i, j);
+      r += ezv_c2r (c);
+      g += ezv_c2g (c);
+      b += ezv_c2b (c);
+      a += ezv_c2a (c);
     }
 
-  r >>= LOG_BLOCx2;
-  g >>= LOG_BLOCx2;
-  b >>= LOG_BLOCx2;
-  a >>= LOG_BLOCx2;
+  // Divide by TILE_W^2 (i.e. shift right by 2*log2(TILE_W) bits)
+  r >>= LOG_BLOC;
+  g >>= LOG_BLOC;
+  b >>= LOG_BLOC;
+  a >>= LOG_BLOC;
 
-  mean = (r << 24) | (g << 16) | (b << 8) | a;
+  mean = ezv_rgba (r, g, b, a);
 
   for (int i = y; i < y + height; i++)
     for (int j = x; j < x + width; j++)
@@ -72,15 +62,15 @@ int pixelize_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline:
-// ./run -l images/1024.png -k pixelize -a 16
+// ./run -l data/img/1024.png -k pixelize -ts 16
 //
 unsigned pixelize_compute_seq (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++) {
 
-    for (int y = 0; y < DIM; y += PIX_BLOC)
-      for (int x = 0; x < DIM; x += PIX_BLOC)
-        do_tile (x, y, PIX_BLOC, PIX_BLOC);
+    for (int y = 0; y < DIM; y += TILE_H)
+      for (int x = 0; x < DIM; x += TILE_W)
+        do_tile (x, y, TILE_W, TILE_H);
   }
 
   return 0;
@@ -96,7 +86,8 @@ unsigned pixelize_compute_ocl (unsigned nb_iter)
   size_t local[2]  = {TILE_W, TILE_H};
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock =
+      monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -113,28 +104,25 @@ unsigned pixelize_compute_ocl (unsigned nb_iter)
 
   clFinish (queue);
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM,
+                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   return 0;
 }
 
-void pixelize_config_ocl (char *param)
+unsigned pixelize_compute_ocl_fake (unsigned nb_iter)
 {
-  pixelize_config (param);
-
-  if (PIX_BLOC > 16)
-    exit_with_error ("PIX_BLOC too large (> 16) for OpenCL variant.");
+  return pixelize_compute_ocl (nb_iter);
 }
 
-void pixelize_init_ocl (void)
+unsigned pixelize_compute_ocl_big (unsigned nb_iter)
 {
-  if (TILE_W != TILE_H)
-    exit_with_error ("Tiles should have a square shape (%d != %d)", TILE_W,
-                     TILE_H);
+  return pixelize_compute_ocl (nb_iter);
+}
 
-  if (TILE_W < PIX_BLOC || (TILE_W % PIX_BLOC != 0))
-    exit_with_error ("Tile size (%d) must be a multiple of PIX_BLOC (%d)",
-                     TILE_W, PIX_BLOC);
+unsigned pixelize_compute_ocl_1D (unsigned nb_iter)
+{
+  return pixelize_compute_ocl (nb_iter);
 }
 
 #endif

@@ -21,7 +21,7 @@ int invert_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline(s):
-// ./run -l images/shibuya.png -k invert -v seq -i 100 -n
+// ./run -l data/img/shibuya.png -k invert -v seq -i 100 -n
 //
 unsigned invert_compute_seq (unsigned nb_iter)
 {
@@ -38,7 +38,7 @@ unsigned invert_compute_seq (unsigned nb_iter)
 
 ///////////////////////////// Tiled sequential version (tiled)
 // Suggested cmdline(s):
-// ./run -l images/shibuya.png -k invert -v tiled -ts 32 -i 100 -n
+// ./run -l data/img/shibuya.png -k invert -v tiled -ts 32 -i 100 -n
 //
 unsigned invert_compute_tiled (unsigned nb_iter)
 {

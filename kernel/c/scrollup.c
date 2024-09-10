@@ -9,7 +9,7 @@
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline(s):
-// ./run -l images/1024.png -k scrollup -v seq
+// ./run -l data/img/1024.png -k scrollup -v seq
 //
 unsigned scrollup_compute_seq (unsigned nb_iter)
 {
@@ -42,7 +42,7 @@ int scrollup_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Tiled sequential version (tiled)
 // Suggested cmdline(s):
-// ./run -l images/1024.png -k scrollup -v tiled
+// ./run -l data/img/1024.png -k scrollup -v tiled
 //
 unsigned scrollup_compute_tiled (unsigned nb_iter)
 {
@@ -63,9 +63,9 @@ unsigned scrollup_compute_tiled (unsigned nb_iter)
 
 //////////// OpenCL version using mask (ocl_ouf)
 // Suggested cmdlines:
-// ./run -l images/shibuya.png -k scrollup -o -v ocl_ouf
+// ./run -l data/img/shibuya.png -k scrollup -o -v ocl_ouf
 // or
-// ./run -l images/1024.png -k scrollup -o -v ocl_ouf -a data/misc/mask.bin
+// ./run -l data/img/1024.png -k scrollup -o -v ocl_ouf -a data/misc/mask.bin
 //
 
 static cl_mem twin_buffer = 0, mask_buffer = 0;

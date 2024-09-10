@@ -1,12 +1,12 @@
 
 #include "easypap.h"
 
-unsigned MASK = 1;
+static unsigned MASK = 1;
 
 // The stripes kernel aims at highlighting the behavior of a GPU kernel in the
 // presence of code divergence
 
-void stripes_draw (char *param)
+void stripes_config (char *param)
 {
   if (param != NULL) {
     unsigned n = atoi (param);
@@ -62,7 +62,7 @@ static unsigned darken (unsigned c)
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline(s):
-// ./run -l images/1024.png -k stripes -v seq -a 4
+// ./run -l data/img/1024.png -k stripes -v seq -c 4
 //
 unsigned stripes_compute_seq (unsigned nb_iter)
 {
@@ -81,6 +81,6 @@ unsigned stripes_compute_seq (unsigned nb_iter)
 
 ///////////////////////////// OpenCL version (ocl)
 // Suggested cmdline(s):
-// TILEY=2 TILEX=128 ./run -l images/1024.png -k stripes -o -a 2
+// ./run -l data/img/1024.png -k stripes -g -c 2 -tw 128 -th 1
 //
 // See kernel/ocl/stripes.cl file.

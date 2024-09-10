@@ -97,7 +97,7 @@ int tile_up_left (int x, int y, int w, int h, int cpu)
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline(s):
-// ./run -l images/spirale.png -k max -v seq
+// ./run -l data/img/spirale.png -k max -v seq
 //
 unsigned max_compute_seq (unsigned nb_iter)
 {
@@ -113,7 +113,7 @@ unsigned max_compute_seq (unsigned nb_iter)
 
 ///////////////////////////// Tiled sequential version (tiled)
 // Suggested cmdline(s):
-// ./run -l images/spirale.png -k max -v tiled -ts 32
+// ./run -l data/img/spirale.png -k max -v tiled -ts 32
 //
 unsigned max_compute_tiled (unsigned nb_iter)
 {

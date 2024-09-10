@@ -16,7 +16,7 @@ int rotation90_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline:
-// ./run --load-image images/shibuya.png --kernel rotation90 --pause
+// ./run --load-image data/img/shibuya.png --kernel rotation90 --pause
 //
 unsigned rotation90_compute_seq (unsigned nb_iter)
 {

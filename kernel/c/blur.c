@@ -5,7 +5,7 @@
 
 ///////////////////////////// Sequential version (tiled)
 // Suggested cmdline(s):
-// ./run -l images/1024.png -k blur -v seq -si
+// ./run -l data/img/1024.png -k blur -v seq -si
 //
 int blur_do_tile_default (int x, int y, int width, int height)
 {
@@ -41,7 +41,7 @@ int blur_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Sequential version (tiled)
 // Suggested cmdline(s):
-// ./run -l images/1024.png -k blur -v seq
+// ./run -l data/img/1024.png -k blur -v seq
 //
 unsigned blur_compute_seq (unsigned nb_iter)
 {
@@ -57,7 +57,7 @@ unsigned blur_compute_seq (unsigned nb_iter)
 
 ///////////////////////////// Tiled sequential version (tiled)
 // Suggested cmdline(s):
-// ./run -l images/1024.png -k blur -v tiled -ts 32 -m si
+// ./run -l data/img/1024.png -k blur -v tiled -ts 32 -m si
 //
 unsigned blur_compute_tiled (unsigned nb_iter)
 {

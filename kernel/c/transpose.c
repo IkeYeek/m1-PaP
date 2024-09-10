@@ -15,7 +15,7 @@ int transpose_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline:
-// ./run --load-image images/shibuya.png --kernel transpose --pause
+// ./run -l data/img/shibuya.png --kernel transpose --pause
 //
 unsigned transpose_compute_seq (unsigned nb_iter)
 {
@@ -32,7 +32,7 @@ unsigned transpose_compute_seq (unsigned nb_iter)
 
 ///////////////////////////// Tiled sequential version (tiled)
 // Suggested cmdline:
-// ./run -l images/shibuya.png -k transpose -v tiled -ts 16
+// ./run -l data/img/shibuya.png -k transpose -v tiled -ts 16
 //
 unsigned transpose_compute_tiled (unsigned nb_iter)
 {
