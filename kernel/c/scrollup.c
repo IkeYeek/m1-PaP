@@ -63,9 +63,7 @@ unsigned scrollup_compute_tiled (unsigned nb_iter)
 
 //////////// OpenCL version using mask (ocl_ouf)
 // Suggested cmdlines:
-// ./run -l data/img/shibuya.png -k scrollup -o -v ocl_ouf
-// or
-// ./run -l data/img/1024.png -k scrollup -o -v ocl_ouf -a data/misc/mask.bin
+// ./run -l data/img/shibuya.png -k scrollup -g -v ocl_ouf
 //
 
 static cl_mem twin_buffer = 0, mask_buffer = 0;
