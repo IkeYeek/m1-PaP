@@ -147,7 +147,7 @@ unsigned scrollup_compute_ocl_ouf (unsigned nb_iter)
   uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned color = 0xFF0000FF;
+    unsigned color = ezv_rgb (255, 0, 0); // red
     // Set kernel arguments
     //
     err = 0;
