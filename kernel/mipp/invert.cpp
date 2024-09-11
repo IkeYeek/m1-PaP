@@ -4,7 +4,7 @@
 #include "mipp.h"
 #include <omp.h>
 
-#define INV_MASK ((unsigned)0xFFFFFF00)
+#define INV_MASK (ezv_rgb_mask ())
 
 #ifdef ENABLE_VECTO
 ///////////////////////////// Vectorized version
