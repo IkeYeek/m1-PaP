@@ -87,7 +87,7 @@ void sample3d_debug (int cell)
 
 ///////////////////////////// OpenCL version (ocl)
 // Suggested cmdline(s):
-// ./run -lm <your mesh file> -k sample3d -g -si
+// ./run -lm <your mesh file> -k sample3d -g
 //
 unsigned sample3d_compute_ocl (unsigned nb_iter)
 {
