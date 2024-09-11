@@ -348,3 +348,23 @@ void life_draw_moultdiehard2474(void)
 {
   moult_rle(104, 2, "data/rle/diehard2474.rle");
 }
+
+//////////// debug ////////////
+static int debug_hud = -1;
+
+void life_config (char *param)
+{
+  if (picking_enabled) {
+    debug_hud = ezv_hud_alloc (ctx[0]);
+    ezv_hud_on (ctx[0], debug_hud);
+  }
+}
+
+void life_debug (int x, int y)
+{
+  if (x == -1 || y == -1)
+    ezv_hud_set (ctx[0], debug_hud, NULL);
+  else {
+    ezv_hud_set (ctx[0], debug_hud, cur_table (y, x) ? "Alive" : "Dead");
+  }
+}
