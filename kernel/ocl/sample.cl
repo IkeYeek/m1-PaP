@@ -7,7 +7,5 @@ __kernel void sample_ocl (__global unsigned *img)
   int y = get_global_id (1);
 
   // x = amount of red, y = amount of blue
-  unsigned color = rgb (x, 0, y);
-
-  img [y * DIM + x] = color;
+  img [y * DIM + x] = rgb (x, 0, y);
 }
