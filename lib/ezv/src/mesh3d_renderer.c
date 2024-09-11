@@ -19,6 +19,10 @@ static const float DEFAULT_DATA_BRIGHTNESS = 0.8f;
 static const float NEARZ = 0.2f;
 static const float FARZ  = 5.0f;
 
+#define INITIAL_TRANSLATE_VAL -1.5f
+#define INITIAL_ROTATE_Y      -90.0f
+#define INITIAL_ROTATE_X      +15.0f
+
 typedef struct render_ctx_s
 {
   GLuint UBO_DATACOL;
@@ -47,10 +51,6 @@ typedef struct render_ctx_s
       dapu_brightness_loc;
   GLuint cut_info_loc;
 } mesh3d_render_ctx_t;
-
-static const float INITIAL_TRANSLATE_VAL = -1.5f;
-static const float INITIAL_ROTATE_Y      = -90.0f;
-static const float INITIAL_ROTATE_X      = +15.0f;
 
 static GLfloat rotate_x    = INITIAL_ROTATE_X;
 static GLfloat rotate_y    = INITIAL_ROTATE_Y;
