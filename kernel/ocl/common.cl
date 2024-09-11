@@ -191,6 +191,8 @@ static unsigned float4_to_color (float4 v)
   return char4_to_color (convert_uchar4 (v * 255.0f));
 }
 
+#ifdef GL_BUFFER_SHARING
+
 // This is a generic version of a kernel updating the OpenGL texture buffer.
 // It should work with most of existing kernels.
 // Can be refined as update_texture_<kernel>
@@ -201,6 +203,8 @@ __kernel void update_texture (__global unsigned *cur, __write_only image2d_t tex
 
   write_imagef (tex, (int2)(x, y), color_to_float4 (cur [y * DIM + x]));
 }
+
+#endif
 
 __kernel void bench_kernel (void)
 {

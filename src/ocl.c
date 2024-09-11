@@ -581,6 +581,10 @@ void ocl_build_program (int list_variants)
   else
     endianness = "-DIS_BIG_ENDIAN";
 
+  char *glbuffershare = "";
+  if (easypap_gl_buffer_sharing)
+    glbuffershare = "-DGL_BUFFER_SHARING";
+
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
     if (config_param)
       sprintf (buffer,
@@ -588,25 +592,25 @@ void ocl_build_program (int list_variants)
                " -cl-mad-enable"
                " -DDIM=%d -DGPU_SIZE_X=%d -DGPU_SIZE_Y=%d -DTILE_W=%d"
                " -DTILE_H=%d -DKERNEL_%s"
-               " -DPARAM=%s %s %s -D%s",
+               " -DPARAM=%s %s %s %s -D%s",
                DIM, GPU_SIZE_X, GPU_SIZE_Y, TILE_W, TILE_H, kernel_name,
-               config_param, debug_str, endianness, stringify (ARCH));
+               config_param, debug_str, endianness, glbuffershare, stringify (ARCH));
     else
       sprintf (buffer,
                " -cl-strict-aliasing -cl-fast-relaxed-math"
                " -cl-mad-enable"
                " -DDIM=%d -DGPU_SIZE_X=%d -DGPU_SIZE_Y=%d -DTILE_W=%d"
-               " -DTILE_H=%d -DKERNEL_%s %s %s -D%s",
+               " -DTILE_H=%d -DKERNEL_%s %s %s %s -D%s",
                DIM, GPU_SIZE_X, GPU_SIZE_Y, TILE_W, TILE_H, kernel_name,
-               debug_str, endianness, stringify (ARCH));
+               debug_str, endianness, glbuffershare, stringify (ARCH));
   } else {
     sprintf (buffer,
              " -cl-strict-aliasing -cl-fast-relaxed-math"
              " -cl-mad-enable"
              " -DNB_CELLS=%d -DGPU_SIZE=%d -DTILE=%d -DMAX_NEIGHBORS=%d"
-             " -DKERNEL_%s %s %s -D%s",
+             " -DKERNEL_%s %s %s %s -D%s",
              NB_CELLS, GPU_SIZE, TILE, easypap_mesh_desc.max_neighbors,
-             kernel_name, debug_str, endianness, stringify (ARCH));
+             kernel_name, debug_str, endianness, glbuffershare, stringify (ARCH));
   }
   // printf ("[OpenCL flags: %s]\n", buffer);
 
