@@ -23,7 +23,7 @@ void max_init (void)
 
 // We propagate the max color down-right. This is the expensive implementation
 // which constantly checks border conditions...
-int tile_down_right (int x, int y, int w, int h, int cpu)
+static int tile_down_right_cpu (int x, int y, int w, int h, int cpu)
 {
   int change = 0;
 
@@ -35,19 +35,19 @@ int tile_down_right (int x, int y, int w, int h, int cpu)
         if (i > 0 && j > 0) {
           uint32_t m = MAX (cur_img (i - 1, j), cur_img (i, j - 1));
           if (m > cur_img (i, j)) {
-            change     = 1;
+            change         = 1;
             cur_img (i, j) = m;
           }
         } else if (j > 0) {
           uint32_t m = cur_img (i, j - 1);
           if (m > cur_img (i, j)) {
-            change     = 1;
+            change         = 1;
             cur_img (i, j) = m;
           }
         } else if (i > 0) {
           uint32_t m = cur_img (i - 1, j);
           if (m > cur_img (i, j)) {
-            change     = 1;
+            change         = 1;
             cur_img (i, j) = m;
           }
         }
@@ -60,7 +60,7 @@ int tile_down_right (int x, int y, int w, int h, int cpu)
 
 // We propagate the max color up-left. This is the expensive implementation
 // which constantly checks border conditions...
-int tile_up_left (int x, int y, int w, int h, int cpu)
+static int tile_up_left_cpu (int x, int y, int w, int h, int cpu)
 {
   int change = 0;
 
@@ -72,19 +72,19 @@ int tile_up_left (int x, int y, int w, int h, int cpu)
         if (i < DIM - 1 && j < DIM - 1) {
           uint32_t m = MAX (cur_img (i + 1, j), cur_img (i, j + 1));
           if (m > cur_img (i, j)) {
-            change     = 1;
+            change         = 1;
             cur_img (i, j) = m;
           }
         } else if (j < DIM - 1) {
           uint32_t m = cur_img (i, j + 1);
           if (m > cur_img (i, j)) {
-            change     = 1;
+            change         = 1;
             cur_img (i, j) = m;
           }
         } else if (i < DIM - 1) {
           uint32_t m = cur_img (i + 1, j);
           if (m > cur_img (i, j)) {
-            change     = 1;
+            change         = 1;
             cur_img (i, j) = m;
           }
         }
@@ -95,6 +95,11 @@ int tile_up_left (int x, int y, int w, int h, int cpu)
   return change;
 }
 
+#define tile_down_right(x, y, w, h)                                            \
+  tile_down_right_cpu (x, y, w, h, omp_get_thread_num ())
+#define tile_up_left(x, y, w, h)                                               \
+  tile_up_left_cpu (x, y, w, h, omp_get_thread_num ())
+
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline(s):
 // ./run -l data/img/spirale.png -k max -v seq
@@ -103,8 +108,8 @@ unsigned max_compute_seq (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++) {
 
-    if ((tile_down_right (0, 0, DIM, DIM, 0) |
-         tile_up_left (0, 0, DIM, DIM, 0)) == 0)
+    if ((tile_down_right (0, 0, DIM, DIM) |
+         tile_up_left (0, 0, DIM, DIM)) == 0)
       return it;
   }
 
@@ -125,12 +130,12 @@ unsigned max_compute_tiled (unsigned nb_iter)
     // Bottom-right propagation
     for (int i = 0; i < NB_TILES_Y; i++)
       for (int j = 0; j < NB_TILES_X; j++)
-        change |= tile_down_right (j * TILE_W, i * TILE_H, TILE_W, TILE_H, 0);
+        change |= tile_down_right (j * TILE_W, i * TILE_H, TILE_W, TILE_H);
 
     // Up-left propagation
     for (int i = NB_TILES_Y - 1; i >= 0; i--)
       for (int j = NB_TILES_X - 1; j >= 0; j--)
-        change |= tile_up_left (j * TILE_W, i * TILE_H, TILE_W, TILE_H, 0);
+        change |= tile_up_left (j * TILE_W, i * TILE_H, TILE_W, TILE_H);
 
     if (!change) {
       res = it;
@@ -140,7 +145,6 @@ unsigned max_compute_tiled (unsigned nb_iter)
 
   return res;
 }
-
 
 ///////////////////////////// Drawing functions
 
@@ -198,7 +202,8 @@ static void recolor (void)
       if (alpha == 0 || x == 0 || x == DIM - 1 || y == 0 || y == DIM - 1)
         cur_img (y, x) = 0;
       else {
-        cur_img (y, x) = ezv_rgba (red << r_shift, green << g_shift, blue << b_shift, alpha);
+        cur_img (y, x) =
+            ezv_rgba (red << r_shift, green << g_shift, blue << b_shift, alpha);
       }
 
       red = (red + 1) & r_mask;
