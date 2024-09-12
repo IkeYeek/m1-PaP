@@ -60,6 +60,5 @@ void img_data_process_event (SDL_Event *event, int *refresh);
 
 unsigned heat_to_rgb (float v); // 0.0 = cold, 1.0 = hot
 unsigned heat_to_3gauss_rgb (double v); // 0.0 = cold, 1.0 = hot
-unsigned val_to_rgba (float h, vec4 colors[], int size);
 
 #endif

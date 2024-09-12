@@ -1,8 +1,6 @@
 #ifndef MESH3D_OBJ_H
 #define MESH3D_OBJ_H
 
-#include <cglm/cglm.h>
-
 typedef enum
 {
   MESH3D_TYPE_SURFACE,
@@ -25,7 +23,7 @@ typedef enum
 
 typedef struct
 {
-  vec3 min, max;
+  float min[3], max[3];
 } bbox_t;
 
 #define MESH3D_PART_USE_SCOTCH     1

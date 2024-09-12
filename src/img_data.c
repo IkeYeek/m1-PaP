@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <cglm/cglm.h>
 
 #include "constants.h"
 #include "cppdefs.h"
@@ -268,7 +269,7 @@ static vec4 heat_colors[] = {{0.0f, 0.0f, 1.0f, 1.0f},  // blue
                              {1.0f, 1.0f, 0.0f, 1.0f},  // yellow
                              {1.0f, 0.0f, 0.0f, 1.0f}}; // red
 
-unsigned val_to_rgba (float h, vec4 colors[], int size)
+static unsigned val_to_rgba (float h, vec4 colors[], int size)
 {
   float scale = h * (float)(size - 1);
   int ind     = scale;
