@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdint.h>
 
 #include "error.h"
 #include "mesh3d_obj.h"
