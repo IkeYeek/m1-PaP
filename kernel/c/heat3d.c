@@ -131,6 +131,7 @@ void heat3d_draw (char *param)
 }
 
 ///////////////////////////// naive OpenCL
+#ifdef ENABLE_OPENCL
 
 static cl_mem neighbors_buffer = 0, index_buffer = 0;
 
@@ -207,3 +208,4 @@ unsigned heat3d_compute_ocl_naive (unsigned nb_iter)
 
   return 0;
 }
+#endif

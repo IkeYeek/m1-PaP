@@ -55,8 +55,36 @@ unsigned sample3d_compute_tiled (unsigned nb_iter)
   return 1;
 }
 
-#ifdef ENABLE_OPENCL
+///////////////////////////// Initial config
+static int debug_hud = -1;
 
+void sample3d_config (char *param)
+{
+  if (easypap_mesh_file == NULL)
+    exit_with_error ("kernel %s needs a mesh (use --load-mesh <filename>)",
+                     kernel_name);
+
+  // Choose color palette
+  float colors[] = {0.0f, 0.8f, 0.8f, 1.f,  // cyan
+                    0.8f, 0.0f, 0.8f, 1.f}; // pink
+
+  mesh_data_set_palette (colors, 2);
+
+  if (picking_enabled) {
+    debug_hud = ezv_hud_alloc (ctx[0]);
+    ezv_hud_on (ctx[0], debug_hud);
+  }
+}
+
+void sample3d_debug (int cell)
+{
+  if (cell == -1)
+    ezv_hud_set (ctx[0], debug_hud, NULL);
+  else
+    ezv_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
+}
+
+#ifdef ENABLE_OPENCL
 ///////////////////////////// OpenCL version (ocl)
 // Suggested cmdline(s):
 // ./run -lm <your mesh file> -k sample3d -g
@@ -91,48 +119,4 @@ unsigned sample3d_compute_ocl (unsigned nb_iter)
   return 1;
 }
 
-#endif // ENABLE_OPENCL
-
-///////////////////////////// Initial config
-static int debug_hud = -1;
-
-void sample3d_config (char *param)
-{
-  if (easypap_mesh_file == NULL)
-    exit_with_error ("kernel %s needs a mesh (use --load-mesh <filename>)",
-                     kernel_name);
-
-  // Choose color palette
-  float colors[] = {0.0f, 0.8f, 0.8f, 1.f,  // cyan
-                    0.8f, 0.0f, 0.8f, 1.f}; // pink
-
-  mesh_data_set_palette (colors, 2);
-
-  if (picking_enabled) {
-    debug_hud = ezv_hud_alloc (ctx[0]);
-    ezv_hud_on (ctx[0], debug_hud);
-  }
-}
-
-void sample3d_debug (int cell)
-{
-  if (cell == -1)
-    ezv_hud_set (ctx[0], debug_hud, NULL);
-  else
-    ezv_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
-}
-
-void sample3d_overlay (int cell)
-{
-  // Example which shows how to highlight both selected cell and selected partition
-  int part = mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, cell);
-
-  // highlight partition
-  ezv_set_cpu_color_1D (ctx[0], easypap_mesh_desc.patch_first_cell[part],
-                        easypap_mesh_desc.patch_first_cell[part + 1] -
-                            easypap_mesh_desc.patch_first_cell[part],
-                        ezv_rgb (255, 255, 255));
-  // highlight cell
-  ezv_set_cpu_color_1D (ctx[0], cell, 1, ezv_rgb (50, 50, 50));
-}
-
+#endif

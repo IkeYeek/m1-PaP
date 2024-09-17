@@ -118,18 +118,48 @@ EXTERN void cuda_init (int show_config, int silent)
   printf ("Using GPU %d: [%s]\n", id_gpu, props.name);
 }
 
+EXTERN unsigned cuda_compute (unsigned nb_iter)
+{
+
+  cudaError_t ret;
+
+  // call kernel
+  for (int i = 0; i < nb_iter; i++) {
+
+    the_cuda_kernel<<<grid, block>>> (gpu_image, gpu_alt_image, DIM);
+    ret = cudaDeviceSynchronize ();
+    CHECK_CUDA_ERROR (ret);
+    if (the_cuda_kernel_finish != NULL) {
+      the_cuda_kernel_finish<<<1, 1>>> (DIM);
+      ret = cudaDeviceSynchronize ();
+      CHECK_CUDA_ERROR (ret);
+    }
+
+    // swap images
+    uint32_t *tmp = gpu_image;
+    gpu_image     = gpu_alt_image;
+    gpu_alt_image = tmp;
+  }
+
+  return 0;
+}
+
 EXTERN void cuda_establish_bindings (void)
 {
-  the_compute = bind_it (kernel_name, "cuda_invoke", variant_name, 0);
+  the_compute = (int_func_t) bind_it (kernel_name, "cuda_invoke", variant_name, 0);
   if (the_compute == NULL) {
     the_compute = cuda_compute;
     PRINT_DEBUG ('c', "Using the generic CUDA kernel launcher\n");
   }
   if (variant_name == NULL || strcmp(variant_name, "") == 0)
-    the_cuda_kernel = bind_it (kernel_name, "cuda", "/", 1); // "/" for not find "kernel_name_cuda_"
+    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, "cuda", "/", 1); // "/" for not find "kernel_name_cuda_"
   else
-    the_cuda_kernel = bind_it (kernel_name, "cuda", variant_name, 2);
-  the_cuda_kernel_finish = bind_it (kernel_name, "cuda_finish", variant_name, 0);
+    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, "cuda",
+                                                    variant_name, 2);
+  the_cuda_kernel_finish = (cuda_kernel_finish_func_t) bind_it (kernel_name,
+                                                                "cuda_finish",
+                                                                variant_name,
+                                                                0);
 }
 
 static void cuda_map_textures (unsigned tex)
@@ -200,32 +230,6 @@ EXTERN void cuda_build_program (int list_variants)
   block.z = 1;
 
   printf ("Tile size: %dx%d\n", TILE_W, TILE_H);
-}
-
-EXTERN unsigned cuda_compute (unsigned nb_iter)
-{
-
-  cudaError_t ret;
-
-  // call kernel
-  for (int i = 0; i < nb_iter; i++) {
-
-    the_cuda_kernel<<<grid, block>>> (gpu_image, gpu_alt_image, DIM);
-    ret = cudaDeviceSynchronize ();
-    CHECK_CUDA_ERROR (ret);
-    if (the_cuda_kernel_finish != NULL) {
-      the_cuda_kernel_finish<<<1, 1>>> (DIM);
-      ret = cudaDeviceSynchronize ();
-      CHECK_CUDA_ERROR (ret);
-    }
-
-    // swap images
-    uint32_t *tmp = gpu_image;
-    gpu_image     = gpu_alt_image;
-    gpu_alt_image = tmp;
-  }
-
-  return 0;
 }
 
 __global__ void cuda_update_texture (cudaSurfaceObject_t target,
