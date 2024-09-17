@@ -106,8 +106,8 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
   if (flags & EZV_ENABLE_VSYNC) {
     int r = SDL_GL_SetSwapInterval (1);
     if (r != 0)
-      exit_with_error ("SDL_GL_SetSwapInterval not supported (%s)",
-                       SDL_GetError ());
+      fprintf (stderr, "WARNING: SDL_GL_SetSwapInterval is not supported by your OpenGL driver (%s)",
+                       (char *)glGetString (GL_RENDERER));
   }
 
   switch (ctx_type) {
