@@ -14,9 +14,15 @@ void skin3d_config (char *param)
   if (easypap_mesh_file == NULL)
     exit_with_error ("kernel %s needs a mesh (use --load-mesh <filename>)",
                      kernel_name);
+  int palette = EZV_PALETTE_RAINBOW;
 
+  if (param != NULL) {
+    int n = atoi(param);
+    if (n >= EZV_PALETTE_LINEAR && n <= EZV_PALETTE_RAINBOW)
+      palette = n;
+  }
   // Choose color palette
-  mesh_data_set_palette_predefined (EZV_PALETTE_RAINBOW);
+  mesh_data_set_palette_predefined (palette);
 
   if (picking_enabled) {
     debug_hud = ezv_hud_alloc (ctx[0]);
@@ -56,27 +62,41 @@ void skin3d_draw_cells (void)
 {
   // Unique color per cell
   for (int c = 0; c < NB_CELLS; c++)
-    mesh_data[c] = (float)(c) / (float)(NB_CELLS - 1);
+    cur_data (c) = (float)(c) / (float)(NB_CELLS - 1);
 }
 
 void skin3d_draw_partitions (void)
 {
   for (int c = 0; c < NB_CELLS; c++)
-    mesh_data[c] = (float)mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, c) /
+    cur_data (c) = (float)mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, c) /
                    (float)(NB_PATCHES - 1);
+}
+
+static void draw_coord (int coord)
+{
+  // Color cells gradually from 0 to 1 along <coord> axis
+  for (int c = 0; c < NB_CELLS; c++) {
+    bbox_t box;
+    mesh3d_obj_get_bbox_of_cell (&easypap_mesh_desc, c, &box);
+    float f      = (box.min[coord] + box.max[coord]) / 2.0f;
+    cur_data (c) = (f - easypap_mesh_desc.bbox.min[coord]) /
+                   (easypap_mesh_desc.bbox.max[coord] - easypap_mesh_desc.bbox.min[coord]);
+  }
+}
+
+void skin3d_draw_x (void)
+{
+  draw_coord (0);
+}
+
+void skin3d_draw_y (void)
+{
+  draw_coord (1);
 }
 
 void skin3d_draw_z (void)
 {
-  // Color cells gradually from 0 to 1 along z-axis
-  const int COORD = 2; // z-axis
-  for (int c = 0; c < NB_CELLS; c++) {
-    bbox_t box;
-    mesh3d_obj_get_bbox_of_cell (&easypap_mesh_desc, c, &box);
-    float z      = (box.min[COORD] + box.max[COORD]) / 2.0f;
-    mesh_data[c] = (z - easypap_mesh_desc.bbox.min[COORD]) /
-                   (easypap_mesh_desc.bbox.max[COORD] - easypap_mesh_desc.bbox.min[COORD]);
-  }
+  draw_coord (2);
 }
 
 void skin3d_draw (char *param)
