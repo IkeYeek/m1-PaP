@@ -55,6 +55,7 @@ unsigned sample3d_compute_tiled (unsigned nb_iter)
   return 1;
 }
 
+#ifdef ENABLE_OPENCL
 
 ///////////////////////////// OpenCL version (ocl)
 // Suggested cmdline(s):
@@ -89,6 +90,8 @@ unsigned sample3d_compute_ocl (unsigned nb_iter)
   // Stop after first iteration
   return 1;
 }
+
+#endif // ENABLE_OPENCL
 
 ///////////////////////////// Initial config
 static int debug_hud = -1;
