@@ -132,16 +132,6 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
   return ctx;
 }
 
-SDL_Window *ezv_sdl_window (ezv_ctx_t ctx)
-{
-  return ctx->win;
-}
-
-SDL_GLContext ezv_glcontext (ezv_ctx_t ctx)
-{
-  return ctx->glcontext;
-}
-
 void ezv_ctx_raise (ezv_ctx_t ctx)
 {
   SDL_RaiseWindow (ezv_sdl_window (ctx));

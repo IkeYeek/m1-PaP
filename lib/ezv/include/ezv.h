@@ -1,8 +1,6 @@
 #ifndef EZV_H
 #define EZV_H
 
-#include <SDL2/SDL.h>
-
 #include "ezv_event.h"
 #include "ezv_hud.h"
 #include "ezv_palette.h"
@@ -31,8 +29,6 @@ void ezv_load_opengl (void);
 ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
                           int y, int w, int h, int flags);
 void ezv_ctx_raise (ezv_ctx_t ctx);
-SDL_Window *ezv_sdl_window (ezv_ctx_t ctx);
-SDL_GLContext ezv_glcontext (ezv_ctx_t ctx);
 void ezv_switch_to_context (ezv_ctx_t ctx);
 void ezv_ctx_destroy (ezv_ctx_t ctx);
 void ezv_toggle_clipping (ezv_ctx_t ctx[], unsigned nb_ctx);

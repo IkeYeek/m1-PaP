@@ -5,6 +5,7 @@
 #include "error.h"
 #include "ezp_ctx.h"
 #include "ezv.h"
+#include "ezv_sdl_gl.h"
 #include "global.h"
 
 static unsigned LARGE_WIN_WIDTH[2];

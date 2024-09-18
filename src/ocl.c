@@ -4,7 +4,8 @@
 #include "cpustat.h"
 #include "debug.h"
 #include "error.h"
-#include "ezp_ctx.h"
+#include "ezv.h"
+#include "ezv_sdl_gl.h"
 #include "global.h"
 #include "hooks.h"
 #include "img_data.h"
@@ -18,8 +19,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <SDL2/SDL_opengl.h>
 
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>

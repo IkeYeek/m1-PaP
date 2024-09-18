@@ -14,4 +14,10 @@
 
 #endif
 
+struct ezv_ctx_s;
+typedef struct ezv_ctx_s *ezv_ctx_t;
+
+SDL_Window *ezv_sdl_window (ezv_ctx_t ctx);
+SDL_GLContext ezv_glcontext (ezv_ctx_t ctx);
+
 #endif
