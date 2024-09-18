@@ -1,3 +1,10 @@
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include "gmonitor.h"
 #include "cpustat.h"
 #include "debug.h"
@@ -10,16 +17,6 @@
 #include "img_data.h"
 #include "mesh_data.h"
 #include "monitoring.h"
-
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 static long prev_max_duration = 0;
 static long max_duration      = 0;
@@ -65,9 +62,6 @@ void gmonitor_init (void)
 
   // Tile mapping window uses RGBA cpu colors
   ezv_use_cpu_colors (ctx[1]);
-
-  if (TTF_Init () < 0)
-    exit_with_error ("TTF_Init failed (%s)", TTF_GetError ());
 
   ezp_ctx_coord_next (ctx_type, 2, &xn, &yn);
 
@@ -149,8 +143,6 @@ void __gmonitor_end_iteration (long time)
 void gmonitor_clean (void)
 {
   cpustat_clean ();
-
-  TTF_Quit ();
 }
 
 void gmonitor_toggle_heat_mode (void)

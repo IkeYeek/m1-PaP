@@ -298,11 +298,16 @@ void cpustat_init (int x, int y)
   SDL_GetRendererInfo (ren, &info);
   PRINT_DEBUG ('g', "Activity window renderer: [%s]\n", info.name);
 
+  if (TTF_Init () < 0)
+    exit_with_error ("TTF_Init failed (%s)", TTF_GetError ());
+
   cpustat_create_text_texture ();
 
   cpustat_create_cpu_textures ();
 
   cpustat_create_idleness_textures ();
+
+  TTF_Quit ();
 }
 
 void cpustat_reset (long now)
