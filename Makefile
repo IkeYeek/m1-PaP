@@ -198,7 +198,7 @@ endif
 
 # MyIntrinsics++ (MIPP)
 ifeq ($(ENABLE_MIPP), 1)
-CXXFLAGS		+= -I./lib/mipp/src
+CXXFLAGS		+= -I./lib/mipp/include
 endif
 
 # cglm
