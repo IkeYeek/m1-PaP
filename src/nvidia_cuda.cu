@@ -146,20 +146,19 @@ EXTERN unsigned cuda_compute (unsigned nb_iter)
 
 EXTERN void cuda_establish_bindings (void)
 {
-  the_compute = (int_func_t) bind_it (kernel_name, "cuda_invoke", variant_name, 0);
+  the_compute = (int_func_t) bind_it (kernel_name, (char *)"cuda_invoke", variant_name, 0);
   if (the_compute == NULL) {
     the_compute = cuda_compute;
     PRINT_DEBUG ('c', "Using the generic CUDA kernel launcher\n");
   }
   if (variant_name == NULL || strcmp(variant_name, "") == 0)
-    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, "cuda", "/", 1); // "/" for not find "kernel_name_cuda_"
+    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, (char *)"cuda",
+                                                    (char *)"/", 1); // "/" for not find "kernel_name_cuda_"
   else
-    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, "cuda",
+    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, (char *)"cuda",
                                                     variant_name, 2);
-  the_cuda_kernel_finish = (cuda_kernel_finish_func_t) bind_it (kernel_name,
-                                                                "cuda_finish",
-                                                                variant_name,
-                                                                0);
+  the_cuda_kernel_finish = (cuda_kernel_finish_func_t) bind_it
+    (kernel_name, (char *)"cuda_finish", variant_name, 0);
 }
 
 static void cuda_map_textures (unsigned tex)
