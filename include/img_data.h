@@ -4,7 +4,6 @@
 #include "global.h"
 #include "cppdefs.h"
 #include "ezv.h"
-#include "ezp_ctx.h"
 
 #include <stdint.h>
 
@@ -53,8 +52,7 @@ void img_data_init_huds (int show);
 void img_data_refresh (unsigned iter);
 void img_data_dump_to_file (char *filename);
 void img_data_save_thumbnail (unsigned iteration);
-void img_data_process_event (SDL_Event *event, int *refresh);
-
+void img_data_do_pick (void);
 
 // Useful color functions
 

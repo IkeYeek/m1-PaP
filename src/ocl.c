@@ -4,6 +4,7 @@
 #include "cpustat.h"
 #include "debug.h"
 #include "error.h"
+#include "ezp_ctx.h"
 #include "ezv.h"
 #include "ezv_sdl_gl.h"
 #include "global.h"

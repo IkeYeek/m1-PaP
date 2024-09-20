@@ -11,6 +11,7 @@
 #endif
 #include "ezp_colors.h"
 #include "ezp_ctx.h"
+#include "ezv_event.h"
 
 #include <fcntl.h>
 #include <hwloc.h>
@@ -294,7 +295,8 @@ static void init_phases (void)
   if (debug_enabled ('d')) {
     picking_enabled = 1;
     if (gpu_used)
-      easypap_gl_buffer_sharing = 0; // Force data sync on host in data debugging mode
+      easypap_gl_buffer_sharing =
+          0; // Force data sync on host in data debugging mode
   }
 
   if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
@@ -326,7 +328,7 @@ static void init_phases (void)
     do_display = 0;
 
   if (!do_display) {
-    do_gmonitor = 0;
+    do_gmonitor     = 0;
     picking_enabled = 0;
   }
 
@@ -475,14 +477,19 @@ static inline void display_refresh (unsigned iter)
   }
 }
 
-static void handle_events (SDL_Event *evt, int pause, int iterations)
+static void handle_events (SDL_Event *event, int pause, int iterations)
 {
+  int pick;
+  ezv_process_event (ctx, nb_ctx, event, NULL, &pick);
+
   if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-    mesh_data_process_event (evt, NULL);
+    if (picking_enabled && pick)
+      mesh_data_do_pick ();
     if (pause)
       mesh_data_refresh (iterations);
   } else {
-    img_data_process_event (evt, NULL);
+    if (picking_enabled && pick)
+      img_data_do_pick ();
     if (pause)
       img_data_refresh (iterations);
   }
@@ -491,9 +498,9 @@ static void handle_events (SDL_Event *evt, int pause, int iterations)
 static void force_data_sync (void)
 {
   if (!data_sync_on_host) {
-    if (!hooks_refresh_img()) {
+    if (!hooks_refresh_img ()) {
       if (gpu_used)
-      gpu_retrieve_data ();
+        gpu_retrieve_data ();
     }
   }
   data_sync_on_host = 1;
@@ -508,8 +515,8 @@ static void do_data_sync_if_required (void)
     if (easypap_gl_buffer_sharing)
       return; // data displayed "in place" on GPU device
 
-    if (!hooks_refresh_img())  // call refresh_img in priority if defined
-      gpu_retrieve_data ();   // fall back to retrieve_data
+    if (!hooks_refresh_img ()) // call refresh_img in priority if defined
+      gpu_retrieve_data ();    // fall back to retrieve_data
 
     data_sync_on_host = 1;
   } else {
@@ -847,7 +854,8 @@ static void usage (int val)
       stderr,
       "options can be:\n"
       "\t-a\t| --arg <string>\t: pass argument <string> to draw function\n"
-      "\t-c\t| --config <string>\t: pass config argument <string> to config function\n"
+      "\t-c\t| --config <string>\t: pass config argument <string> to config "
+      "function\n"
       "\t-d\t| --debug <flags>\t: enable debug messages (see debug.h)\n"
       "\t-du\t| --dump\t\t: dump final image to disk\n"
       "\t-ft\t| --first-touch\t\t: touch memory on different cores\n"

@@ -39,7 +39,7 @@ void mesh_data_set_default_palette_if_none_defined (void);
 ezv_palette_name_t mesh_data_get_palette (void);
 void mesh_data_init_huds (int show);
 void mesh_data_refresh (unsigned iter);
-void mesh_data_process_event (SDL_Event *event, int *refresh);
+void mesh_data_do_pick (void);
 void mesh_data_dump_to_file (char *filename);
 void mesh_data_save_thumbnail (unsigned iteration);
 void mesh_data_build_neighbors_soa (unsigned round);

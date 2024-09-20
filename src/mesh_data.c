@@ -8,7 +8,7 @@
 #include "debug.h"
 #include "error.h"
 #include "ezp_ctx.h"
-#include "ezv.h"
+#include "ezv_event.h"
 #include "global.h"
 #include "gpu.h"
 #include "hooks.h"
@@ -236,7 +236,7 @@ void mesh_data_build_neighbors_soa (unsigned round)
   PRINT_DEBUG ('m', "Neighbors SOA built (rounded to multiple of %d)\n", round);
 }
 
-static void mesh_data_do_pick (void)
+void mesh_data_do_pick (void)
 {
   int p = ezv_perform_1D_picking (ctx, 1);
 
@@ -271,14 +271,6 @@ static void mesh_data_do_pick (void)
       ezv_hud_off (ctx[0], partition_hud);
     }
   }
-}
-
-void mesh_data_process_event (SDL_Event *event, int *refresh)
-{
-  int pick;
-  ezv_process_event (ctx, nb_ctx, event, refresh, &pick);
-  if (picking_enabled && pick)
-    mesh_data_do_pick ();
 }
 
 void mesh_data_reorder_partitions (int newpos[])

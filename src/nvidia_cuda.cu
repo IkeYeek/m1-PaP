@@ -12,6 +12,7 @@ EXTERN
 #include "global.h"
 #include "hooks.h"
 #include "img_data.h"
+#include "ezp_ctx.h"
 }
 
 #define CHECK_CUDA_ERROR(ret)                                                  \
@@ -204,7 +205,7 @@ EXTERN void cuda_alloc_buffers (void)
   ret = cudaMalloc ((void **)&gpu_alt_image, DIM * DIM * sizeof (uint32_t));
   CHECK_CUDA_ERROR (ret);
 
-  if (easypap_gl_buffer_sharing) {
+  if (do_display && easypap_gl_buffer_sharing) {
     int gl_buffer_ids[1];
     ezv_switch_to_context (ctx[0]);
     ezv_get_shareable_buffer_ids (ctx[0], gl_buffer_ids);

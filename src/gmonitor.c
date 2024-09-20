@@ -10,6 +10,7 @@
 #include "debug.h"
 #include "error.h"
 #include "ezp_colors.h"
+#include "ezp_ctx.h"
 #include "ezv.h"
 #include "global.h"
 #include "img_data.h"

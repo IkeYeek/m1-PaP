@@ -6,6 +6,7 @@
 
 #include "error.h"
 #include "ezv.h"
+#include "ezv_event.h"
 
 // settings
 const unsigned int SCR_WIDTH  = 1024;

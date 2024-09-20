@@ -3,7 +3,7 @@
 
 
 #include "trace_data.h"
-
+#include "ezv_event.h"
 
 void trace_graphics_init (unsigned w, unsigned h);
 void trace_graphics_process_event (SDL_Event *event);

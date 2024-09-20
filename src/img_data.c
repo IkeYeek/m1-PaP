@@ -11,6 +11,8 @@
 #include "gpu.h"
 #include "hooks.h"
 #include "img_data.h"
+#include "ezp_ctx.h"
+#include "ezv_event.h"
 
 #define THUMBNAILS_SIZE 512
 
@@ -213,7 +215,7 @@ void img_data_save_thumbnail (unsigned iteration)
   }
 }
 
-static void img_data_do_pick (void)
+void img_data_do_pick (void)
 {
   int px, py;
 
@@ -250,14 +252,6 @@ static void img_data_do_pick (void)
       ezv_hud_off (ctx[0], tile_hud);
     }
   }
-}
-
-void img_data_process_event (SDL_Event *event, int *refresh)
-{
-  int pick;
-  ezv_process_event (ctx, nb_ctx, event, refresh, &pick);
-  if (picking_enabled && pick)
-    img_data_do_pick ();
 }
 
 // Color utilities

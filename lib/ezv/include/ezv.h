@@ -1,7 +1,6 @@
 #ifndef EZV_H
 #define EZV_H
 
-#include "ezv_event.h"
 #include "ezv_hud.h"
 #include "ezv_palette.h"
 #include "ezv_rgba.h"

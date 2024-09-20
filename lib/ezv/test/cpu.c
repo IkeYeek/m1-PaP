@@ -5,6 +5,7 @@
 
 #include "error.h"
 #include "ezv.h"
+#include "ezv_event.h"
 
 #define CPU_COLORS 28
 static unsigned cpu_colors[CPU_COLORS] __attribute__ ((unused)) = {
