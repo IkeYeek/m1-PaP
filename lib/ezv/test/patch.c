@@ -27,6 +27,22 @@ static inline unsigned *cell_neighbors (int cell)
   return mesh.neighbors + i;
 }
 
+static void set_value_for_partition (unsigned part, float value)
+{
+  for (int c = mesh.patch_first_cell[part]; c < mesh.patch_first_cell[part + 1];
+       c++)
+    data[c] = value;
+}
+
+static void set_value_for_neighbors (unsigned part, float value)
+{
+  for (int ni = mesh.index_first_patch_neighbor[part];
+       ni < mesh.index_first_patch_neighbor[part + 1]; ni++) {
+    int p = mesh.patch_neighbors[ni];
+    set_value_for_partition (p, value);
+  }
+}
+
 static void do_pick (void)
 {
   int p = ezv_perform_1D_picking (ctx, nb_ctx);
@@ -37,9 +53,11 @@ static void do_pick (void)
     int partoche = mesh3d_obj_get_patch_of_cell (&mesh, p);
     ezv_hud_set (ctx[0], hud, "Part: %d", partoche);
 
-    for (int c = mesh.patch_first_cell[partoche];
-         c < mesh.patch_first_cell[partoche + 1]; c++)
-      data[c] = 0.2;
+    set_value_for_partition (partoche, 0.25);
+
+    if (mesh.patch_neighbors != NULL)
+      set_value_for_neighbors (partoche, 0.75);
+
     data[p] = 1.0; // selected cell
   } else
     ezv_hud_set (ctx[0], hud, NULL);

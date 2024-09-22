@@ -12,8 +12,8 @@
 #include "global.h"
 #include "gpu.h"
 #include "hooks.h"
-#include "mesh_data.h"
 #include "img_data.h"
+#include "mesh_data.h"
 #include "minmax.h"
 
 float *RESTRICT mesh_data     = NULL;
@@ -236,6 +236,23 @@ void mesh_data_build_neighbors_soa (unsigned round)
   PRINT_DEBUG ('m', "Neighbors SOA built (rounded to multiple of %d)\n", round);
 }
 
+static void set_partition_color (unsigned part, uint32_t color)
+{
+  ezv_set_cpu_color_1D (ctx[0], easypap_mesh_desc.patch_first_cell[part],
+                        easypap_mesh_desc.patch_first_cell[part + 1] -
+                            easypap_mesh_desc.patch_first_cell[part],
+                        color);
+}
+
+static void set_partition_neighbors_color (unsigned part, uint32_t color)
+{
+  for (int ni = easypap_mesh_desc.index_first_patch_neighbor[part];
+       ni < easypap_mesh_desc.index_first_patch_neighbor[part + 1]; ni++) {
+    int p = easypap_mesh_desc.patch_neighbors[ni];
+    set_partition_color (p, color);
+  }
+}
+
 void mesh_data_do_pick (void)
 {
   int p = ezv_perform_1D_picking (ctx, 1);
@@ -258,11 +275,9 @@ void mesh_data_do_pick (void)
         the_1d_overlay (p);
       else {
         // partition
-        ezv_set_cpu_color_1D (ctx[0],
-                              easypap_mesh_desc.patch_first_cell[partoche],
-                              easypap_mesh_desc.patch_first_cell[partoche + 1] -
-                                  easypap_mesh_desc.patch_first_cell[partoche],
-                              ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
+        set_partition_color (partoche, ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
+        // neighboring partitions
+        //set_partition_neighbors_color (partoche, ezv_rgba (0xAF, 0xAF, 0xAF, 0xC0));
         // cell
         ezv_set_cpu_color_1D (ctx[0], p, 1, ezv_rgba (0xFF, 0x00, 0x00, 0xC0));
       }

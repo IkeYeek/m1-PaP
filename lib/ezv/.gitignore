@@ -9,4 +9,5 @@ diy
 image
 imagecpu
 imagedapu
+boolmat
 *.obj

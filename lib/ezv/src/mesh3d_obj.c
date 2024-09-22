@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -6,9 +7,9 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdint.h>
 
 #include "error.h"
+#include "ezv_boolmat.h"
 #include "mesh3d_obj.h"
 #include "tinyobj_loader_c.h"
 #ifdef USE_SCOTCH
@@ -22,24 +23,9 @@ static unsigned nbv = 0;
 
 void mesh3d_obj_init (mesh3d_obj_t *mesh)
 {
-  mesh->mesh_type            = MESH3D_TYPE_SURFACE;
-  mesh->bbox_set             = 0;
-  mesh->vertices             = NULL;
-  mesh->nb_vertices          = 0;
-  mesh->triangles            = NULL;
-  mesh->nb_triangles         = 0;
-  mesh->cells                = NULL;
-  mesh->triangle_info        = NULL;
-  mesh->nb_cells             = 0;
-  mesh->min_neighbors        = 0;
-  mesh->max_neighbors        = 0;
-  mesh->total_neighbors      = 0;
-  mesh->neighbors            = NULL;
-  mesh->index_first_neighbor = NULL;
-  mesh->nb_patches           = 0;
-  mesh->patch_first_cell     = NULL;
-  mesh->nb_metap             = 0;
-  mesh->metap_first_patch    = NULL;
+  memset (mesh, 0, sizeof (mesh3d_obj_t));
+
+  mesh->mesh_type = MESH3D_TYPE_SURFACE;
 
   vi  = 0;
   ti  = 0;
@@ -61,7 +47,7 @@ void mesh3d_obj_compute_bounding_box (mesh3d_obj_t *mesh)
       if (mesh->vertices[3 * v + c] > bbox->max[c])
         bbox->max[c] = mesh->vertices[3 * v + c];
     }
-  
+
   mesh->bbox_set = 1;
 }
 
@@ -1645,7 +1631,8 @@ void mesh3d_reorder_partitions (mesh3d_obj_t *mesh, int newpos[])
   free (oldpos);
 
   if (index != mesh->nb_cells)
-    exit_with_error ("index (%d) does not match #cells (%d)", index, mesh->nb_cells);
+    exit_with_error ("index (%d) does not match #cells (%d)", index,
+                     mesh->nb_cells);
 
   // switch to new 'first cell' array
   free (mesh->patch_first_cell);
@@ -1665,11 +1652,11 @@ void mesh3d_shuffle_cells_in_partitions (mesh3d_obj_t *mesh)
 
   for (int p = 0; p < mesh->nb_patches; p++) {
     int start = mesh->patch_first_cell[p];
-    int n = mesh->patch_first_cell[p + 1] - start;
+    int n     = mesh->patch_first_cell[p + 1] - start;
     for (int c = 0; c < n; c++) {
-      int i = start + c;
-      int j = start + random () % n;
-      int tmp = cell_npos[i];
+      int i        = start + c;
+      int j        = start + random () % n;
+      int tmp      = cell_npos[i];
       cell_npos[i] = cell_npos[j];
       cell_npos[j] = tmp;
     }
@@ -1690,7 +1677,7 @@ void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh)
   for (int c = 0; c < mesh->nb_cells; c++) {
     int j = random () % mesh->nb_cells;
     if (c != j) {
-      int tmp = cell_npos[c];
+      int tmp      = cell_npos[c];
       cell_npos[c] = cell_npos[j];
       cell_npos[j] = tmp;
     }
@@ -1701,13 +1688,65 @@ void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh)
   free (cell_npos);
 
   if (mesh->nb_patches > 0) {
-    printf ("Cancelling existing partitionning…\n");
+    printf ("Cancelling existing partitioning…\n");
     if (mesh->patch_first_cell != NULL) {
       free (mesh->patch_first_cell);
       mesh->patch_first_cell = NULL;
     }
     mesh->nb_patches = 0;
   }
+}
+
+static void build_part_neighbors (mesh3d_obj_t *mesh)
+{
+  if (mesh->nb_patches == 0)
+    exit_with_error ("Mesh has no partition data");
+
+  if (mesh->patch_neighbors != NULL)
+    free (mesh->patch_neighbors);
+
+  if (mesh->index_first_patch_neighbor != NULL)
+    free (mesh->index_first_patch_neighbor);
+
+  ezv_boolmat_t *mat = ezv_boolmat_alloc (mesh->nb_patches, mesh->nb_patches);
+
+  // first pass to mark neighbors
+  for (int p = 0; p < mesh->nb_patches; p++) {
+    for (int c = mesh->patch_first_cell[p]; c < mesh->patch_first_cell[p + 1];
+         c++)
+      for (int ni = mesh->index_first_neighbor[c];
+           ni < mesh->index_first_neighbor[c + 1]; ni++) {
+        int op = mesh3d_obj_get_patch_of_cell (mesh, mesh->neighbors[ni]);
+        if (p != op) {
+          ezv_boolmat_set (mat, p, op);
+          ezv_boolmat_set (mat, op, p);
+        }
+      }
+  }
+
+  unsigned total_neighbors = 0;
+  for (int p = 0; p < mesh->nb_patches; p++)
+    total_neighbors += ezv_boolmat_sum_row (mat, p);
+
+  mesh->patch_neighbors = malloc (total_neighbors * sizeof (int));
+  mesh->index_first_patch_neighbor =
+      malloc ((mesh->nb_patches + 1) * sizeof (int));
+
+  unsigned index = 0;
+  for (int p = 0; p < mesh->nb_patches; p++) {
+    mesh->index_first_patch_neighbor[p] = index;
+    for (int op = 0; op < mesh->nb_patches; op++)
+      if (ezv_boolmat_get (mat, p, op) == 1) // partitions are neighbors
+        mesh->patch_neighbors[index++] = op;
+  }
+  mesh->index_first_patch_neighbor[mesh->nb_patches] = index;
+
+  if (index != total_neighbors)
+    exit_with_error ("Data inconsistency detected in partition neighbors "
+                     "(index=%d != total_neighbors=%d)",
+                     index, total_neighbors);
+
+  ezv_boolmat_free (mat);
 }
 
 static void do_partition (mesh3d_obj_t *mesh, unsigned nbpart,
@@ -1717,7 +1756,7 @@ static void do_partition (mesh3d_obj_t *mesh, unsigned nbpart,
     return;
 
   if (mesh->total_neighbors == 0)
-    return; // Cannot partition when no information is given about neighbors
+    exit_with_error ("Mesh has no neighbor information");
 
   if (mesh->nb_patches > 0) {
     printf ("Overriding existing partitionning…\n");
@@ -1844,6 +1883,9 @@ void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag)
   // Do actual partition
   do_partition (mesh, nbpart, flag & MESH3D_PART_USE_SCOTCH);
 
+  // Build partitions neighbor data
+  build_part_neighbors (mesh);
+
   if (flag & MESH3D_PART_SHOW_FRONTIERS) {
     // (re)compute parttab
     int *parttab = (int *)calloc (mesh->nb_cells, sizeof (int));
@@ -1853,12 +1895,13 @@ void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag)
         parttab[c] = p;
 
     mesh3d_obj_mark_frontiers (mesh, parttab);
-    
+
     free (parttab);
   }
 }
 
-void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_partitionner)
+void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
+                                int use_partitionner)
 {
   if (nbpart == 0)
     return;
@@ -1888,7 +1931,8 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_par
       printf ("Warning: Falling back to a simple contiguous distribution "
               "of patches (USE_SCOTCH is not enabled)");
 
-    // Build a straighforward array of meta-patches (without changing order of patches)
+    // Build a straighforward array of meta-patches (without changing order of
+    // patches)
     const int chunk = mesh->nb_patches / nbpart;
     const int rem   = mesh->nb_patches % nbpart;
 
@@ -1899,7 +1943,8 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_par
     }
     mesh->metap_first_patch[nbpart] = index;
 
-    printf ("Mesh meta-partitionned into %d chunks of contiguous patches\n", nbpart);
+    printf ("Mesh meta-partitionned into %d chunks of contiguous patches\n",
+            nbpart);
   }
 }
 
@@ -1942,7 +1987,6 @@ int mesh3d_obj_get_metap_of_patch (mesh3d_obj_t *mesh, unsigned p)
   else
     return -1;
 }
-
 
 void mesh3d_obj_get_bbox_of_cell (mesh3d_obj_t *mesh, unsigned cell,
                                   bbox_t *box)

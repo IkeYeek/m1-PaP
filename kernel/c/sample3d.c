@@ -122,16 +122,32 @@ void sample3d_debug (int cell)
     ezv_hud_set (ctx[0], debug_hud, "Value: %f", cur_data (cell));
 }
 
+static void set_partition_color (unsigned part, uint32_t color)
+{
+  ezv_set_cpu_color_1D (ctx[0], easypap_mesh_desc.patch_first_cell[part],
+                        easypap_mesh_desc.patch_first_cell[part + 1] -
+                            easypap_mesh_desc.patch_first_cell[part],
+                        color);
+}
+
+static void set_partition_neighbors_color (unsigned part, uint32_t color)
+{
+  for (int ni = easypap_mesh_desc.index_first_patch_neighbor[part];
+       ni < easypap_mesh_desc.index_first_patch_neighbor[part + 1]; ni++) {
+    int p = easypap_mesh_desc.patch_neighbors[ni];
+    set_partition_color (p, color);
+  }
+}
+
 void sample3d_overlay (int cell)
 {
   // Example which shows how to highlight both selected cell and selected partition
   int part = mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, cell);
 
   // highlight partition
-  ezv_set_cpu_color_1D (ctx[0], easypap_mesh_desc.patch_first_cell[part],
-                        easypap_mesh_desc.patch_first_cell[part + 1] -
-                            easypap_mesh_desc.patch_first_cell[part],
-                        ezv_rgb (255, 255, 255));
+  set_partition_color (part, ezv_rgb (255, 255, 255));
+  // highlight neighbors of partition
+  set_partition_neighbors_color (part, ezv_rgb (128, 128, 128));
   // highlight cell
   ezv_set_cpu_color_1D (ctx[0], cell, 1, ezv_rgb (50, 50, 50));
 }

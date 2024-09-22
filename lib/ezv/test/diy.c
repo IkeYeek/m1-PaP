@@ -168,7 +168,7 @@ static void create_mesh (mesh3d_obj_t *mesh, unsigned nbx)
     for (int y = 0; y <= 1; y++) {
       j = -0.5f + y * xinc;
       for (int x = 0; x <= nbx; x++) {
-        i = -0.5f + x * xinc;
+        i = -0.1f + x * 0.2f / (float)nbx;
         add_vertice (mesh, i, j, k);
       }
     }
@@ -283,7 +283,7 @@ int main (int argc, char *argv[])
 
   if (argc > 1) {
     int n = atoi (argv[1]);
-    if (n > 1 && n <= 32)
+    if (n > 1 && n <= 64)
       nb_cells = n;
   }
 
@@ -291,6 +291,8 @@ int main (int argc, char *argv[])
 
   mesh3d_obj_init (&mesh);
   create_mesh (&mesh, nb_cells);
+
+  mesh3d_obj_store ("output.obj", &mesh, 0);
 
   // Create SDL windows and initialize OpenGL context
   ctx[0] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "Mesh", SDL_WINDOWPOS_CENTERED,

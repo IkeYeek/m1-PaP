@@ -34,19 +34,26 @@ typedef struct
   bbox_t bbox;
   unsigned bbox_set;
   mesh3d_type_t mesh_type;
+  // visualization data (i.e. useful to OpenGL)
   float *vertices;
   unsigned nb_vertices;
   unsigned *triangles;
   unsigned nb_triangles;
   unsigned *cells;
   unsigned *triangle_info;
+  // core information
   unsigned nb_cells;
   unsigned min_neighbors, max_neighbors;
+  // neighbors are stored in a compact edge array
   unsigned total_neighbors;
   unsigned *neighbors;
   unsigned *index_first_neighbor;
+  // partitions
   unsigned nb_patches;
   unsigned *patch_first_cell;
+  unsigned *patch_neighbors;
+  unsigned *index_first_patch_neighbor;
+  // meta-partitions
   unsigned nb_metap;
   unsigned *metap_first_patch;
 } mesh3d_obj_t;
