@@ -10,6 +10,6 @@
 #define DEFAULT_KERNEL "none"
 #define DEFAULT_VARIANT "seq"
 #define DEFAULT_OCL_VARIANT "ocl"
-#define DEFAULT_CUDA_VARIANT ""
+#define DEFAULT_CUDA_VARIANT "cuda"
 
 #endif

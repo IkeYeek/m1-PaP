@@ -9,10 +9,10 @@ EXTERN
 {
 #include "constants.h"
 #include "debug.h"
+#include "ezp_ctx.h"
 #include "global.h"
 #include "hooks.h"
 #include "img_data.h"
-#include "ezp_ctx.h"
 }
 
 #define CHECK_CUDA_ERROR(ret)                                                  \
@@ -34,9 +34,9 @@ int nb_threads_per_block;
 
 static void cuda_show_devices (void)
 {
-
   cudaError_t ret;
   int nb_devices;
+
   ret = cudaGetDeviceCount (&nb_devices);
   CHECK_CUDA_ERROR (ret);
 
@@ -121,17 +121,15 @@ EXTERN void cuda_init (int show_config, int silent)
 
 EXTERN unsigned cuda_compute (unsigned nb_iter)
 {
-
   cudaError_t ret;
 
-  // call kernel
   for (int i = 0; i < nb_iter; i++) {
 
     the_cuda_kernel<<<grid, block>>> (gpu_image, gpu_alt_image, DIM);
     ret = cudaDeviceSynchronize ();
     CHECK_CUDA_ERROR (ret);
-    if (the_cuda_kernel_finish != NULL) {
-      the_cuda_kernel_finish<<<1, 1>>> (DIM);
+    if (the_cuda_kernel_post != NULL) {
+      the_cuda_kernel_post<<<1, 1>>> (DIM);
       ret = cudaDeviceSynchronize ();
       CHECK_CUDA_ERROR (ret);
     }
@@ -147,19 +145,17 @@ EXTERN unsigned cuda_compute (unsigned nb_iter)
 
 EXTERN void cuda_establish_bindings (void)
 {
-  the_compute = (int_func_t) bind_it (kernel_name, (char *)"cuda_invoke", variant_name, 0);
+  the_compute = (int_func_t)bind_it (kernel_name, "compute", variant_name, 0);
   if (the_compute == NULL) {
     the_compute = cuda_compute;
-    PRINT_DEBUG ('c', "Using the generic CUDA kernel launcher\n");
+    PRINT_DEBUG ('h', "Using generic [%s] CUDA kernel launcher\n",
+                 "cuda_compute");
   }
-  if (variant_name == NULL || strcmp(variant_name, "") == 0)
-    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, (char *)"cuda",
-                                                    (char *)"/", 1); // "/" for not find "kernel_name_cuda_"
-  else
-    the_cuda_kernel = (cuda_kernel_func_t) bind_it (kernel_name, (char *)"cuda",
-                                                    variant_name, 2);
-  the_cuda_kernel_finish = (cuda_kernel_finish_func_t) bind_it
-    (kernel_name, (char *)"cuda_finish", variant_name, 0);
+  the_send_data = (void_func_t)bind_it (kernel_name, "send_data", variant_name, 0);
+
+  the_cuda_kernel = (cuda_kernel_func_t)bind_it (kernel_name, NULL, variant_name, 2);
+  the_cuda_kernel_post = (cuda_kernel_finish_func_t)bind_it (
+      kernel_name, "post", variant_name, 0);
 }
 
 static void cuda_map_textures (unsigned tex)
@@ -190,11 +186,8 @@ static void cuda_map_textures (unsigned tex)
   ret = cudaCreateSurfaceObject (&surfaceObject, &resDesc);
   CHECK_CUDA_ERROR (ret);
 
-  // ret = cudaGraphicsMapResources(1, &texResource);
-  // CHECK_CUDA_ERROR(ret);
-
-  // note : we should call somewhere
-  // cudaGraphicsUnmapResources(1, &texResource)
+  ret = cudaGraphicsUnmapResources (1, &texResource);
+  CHECK_CUDA_ERROR (ret);
 }
 
 EXTERN void cuda_alloc_buffers (void)
@@ -238,31 +231,33 @@ __global__ void cuda_update_texture (cudaSurfaceObject_t target,
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if (x < dim && y < dim) {
+  unsigned pixel = image[y * dim + x];
 
-    unsigned pixel = image[y * dim + x];
-    // pixel to uchar4
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+  float4 data = (float4){
+      (float)(pixel & 255) / 255.0, (float)((pixel >> 8) & 255) / 255.0,
+      (float)((pixel >> 16) & 255) / 255.0, (float)(pixel >> 24) / 255.0};
+#else
+  float4 data = (float4){
+        (float)(pixel >> 24) / 255.0, (float)((pixel >> 16) & 255) / 255.0,
+        (float)((pixel >> 8) & 255) / 255.0, (float)(pixel & 255) / 255.0};
+#endif
 
-    // uchar4 data = make_uchar4(pixel >> 24, (pixel >> 16) & 255, (pixel >> 8)
-    // & 255, pixel & 255);
-
-    uchar4 data = make_uchar4 (pixel & 255, (pixel >> 8) & 255,
-                               (pixel >> 16) & 255, pixel >> 24);
-
-    surf2Dwrite (data, target, x * sizeof (uchar4), y);
-  }
+  surf2Dwrite<float4> (data, target, x * sizeof (float4), y,
+                       cudaBoundaryModeClamp);
 }
 
 EXTERN void cuda_update_texture (void)
 {
-
   cudaError_t ret;
 
-  // cudaGraphicsMapResources(1, &texResource);
+  ret = cudaGraphicsMapResources (1, &texResource);
+  CHECK_CUDA_ERROR (ret);
 
   cuda_update_texture<<<grid, block>>> (surfaceObject, gpu_image, DIM);
   ret = cudaDeviceSynchronize ();
   CHECK_CUDA_ERROR (ret);
 
-  // cudaGraphicsUnmapResources(1, &texResource);
+  ret = cudaGraphicsUnmapResources (1, &texResource);
+  CHECK_CUDA_ERROR (ret);
 }

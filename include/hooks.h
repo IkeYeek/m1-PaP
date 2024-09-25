@@ -21,14 +21,14 @@ extern void_func_t the_finalize;
 extern int_func_t the_compute;
 extern void_func_t the_tile_check;
 extern cuda_kernel_func_t the_cuda_kernel;
-extern cuda_kernel_finish_func_t the_cuda_kernel_finish;
+extern cuda_kernel_finish_func_t the_cuda_kernel_post;
 extern debug_1d_t the_1d_debug;
 extern debug_2d_t the_2d_debug;
 extern debug_1d_t the_1d_overlay;
 extern debug_2d_t the_2d_overlay;
 extern void_func_t the_send_data;
 
-void *bind_it (char *kernel, char *s, char *variant, int print_error);
+void *bind_it (const char *kernel, const char *s, const char *variant, int print_error);
 void *hooks_find_symbol (char *symbol);
 void hooks_establish_bindings (int silent);
 

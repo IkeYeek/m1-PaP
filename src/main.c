@@ -567,10 +567,8 @@ int main (int argc, char **argv)
     if (refresh_rate == 0)
       refresh_rate = 1;
 
-    if (start_in_pause && easypap_proc_is_master ()) {
-      printf ("=== iteration %d ===\n", iterations);
+    if (start_in_pause && easypap_proc_is_master ())
       do_pause = 1;
-    }
 
     for (int quit = 0; !quit;) {
       int r = 0;

@@ -24,7 +24,7 @@ void_func_t the_finalize                         = NULL;
 int_func_t the_compute                           = NULL;
 void_func_t the_tile_check                       = NULL;
 cuda_kernel_func_t the_cuda_kernel               = NULL;
-cuda_kernel_finish_func_t the_cuda_kernel_finish = NULL;
+cuda_kernel_finish_func_t the_cuda_kernel_post = NULL;
 debug_1d_t the_1d_debug                          = NULL;
 debug_2d_t the_2d_debug                          = NULL;
 debug_1d_t the_1d_overlay                        = NULL;
@@ -40,7 +40,7 @@ void *hooks_find_symbol (char *symbol)
   return dlsym (DLSYM_FLAG, symbol);
 }
 
-void *bind_it (char *kernel, char *s, char *variant, int print_error)
+void *bind_it (const char *kernel, const char *s, const char *variant, int print_error)
 {
   char buffer[1024];
   void *fun = NULL;
