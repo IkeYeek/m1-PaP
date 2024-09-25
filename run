@@ -67,7 +67,7 @@ if [[ -z $OMP_PLACES ]]; then
         export OMP_PLACES="cores"
     else # MacOS
         # OMP_PLACES is not supported by libgomp yet
-        if ! otool -L ${SIMU} | grep libgomp > /dev/null; then
+        if ! otool -L ${SIMU} | grep -q libgomp; then
             export OMP_PLACES="cores"
         fi
     fi
@@ -84,9 +84,14 @@ fi
 if [[ -n $MPIRUNARGS ]]; then
     vars=(OMP_NUM_THREADS OMP_SCHEDULE OMP_PLACES)
     MPIENV=""
+    if mpirun --version | grep -q 'Open MPI'; then
+        envopt="-x"
+    else
+        envopt="-envlist"
+    fi
     for v in ${vars[@]}; do
         if [[ -n ${!v} ]]; then
-            MPIENV="${MPIENV} -x $v"
+            MPIENV="${MPIENV} $envopt $v"
         fi
     done
     mpirun ${MPIENV} ${MPIRUNARGS} ${SIMU} "$@"
