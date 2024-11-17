@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "error.h"
+#include "ezv_textures.h"
 #include "ezv_ctx.h"
 #include "ezv_hud.h"
 #include "ezv_sdl_gl.h"
@@ -84,7 +85,7 @@ static void renderer_hud_init (ezv_ctx_t ctx)
   glBindBufferBase (GL_UNIFORM_BUFFER, BINDING_POINT_HUDINFO, hudctx->UBO_HUD);
 
   glGenTextures (1, &hudctx->digitTexture);
-  glActiveTexture (GL_TEXTURE4);
+  glActiveTexture (GL_TEXTURE0 + EVZ_HUD_TEXTURE_NUM);
   glBindTexture (GL_TEXTURE_2D, hudctx->digitTexture);
   glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, texture_width, texture_height, 0, GL_RGBA,
                 GL_UNSIGNED_BYTE, texture_data);
@@ -109,8 +110,8 @@ static void renderer_hud_init (ezv_ctx_t ctx)
       0, 2, 3  // second triangle
   };
 
-  // bind uniform buffer object to texture #4
-  glProgramUniform1i (hudctx->hud_shader, hudctx->hud_digitex_loc, 4);
+  // bind uniform buffer object to texture EVZ_HUD_TEXTURE_NUM
+  glProgramUniform1i (hudctx->hud_shader, hudctx->hud_digitex_loc, EVZ_HUD_TEXTURE_NUM);
 
   glGenVertexArrays (1, &hudctx->VAO_HUD);
   glGenBuffers (1, &hudctx->VBO_HUD);

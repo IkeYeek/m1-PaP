@@ -1,18 +1,19 @@
+#include <cglm/cglm.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <cglm/cglm.h>
 
 #include "constants.h"
 #include "cppdefs.h"
 #include "debug.h"
 #include "error.h"
+#include "ezp_alloc.h"
+#include "ezp_ctx.h"
+#include "ezv_event.h"
 #include "global.h"
 #include "gpu.h"
 #include "hooks.h"
 #include "img_data.h"
-#include "ezp_ctx.h"
-#include "ezv_event.h"
 
 #define THUMBNAILS_SIZE 512
 
@@ -103,15 +104,10 @@ void img_data_init (void)
 
 void img_data_alloc (void)
 {
-  image = mmap (NULL, DIM * DIM * sizeof (uint32_t), PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (image == NULL)
-    exit_with_error ("Cannot allocate main image: mmap failed");
+  const unsigned size = DIM * DIM * sizeof (uint32_t);
 
-  alt_image = mmap (NULL, DIM * DIM * sizeof (uint32_t), PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (alt_image == NULL)
-    exit_with_error ("Cannot allocate alternate image: mmap failed");
+  image     = ezp_alloc (size);
+  alt_image = ezp_alloc (size);
 
   PRINT_DEBUG ('i', "Init phase 4: images allocated\n");
 }
@@ -124,15 +120,13 @@ void img_data_imgload (void)
 
 void img_data_free (void)
 {
-  if (image != NULL) {
-    munmap (image, DIM * DIM * sizeof (uint32_t));
-    image = NULL;
-  }
+  const unsigned size = DIM * DIM * sizeof (uint32_t);
 
-  if (alt_image != NULL) {
-    munmap (alt_image, DIM * DIM * sizeof (uint32_t));
-    alt_image = NULL;
-  }
+  ezp_free (image, size);
+  image = NULL;
+
+  ezp_free (alt_image, size);
+  alt_image = NULL;
 }
 
 void img_data_replicate (void)
@@ -282,13 +276,13 @@ unsigned heat_to_rgb (float v) // 0.0 = cold, 1.0 = hot
 }
 
 const int gauss_size       = 7;
-static vec4 gauss_colors[] = {{0.0,    0.0, 1.0,    1.0},       // blue
+static vec4 gauss_colors[] = {{0.0, 0.0, 1.0, 1.0},       // blue
                               {0.1667, 1.0, 0.8333, 1.0}, //
                               {0.3333, 0.0, 0.6666, 1.0}, //
-                              {0.5,    0.0, 0.5,    1.0}, //
-                              {0.6666, 1.0, 0.3333, 1.0},       //
+                              {0.5, 0.0, 0.5, 1.0},       //
+                              {0.6666, 1.0, 0.3333, 1.0}, //
                               {0.8333, 1.0, 0.1667, 1.0}, //
-                              {1.0,    0.0, 0.0,    1.0}};      // red
+                              {1.0, 0.0, 0.0, 1.0}};      // red
 
 unsigned heat_to_3gauss_rgb (double v) // v is between 0.0 and 1.0
 {

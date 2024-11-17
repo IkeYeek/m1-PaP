@@ -48,7 +48,6 @@ void ezv_set_data_colors (ezv_ctx_t ctx, void *values);
 // Virtual methods
 void ezv_render (ezv_ctx_t ctx[], unsigned nb_ctx);
 void ezv_reset_view (ezv_ctx_t ctx[], unsigned nb_ctx);
-void ezv_switch_color_buffers (ezv_ctx_t ctx);
 void ezv_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[]);
 void ezv_set_data_brightness (ezv_ctx_t ctx, float brightness);
 

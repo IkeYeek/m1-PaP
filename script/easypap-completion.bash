@@ -72,7 +72,7 @@ _easypap_completions()
                     COMPREPLY=($(compgen -o plusdirs -f -X '!*.png' -- $cur))
                 fi
                 ;;
-            -lm|--load-mesh|-lms)
+            -lm|--load-mesh|-lms|-lmsc|-lmsp)
                 if [[ -z "$cur" ]]; then
                     COMPREPLY=($(compgen -f -X '!*.obj' -- "data/mesh/"))
                 else
@@ -164,9 +164,8 @@ _easypap_completions()
                 fi
                 ;;
             -n|--no-display|-m|--monitoring|-t|--trace|-th|--thumbs|\
-            -ft|--first-touch|-du|--dump|-p|--pause|-sr|--soft-rendering|\
-            -g|--gpu|-pc|--perf-counters|-sh|--show-hash|-si|--show-iterations|\
-            -mg|--multi-gpu)
+            -ft|--first-touch|-du|--dump|-p|--pause|-g|--gpu|-pc|--perf-counters|\
+            -sh|--show-hash|-si|--show-iterations|-mg|--multi-gpu)
                 # After options taking no argument, we can suggest another option
                 if [[ "$cur" =~ ^--.* ]]; then
                     _easypap_option_suggest "${LONG_OPTIONS[@]}"

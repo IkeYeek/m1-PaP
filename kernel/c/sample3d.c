@@ -1,8 +1,8 @@
 
 #include "easypap.h"
 
-#include <omp.h>
 #include <fcntl.h>
+#include <omp.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -26,7 +26,7 @@ unsigned sample3d_compute_seq (unsigned nb_iter)
 {
   for (unsigned it = 1; it <= nb_iter; it++)
     for (int c = 0; c < NB_CELLS; c++)
-      cur_data (c) = 0.0;
+      cur_data (c) = 0.5;
 
   // Stop after first iteration
   return 1;
@@ -67,25 +67,25 @@ unsigned sample3d_compute_ocl (unsigned nb_iter)
   size_t local[1]  = {TILE};     // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
     // Set kernel arguments
     //
     err = 0;
-    err |= clSetKernelArg (compute_kernel, 0, sizeof (cl_mem), &cur_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
     check (err, "Failed to set kernel arguments");
 
-    err = clEnqueueNDRangeKernel (queue, compute_kernel, 1, NULL, global, local,
-                                  0, NULL, NULL);
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 1,
+                                  NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
   }
 
-  clFinish (queue);
+  clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0,
-                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
 
   // Stop after first iteration
   return 1;
@@ -124,24 +124,20 @@ void sample3d_debug (int cell)
 
 static void set_partition_color (unsigned part, uint32_t color)
 {
-  ezv_set_cpu_color_1D (ctx[0], easypap_mesh_desc.patch_first_cell[part],
-                        easypap_mesh_desc.patch_first_cell[part + 1] -
-                            easypap_mesh_desc.patch_first_cell[part],
-                        color);
+  ezv_set_cpu_color_1D (ctx[0], patch_start (part), patch_size (part), color);
 }
 
 static void set_partition_neighbors_color (unsigned part, uint32_t color)
 {
-  for (int ni = easypap_mesh_desc.index_first_patch_neighbor[part];
-       ni < easypap_mesh_desc.index_first_patch_neighbor[part + 1]; ni++) {
-    int p = easypap_mesh_desc.patch_neighbors[ni];
-    set_partition_color (p, color);
-  }
+  for (int ni = patch_neighbor_start (part); ni < patch_neighbor_end (part);
+       ni++)
+    set_partition_color (patch_neighbor (ni), color);
 }
 
 void sample3d_overlay (int cell)
 {
-  // Example which shows how to highlight both selected cell and selected partition
+  // Example which shows how to highlight both selected cell and selected
+  // partition
   int part = mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, cell);
 
   // highlight partition
@@ -151,4 +147,3 @@ void sample3d_overlay (int cell)
   // highlight cell
   ezv_set_cpu_color_1D (ctx[0], cell, 1, ezv_rgb (50, 50, 50));
 }
-

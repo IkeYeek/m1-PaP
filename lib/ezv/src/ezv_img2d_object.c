@@ -10,7 +10,6 @@ static ezv_class_t the_class = {
   img2d_get_color_data_size, // get_color_data_size
   img2d_renderer_use_cpu_palette, // activate_rgba_palette
   img2d_renderer_use_data_palette, // acticate_data_palette
-  NULL, // switch color buffers
   img2d_get_shareable_buffer_ids, // shareable buffers
   img2d_set_data_brightness, // data brightness
   NULL, // 1D picking

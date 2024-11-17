@@ -1,10 +1,5 @@
 #include "kernel/ocl/common.cl"
 
-#ifdef PARAM
-#define PIX_BLOC PARAM
-#else
-#define PIX_BLOC 16
-#endif
 
 // In this over-simplified kernel, all the pixels of a bloc adopt the color
 // on the top-left pixel (i.e. we do not compute the average color).

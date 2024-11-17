@@ -3,13 +3,13 @@
 
 unsigned mesh3d_get_color_data_size (ezv_ctx_t ctx);
 
+
 static ezv_class_t the_class = {
   mesh3d_render, // render
   mesh3d_reset_view, // reset view
   mesh3d_get_color_data_size, // get_color_data_size
   mesh3d_renderer_use_cpu_palette, // activate_rgba_palette
   mesh3d_renderer_use_data_palette, // activate_data_palette
-  mesh3d_switch_data_color_buffer, // switch color buffers
   mesh3d_get_shareable_buffer_ids, // shareable buffers
   mesh3d_set_data_brightness, // data brightness
   mesh3d_renderer_do_picking, // 1D picking

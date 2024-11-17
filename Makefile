@@ -27,6 +27,7 @@ CXX				:= g++
 
 # Optimization level
 CFLAGS 			:= -O3 -march=native
+CUDA_CFLAGS		:= -O3
 
 # Warnings
 CFLAGS			+= -Wall -Wno-unused-function
@@ -34,6 +35,7 @@ CFLAGS			+= -Wall -Wno-unused-function
 ####################################
 
 CFLAGS			+= -I./include -I./traces/include
+CUDA_CFLAGS		+= -I./include -I./traces/include
 LDLIBS			+= -lm
 
 CXXFLAGS		:= -std=c++11
@@ -49,14 +51,14 @@ SOURCES			:= $(filter-out src/perfcounter.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_OPENCL), 1)
-SOURCES			:= $(filter-out src/ocl.c, $(SOURCES))
+SOURCES			:= $(filter-out src/ocl.c src/mesh_mgpu_ocl.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_SHA), 1)
 SOURCES			:= $(filter-out src/hash.c, $(SOURCES))
 endif
 
-CUDA_SOURCE	:= $(wildcard src/*.cu)
+CUDA_SOURCE		:= $(wildcard src/*.cu)
 
 KERNELS			:= $(wildcard kernel/c/*.c)
 CXX_KERNELS	 	:= $(wildcard kernel/mipp/*.cpp)
@@ -122,11 +124,13 @@ endif
 # Vectorization
 ifeq ($(ENABLE_VECTO), 1)
 CFLAGS			+= -DENABLE_VECTO
+CUDA_CFLAGS		+= -DENABLE_VECTO
 endif
 
 # Monitoring
 ifeq ($(ENABLE_MONITORING), 1)
 CFLAGS			+= -DENABLE_MONITORING
+CUDA_CFLAGS		+= -DENABLE_MONITORING
 endif
 
 # OpenMP
@@ -159,12 +163,14 @@ endif
 ifeq ($(ENABLE_TRACE), 1)
 # Right now, only fxt is supported
 CFLAGS			+= -DENABLE_TRACE -DENABLE_FUT
+CUDA_CFLAGS		+= -DENABLE_TRACE -DENABLE_FUT
 PACKAGES		+= fxt
 endif
 
 # Message Passing Interface (MPI)
 ifeq ($(ENABLE_MPI), 1)
 CFLAGS			+= -DENABLE_MPI
+CUDA_CFLAGS		+= -DENABLE_MPI
 PACKAGES		+= ompi
 endif
 
@@ -193,12 +199,12 @@ ifeq ($(ENABLE_CUDA), 1)
 CFLAGS			+= -DENABLE_CUDA
 LDLIBS			+= -lcudart
 PACKAGES		+= cuda
-CUDA_CFLAGS 	:= -O3 -I./include -I./traces/include -I./lib/ezv/include
 endif
 
 # MyIntrinsics++ (MIPP)
 ifeq ($(ENABLE_MIPP), 1)
 CXXFLAGS		+= -I./lib/mipp/include
+CUDA_CFLAGS		+= -I./lib/mipp/include
 endif
 
 # cglm
@@ -222,7 +228,7 @@ EZV_LIB 		:= $(EZV_DIR)/lib/libezv.a
 LDFLAGS			+= -L$(EZV_DIR)/lib
 LDLIBS			+= -lezv -lscotch
 CFLAGS			+= -I$(EZV_DIR)/include
-
+CUDA_CFLAGS		+= -I$(EZV_DIR)/include
 
 CXXFLAGS		+= $(CFLAGS)
 

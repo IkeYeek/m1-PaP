@@ -98,6 +98,22 @@ static inline unsigned patch_size (int p)
   return patch_end (p) - patch_start (p);
 }
 
+static inline unsigned patch_neighbor_start (int p)
+{
+  return easypap_mesh_desc.index_first_patch_neighbor[p];
+}
+
+static inline unsigned patch_neighbor_end (int p)
+{
+  return easypap_mesh_desc.index_first_patch_neighbor[p + 1];
+}
+
+static inline unsigned patch_neighbor (int n)
+{
+  return easypap_mesh_desc.patch_neighbors[n];
+}
+
+
 extern unsigned picking_enabled;
 
 #endif

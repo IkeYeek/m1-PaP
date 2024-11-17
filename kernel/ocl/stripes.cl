@@ -56,7 +56,7 @@ __kernel void stripes_ocl (__global unsigned *in, __global unsigned *out)
     out [y * DIM + x] = darken (in [y * DIM + x]);
 }
 
-// We assume that GPU_TILE_W is an even multiple of 32 (64, 128, 192, ...)
+// We assume that TILE_W is an even multiple of 32 (64, 128, 192, ...)
 __kernel void stripes_ocl_opt (__global unsigned *in, __global unsigned *out)
 {
   __local unsigned tile [TILE_H][TILE_W];
@@ -73,7 +73,7 @@ __kernel void stripes_ocl_opt (__global unsigned *in, __global unsigned *out)
   // The first half of buddies executes "darken" on even x-positions
   // The second half executes "brighten" on odd x-positions
   // Accesses to "tile" are not contiguous at all, but it's harmless
-  // Because (GPU_TILE_W/2) is a multiple of 32, there is no divergence inside warps
+  // Because (TILE_W/2) is a multiple of 32, there is no divergence inside warps
   if (index < get_local_size (0)) {
     tile [yloc][index] = darken(tile [yloc][index]);
   } else {

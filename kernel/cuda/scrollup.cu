@@ -1,5 +1,5 @@
 #include "cppdefs.h"
-#include "cuda_kernels.cuh"
+#include "cuda_kernels.h"
 EXTERN
 {
 #include "easypap.h"
@@ -7,8 +7,8 @@ EXTERN
 
 EXTERN __global__ void scrollup_cuda (unsigned *in, unsigned *out, unsigned DIM)
 {
-  unsigned i = get_i ();
-  unsigned j = get_j ();
+  unsigned i = gpu_get_row ();
+  unsigned j = gpu_get_col ();
 
   unsigned i2 = (i < DIM - 1) ? i + 1 : 0;
 

@@ -1,5 +1,5 @@
 #include "cppdefs.h"
-#include "cuda_kernels.cuh"
+#include "cuda_kernels.h"
 EXTERN
 {
 #include "easypap.h"

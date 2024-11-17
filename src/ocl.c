@@ -1,11 +1,9 @@
 #include "ocl.h"
 #include "arch_flags.h"
 #include "constants.h"
-#include "cpustat.h"
 #include "debug.h"
 #include "error.h"
 #include "ezp_ctx.h"
-#include "ezv.h"
 #include "ezv_sdl_gl.h"
 #include "global.h"
 #include "hooks.h"
@@ -47,15 +45,16 @@ unsigned GPU_SIZE_Y = 0;
 static size_t max_workgroup_size = 0;
 
 static cl_platform_id chosen_platform = NULL;
-cl_device_id chosen_device            = NULL;
-cl_program program; // compute program
+static cl_device_id chosen_device     = NULL;
 
+cl_program program; // compute program
 cl_context context;
-cl_kernel update_kernel;
+
+static cl_kernel update_kernel;
 static cl_kernel bench_kernel; // bench null kernel
 
-cl_mem tex_buffer;
-cl_mem neighbor_soa_buffer;
+static cl_mem tex_buffer; // both for 2Dimg and 3Dmesh
+static cl_mem neighbor_soa_buffer;
 
 ocl_gpu_t ocl_gpu[MAX_DEVICES];
 unsigned ocl_nb_gpus = 0;
@@ -116,34 +115,24 @@ unsigned easypap_number_of_gpus_ocl (void)
   return ocl_nb_gpus;
 }
 
-void ocl_acquire (void)
+static void ocl_acquire (void)
 {
   if (do_display && easypap_gl_buffer_sharing) {
     cl_int err;
 
-    if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
-      err = clEnqueueAcquireGLObjects (queue, 1, &tex_buffer, 0, NULL, NULL);
-    } else {
-      err = clEnqueueAcquireGLObjects (queue, 1, &cur_buffer, 0, NULL, NULL);
-      err |= clEnqueueAcquireGLObjects (queue, 1, &next_buffer, 0, NULL, NULL);
-    }
-
+    err = clEnqueueAcquireGLObjects (ocl_queue (0), 1, &tex_buffer, 0, NULL,
+                                     NULL);
     check (err, "Failed to acquire lock");
   }
 }
 
-void ocl_release (void)
+static void ocl_release (void)
 {
   if (do_display && easypap_gl_buffer_sharing) {
     cl_int err;
 
-    if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
-      err = clEnqueueReleaseGLObjects (queue, 1, &tex_buffer, 0, NULL, NULL);
-    } else {
-      err = clEnqueueReleaseGLObjects (queue, 1, &cur_buffer, 0, NULL, NULL);
-      err |= clEnqueueReleaseGLObjects (queue, 1, &next_buffer, 0, NULL, NULL);
-    }
-
+    err = clEnqueueReleaseGLObjects (ocl_queue (0), 1, &tex_buffer, 0, NULL,
+                                     NULL);
     check (err, "Failed to release lock");
   }
 }
@@ -336,15 +325,18 @@ void ocl_init (int show_config, int silent)
   for (int g = 0; g < ocl_nb_gpus; g++) {
     ocl_gpu[g].q = clCreateCommandQueue (context, ocl_gpu[g].device,
                                          CL_QUEUE_PROFILING_ENABLE, &err);
-    check (err, "Failed to create command queue.\nPlease make sure both OpenCL and "
-                "OpenGL use the same device (./run --show-devices)\n"
-                "or use --no-gl-buffer-share (-nbs) option.");
+    check (err,
+           "Failed to create command queue.\nPlease make sure both OpenCL and "
+           "OpenGL use the same device (./run --show-devices)\n"
+           "or use --no-gl-buffer-share (-nbs) option.");
     // printf ("queue %p for device %p\n", ocl_gpu[g].queue, ocl_gpu[g].device);
   }
 }
 
 void ocl_alloc_buffers (void)
 {
+  cl_int err;
+
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
     const unsigned size = DIM * DIM * sizeof (unsigned);
 
@@ -361,52 +353,47 @@ void ocl_alloc_buffers (void)
       if (!ocl_gpu[g].nextb)
         exit_with_error ("Failed to allocate output buffer");
     }
-    // Shared texture
+
+    // Optionally share texture with OpenGL
     if (do_display && easypap_gl_buffer_sharing) {
       int gl_buffer_ids[1];
 
       ezv_get_shareable_buffer_ids (ctx[0], gl_buffer_ids);
 
-      cl_int err;
-      // Shared texture buffer with OpenGL
-      //
-      tex_buffer = clCreateFromGLTexture (context, CL_MEM_READ_WRITE,
-                                          GL_TEXTURE_2D, 0, gl_buffer_ids[0], &err);
+      tex_buffer = clCreateFromGLTexture (
+          context, CL_MEM_READ_WRITE, GL_TEXTURE_2D, 0, gl_buffer_ids[0], &err);
       check (err, "Failed to map texture buffer\n");
 
       PRINT_DEBUG ('o', "OpenGL buffers shared with OpenCL\n");
     }
   } else { // 3D_MESHES
-    cl_int err;
+    const unsigned size = NB_CELLS * sizeof (float);
+
+    // Allocate buffers inside device memory
+    //
+    for (int g = 0; g < ocl_nb_gpus; g++) {
+      ocl_gpu[g].curb =
+          clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
+      if (!ocl_gpu[g].curb)
+        exit_with_error ("Failed to allocate value buffer #0");
+
+      ocl_gpu[g].nextb =
+          clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
+      if (!ocl_gpu[g].nextb)
+        exit_with_error ("Failed to allocate value buffer #1");
+    }
+
+    // Optionally share texture with OpenGL
     if (do_display && easypap_gl_buffer_sharing) {
-      int gl_buffer_ids[2];
+      int gl_buffer_ids[1];
 
       ezv_get_shareable_buffer_ids (ctx[0], gl_buffer_ids);
 
-      cur_buffer = clCreateFromGLBuffer (context, CL_MEM_READ_WRITE,
+      tex_buffer = clCreateFromGLBuffer (context, CL_MEM_READ_WRITE,
                                          gl_buffer_ids[0], &err);
-      check (err, "Failed to map value buffer #0\n");
-
-      next_buffer = clCreateFromGLBuffer (context, CL_MEM_READ_WRITE,
-                                          gl_buffer_ids[1], &err);
-      check (err, "Failed to map value buffer #1\n");
+      check (err, "Failed to map texture buffer object #0\n");
 
       PRINT_DEBUG ('o', "OpenGL buffers shared with OpenCL\n");
-    } else {
-      const unsigned size = NB_CELLS * sizeof (float);
-      // Allocate buffers inside device memory
-      //
-      for (int g = 0; g < ocl_nb_gpus; g++) {
-        ocl_gpu[g].curb =
-            clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
-        if (!ocl_gpu[g].curb)
-          exit_with_error ("Failed to allocate value buffer #0");
-
-        ocl_gpu[g].nextb =
-            clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
-        if (!ocl_gpu[g].nextb)
-          exit_with_error ("Failed to allocate value buffer #1");
-      }
     }
 
     if (ocl_nb_gpus == 1) {
@@ -421,11 +408,9 @@ void ocl_alloc_buffers (void)
       if (!neighbor_soa_buffer)
         exit_with_error ("Failed to allocate neighbor buffer\n");
 
-      for (int g = 0; g < ocl_nb_gpus; g++) {
-        err = clEnqueueWriteBuffer (ocl_gpu[g].q, neighbor_soa_buffer, CL_TRUE,
-                                    0, size, neighbors_soa, 0, NULL, NULL);
-        check (err, "Failed to write to neighbor_soa_buffer");
-      }
+      err = clEnqueueWriteBuffer (ocl_queue (0), neighbor_soa_buffer, CL_TRUE,
+                                  0, size, neighbors_soa, 0, NULL, NULL);
+      check (err, "Failed to write to neighbor_soa_buffer");
     }
   }
 }
@@ -471,18 +456,18 @@ static void calibrate (void)
     // Warmup
     for (unsigned it = 0; it < 2; it++) {
 
-      err = clEnqueueNDRangeKernel (ocl_gpu[g].q, bench_kernel, 1, NULL, global,
-                                    local, 0, NULL, NULL);
+      err = clEnqueueNDRangeKernel (ocl_queue (g), bench_kernel, 1, NULL,
+                                    global, local, 0, NULL, NULL);
       check (err, "Failed to execute bench kernel");
     }
-    clFinish (ocl_gpu[g].q);
+    clFinish (ocl_queue (g));
 
     for (int i = 0; i < CALIBRATION_ITER; i++) {
       for (unsigned it = 0; it < CALIBRATION_BURST; it++)
-        err = clEnqueueNDRangeKernel (ocl_gpu[g].q, bench_kernel, 1, NULL,
+        err = clEnqueueNDRangeKernel (ocl_queue (g), bench_kernel, 1, NULL,
                                       global, local, 0, NULL, &events[it]);
 
-      clFinish (ocl_gpu[g].q);
+      clFinish (ocl_queue (g));
       t = what_time_is_it ();
 
       cl_ulong end;
@@ -594,7 +579,8 @@ void ocl_build_program (int list_variants)
                " -DTILE_H=%d -DKERNEL_%s"
                " -DPARAM=%s %s %s %s -D%s",
                DIM, GPU_SIZE_X, GPU_SIZE_Y, TILE_W, TILE_H, kernel_name,
-               config_param, debug_str, endianness, glbuffershare, stringify (ARCH));
+               config_param, debug_str, endianness, glbuffershare,
+               stringify (ARCH));
     else
       sprintf (buffer,
                " -cl-strict-aliasing -cl-fast-relaxed-math"
@@ -610,7 +596,8 @@ void ocl_build_program (int list_variants)
              " -DNB_CELLS=%d -DGPU_SIZE=%d -DTILE=%d -DMAX_NEIGHBORS=%d"
              " -DKERNEL_%s %s %s %s -D%s",
              NB_CELLS, GPU_SIZE, TILE, easypap_mesh_desc.max_neighbors,
-             kernel_name, debug_str, endianness, glbuffershare, stringify (ARCH));
+             kernel_name, debug_str, endianness, glbuffershare,
+             stringify (ARCH));
   }
   // printf ("[OpenCL flags: %s]\n", buffer);
 
@@ -651,14 +638,16 @@ void ocl_build_program (int list_variants)
 
   PRINT_DEBUG ('o', "Using OpenCL kernel: %s_%s\n", kernel_name, variant_name);
 
-  if (easypap_mode == EASYPAP_MODE_2D_IMAGES && easypap_gl_buffer_sharing) {
-    // First look for kernel-specific version of update_texture
-    sprintf (buffer, "%s_update_texture", kernel_name);
-    update_kernel = clCreateKernel (program, buffer, &err);
-    if (err != CL_SUCCESS) {
-      // Fall back to generic version
-      update_kernel = clCreateKernel (program, "update_texture", &err);
-      check (err, "Failed to create kernel <update_texture>");
+  if (do_display && easypap_gl_buffer_sharing) {
+    if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
+      // First look for kernel-specific version of update_texture
+      sprintf (buffer, "%s_update_texture", kernel_name);
+      update_kernel = clCreateKernel (program, buffer, &err);
+      if (err != CL_SUCCESS) {
+        // Fall back to generic version
+        update_kernel = clCreateKernel (program, "update_texture", &err);
+        check (err, "Failed to create kernel <update_texture>");
+      }
     }
   }
 
@@ -682,36 +671,29 @@ void ocl_send_data (void)
     const int g = 0;
 
     if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
-
       const unsigned size = DIM * DIM * sizeof (unsigned);
 
-      err = clEnqueueWriteBuffer (ocl_gpu[g].q, cur_buffer, CL_TRUE, 0, size,
-                                  image, 0, NULL, NULL);
+      err = clEnqueueWriteBuffer (ocl_queue (g), ocl_cur_buffer (g), CL_TRUE, 0,
+                                  size, image, 0, NULL, NULL);
       check (err, "Failed to write to cur_buffer");
 
-      err = clEnqueueWriteBuffer (ocl_gpu[g].q, next_buffer, CL_TRUE, 0, size,
-                                  alt_image, 0, NULL, NULL);
+      err = clEnqueueWriteBuffer (ocl_queue (g), ocl_next_buffer (g), CL_TRUE,
+                                  0, size, alt_image, 0, NULL, NULL);
       check (err, "Failed to write to next_buffer");
 
       PRINT_DEBUG (
           'i', "Init phase 7 : Initial data transferred to OpenCL device\n");
-
     } else { // 3D_MESHES
-
       const unsigned size = NB_CELLS * sizeof (float);
       const int g         = 0;
 
-      ocl_acquire ();
-
-      err = clEnqueueWriteBuffer (ocl_gpu[g].q, ocl_gpu[g].curb, CL_TRUE, 0,
+      err = clEnqueueWriteBuffer (ocl_queue (g), ocl_cur_buffer (g), CL_TRUE, 0,
                                   size, mesh_data, 0, NULL, NULL);
       check (err, "Failed to write to cur_buffer");
 
-      err = clEnqueueWriteBuffer (ocl_gpu[g].q, ocl_gpu[g].nextb, CL_TRUE, 0,
-                                  size, alt_mesh_data, 0, NULL, NULL);
+      err = clEnqueueWriteBuffer (ocl_queue (g), ocl_next_buffer (g), CL_TRUE,
+                                  0, size, alt_mesh_data, 0, NULL, NULL);
       check (err, "Failed to write to next_buffer");
-
-      ocl_release ();
 
       PRINT_DEBUG (
           'i', "Init phase 7 : Initial data transferred to OpenCL device\n");
@@ -724,22 +706,17 @@ void ocl_retrieve_data (void)
   cl_int err;
 
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
-
     const unsigned size = DIM * DIM * sizeof (unsigned);
 
-    err = clEnqueueReadBuffer (queue, cur_buffer, CL_TRUE, 0, size, image, 0,
-                               NULL, NULL);
+    err = clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
+                               size, image, 0, NULL, NULL);
     check (err, "Failed to read from cur_buffer");
   } else {
     const unsigned size = NB_CELLS * sizeof (float);
 
-    ocl_acquire ();
-
-    err = clEnqueueReadBuffer (queue, cur_buffer, CL_TRUE, 0, size, mesh_data,
-                               0, NULL, NULL);
+    err = clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
+                               size, mesh_data, 0, NULL, NULL);
     check (err, "Failed to read from cur_buffer");
-
-    ocl_release ();
   }
 
   // PRINT_DEBUG ('o', "Data retrieved from OpenCL device\n");
@@ -752,34 +729,34 @@ static unsigned ocl_compute_2dimg (unsigned nb_iter)
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock =
-      monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
     // Set kernel arguments
     //
     err = 0;
-    err |= clSetKernelArg (compute_kernel, 0, sizeof (cl_mem), &cur_buffer);
-    err |= clSetKernelArg (compute_kernel, 1, sizeof (cl_mem), &next_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &ocl_next_buffer (0));
     check (err, "Failed to set kernel arguments");
 
-    err = clEnqueueNDRangeKernel (queue, compute_kernel, 2, NULL, global, local,
-                                  0, NULL, NULL);
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
+                                  NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
 
     // Swap buffers
     {
-      cl_mem tmp  = cur_buffer;
-      cur_buffer  = next_buffer;
-      next_buffer = tmp;
+      cl_mem tmp          = ocl_cur_buffer (0);
+      ocl_cur_buffer (0)  = ocl_next_buffer (0);
+      ocl_next_buffer (0) = tmp;
     }
   }
 
-  clFinish (queue);
+  clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM,
-                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (0));
 
   return 0;
 }
@@ -790,59 +767,49 @@ static unsigned ocl_compute_3dmesh (unsigned nb_iter)
   size_t local[1]  = {TILE};     // local domain size for our calculation
   cl_int err;
 
-  ocl_acquire ();
-
-  uint64_t clock =
-      monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
     // Set kernel arguments
     //
     err = 0;
-    err |= clSetKernelArg (compute_kernel, 0, sizeof (cl_mem), &cur_buffer);
-    err |= clSetKernelArg (compute_kernel, 1, sizeof (cl_mem), &next_buffer);
-    err |= clSetKernelArg (compute_kernel, 2, sizeof (cl_mem),
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &ocl_next_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 2, sizeof (cl_mem),
                            &neighbor_soa_buffer);
     check (err, "Failed to set kernel arguments");
 
-    err = clEnqueueNDRangeKernel (queue, compute_kernel, 1, NULL, global, local,
-                                  0, NULL, NULL);
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 1,
+                                  NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
 
     // Swap buffers
     {
-      cl_mem tmp  = cur_buffer;
-      cur_buffer  = next_buffer;
-      next_buffer = tmp;
-      if (do_display)
-        ezv_switch_color_buffers (ctx[0]);
+      cl_mem tmp          = ocl_cur_buffer (0);
+      ocl_cur_buffer (0)  = ocl_next_buffer (0);
+      ocl_next_buffer (0) = tmp;
     }
   }
 
-  clFinish (queue);
+  clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0,
-                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
-
-  ocl_release ();
+  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
 
   return 0;
-}
-
-unsigned ocl_compute (unsigned nb_iter)
-{
-  if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
-    return ocl_compute_2dimg (nb_iter);
-  else
-    return ocl_compute_3dmesh (nb_iter);
 }
 
 void ocl_establish_bindings (void)
 {
   the_compute = bind_it (kernel_name, "compute", variant_name, 0);
   if (the_compute == NULL) {
-    the_compute = ocl_compute;
+    if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
+      the_compute = ocl_compute_2dimg;
+    } else {
+      the_compute = ocl_compute_3dmesh;
+    }
     PRINT_DEBUG ('c', "Using generic [%s] OpenCL kernel launcher\n",
                  "ocl_compute");
   }
@@ -851,26 +818,40 @@ void ocl_establish_bindings (void)
 
 void ocl_update_texture (void)
 {
-  size_t global[2] = {DIM, DIM}; // global domain size for our calculation
-  size_t local[2]  = {16, 16};   // local domain size for our calculation
   cl_int err;
 
-  ocl_acquire ();
+  if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
+    size_t global[2] = {DIM, DIM}; // global domain size for our calculation
+    size_t local[2]  = {16, 16};   // local domain size for our calculation
 
-  // Set kernel arguments
-  //
-  err = 0;
-  err |= clSetKernelArg (update_kernel, 0, sizeof (cl_mem), &cur_buffer);
-  err |= clSetKernelArg (update_kernel, 1, sizeof (cl_mem), &tex_buffer);
-  check (err, "Failed to set kernel arguments");
+    ocl_acquire ();
 
-  err = clEnqueueNDRangeKernel (queue, update_kernel, 2, NULL, global, local, 0,
-                                NULL, NULL);
-  check (err, "Failed to execute update_texture kernel");
+    // Set kernel arguments
+    //
+    err = 0;
+    err |=
+        clSetKernelArg (update_kernel, 0, sizeof (cl_mem), &ocl_cur_buffer (0));
+    err |= clSetKernelArg (update_kernel, 1, sizeof (cl_mem), &tex_buffer);
+    check (err, "Failed to set kernel arguments");
 
-  ocl_release ();
+    err = clEnqueueNDRangeKernel (ocl_queue (0), update_kernel, 2, NULL, global,
+                                  local, 0, NULL, NULL);
+    check (err, "Failed to execute update_texture kernel");
 
-  clFinish (queue);
+    clFinish (ocl_queue (0));
+
+    ocl_release ();
+  } else {
+    // In 3DMESH mode, we simply copy data from cur_buffer to OpenGL texture
+    // buffer object
+    ocl_acquire ();
+
+    err = clEnqueueCopyBuffer (ocl_queue (0), ocl_cur_buffer (0), tex_buffer, 0,
+                               0, NB_CELLS * sizeof (float), 0, NULL, NULL);
+    check (err, "Failed to copy data into texture buffer_object");
+
+    ocl_release ();
+  }
 }
 
 size_t ocl_get_max_workgroup_size (void)
@@ -902,7 +883,7 @@ int64_t ocl_monitor (cl_event evt, int x, int y, int width, int height,
                      task_type_t task_type, unsigned gpu_no)
 {
   int64_t start, end;
-  unsigned gpu_lane = easypap_gpu_lane (task_type, gpu_no);
+  unsigned gpu_lane = easypap_gpu_lane (gpu_no);
 
   start = ocl_start_time (evt, gpu_no);
   end   = ocl_end_time (evt, gpu_no);

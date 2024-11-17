@@ -23,7 +23,7 @@ int sample_do_tile_default (int x, int y, int width, int height)
 {
   for (int i = y; i < y + height; i++)
     for (int j = x; j < x + width; j++)
-      cur_img (i, j) = ezv_rgb (j, 0, i);
+      cur_img (i, j) = ezv_rgb (255, 255, 0);
 
   return 0;
 }
@@ -73,30 +73,31 @@ unsigned sample_compute_tiled (unsigned nb_iter)
 //
 unsigned sample_compute_ocl (unsigned nb_iter)
 {
-  size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};   // global domain size for our calculation
+  size_t global[2] = {GPU_SIZE_X,
+                      GPU_SIZE_Y};     // global domain size for our calculation
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
     // Set kernel arguments
     //
     err = 0;
-    err |= clSetKernelArg (compute_kernel, 0, sizeof (cl_mem), &cur_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
 
     check (err, "Failed to set kernel arguments");
 
-    err = clEnqueueNDRangeKernel (queue, compute_kernel, 2, NULL, global, local,
-                                  0, NULL, NULL);
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
+                                  NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
-
   }
 
-  clFinish (queue);
+  clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (0));
 
   return 0;
 }

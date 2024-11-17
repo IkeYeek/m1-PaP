@@ -16,7 +16,6 @@ void mesh3d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
 void mesh3d_renderer_zplane_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dz);
 void mesh3d_render (ezv_ctx_t ctx);
 void mesh3d_reset_view (ezv_ctx_t ctx[], unsigned nb_ctx);
-void mesh3d_switch_data_color_buffer (ezv_ctx_t ctx);
 void mesh3d_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[]);
 void mesh3d_set_data_brightness (ezv_ctx_t ctx, float brightness);
 

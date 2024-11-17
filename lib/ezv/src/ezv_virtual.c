@@ -31,12 +31,6 @@ void ezv_activate_data_palette (ezv_ctx_t ctx)
   ctx->class->activate_data_palette (ctx);
 }
 
-void ezv_switch_color_buffers (ezv_ctx_t ctx)
-{
-  if (ctx->class->switch_color_buffers != NULL)
-    ctx->class->switch_color_buffers (ctx);
-}
-
 void ezv_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[])
 {
   ctx->class->get_shareable_buffer_ids (ctx, buffer_ids);

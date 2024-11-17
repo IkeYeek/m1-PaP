@@ -250,7 +250,7 @@ void ssandPile_refresh_img_ocl ()
   cl_int err;
 
   err =
-      clEnqueueReadBuffer (queue, cur_buffer, CL_TRUE, 0,
+      clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
                            sizeof (unsigned) * DIM * DIM, TABLE, 0, NULL, NULL);
   check (err, "Failed to read buffer from GPU");
 

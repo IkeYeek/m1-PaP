@@ -142,12 +142,14 @@ void heat3d_init_ocl_naive (void)
   // Array of all neighbors
   const int sizen = easypap_mesh_desc.total_neighbors * sizeof (unsigned);
 
-  neighbors_buffer = clCreateBuffer (context, CL_MEM_READ_WRITE, sizen, NULL, NULL);
+  neighbors_buffer =
+      clCreateBuffer (context, CL_MEM_READ_WRITE, sizen, NULL, NULL);
   if (!neighbors_buffer)
     exit_with_error ("Failed to allocate neighbor buffer");
 
-  err = clEnqueueWriteBuffer (queue, neighbors_buffer, CL_TRUE, 0, sizen, easypap_mesh_desc.neighbors, 0,
-                              NULL, NULL);
+  err =
+      clEnqueueWriteBuffer (ocl_queue (0), neighbors_buffer, CL_TRUE, 0, sizen,
+                            easypap_mesh_desc.neighbors, 0, NULL, NULL);
   check (err, "Failed to write to neighbor buffer");
 
   // indexes
@@ -157,8 +159,9 @@ void heat3d_init_ocl_naive (void)
   if (!index_buffer)
     exit_with_error ("Failed to allocate index buffer");
 
-  err = clEnqueueWriteBuffer (queue, index_buffer, CL_TRUE, 0, sizei, easypap_mesh_desc.index_first_neighbor, 0,
-                              NULL, NULL);
+  err = clEnqueueWriteBuffer (ocl_queue (0), index_buffer, CL_TRUE, 0, sizei,
+                              easypap_mesh_desc.index_first_neighbor, 0, NULL,
+                              NULL);
   check (err, "Failed to write to index buffer");
 }
 
@@ -168,44 +171,40 @@ unsigned heat3d_compute_ocl_naive (unsigned nb_iter)
   size_t local[1]  = {TILE};     // local domain size for our calculation
   cl_int err;
 
-  ocl_acquire ();
-
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
     // Set kernel arguments
     //
     err = 0;
-    err |= clSetKernelArg (compute_kernel, 0, sizeof (cl_mem), &cur_buffer);
-    err |= clSetKernelArg (compute_kernel, 1, sizeof (cl_mem), &next_buffer);
-    err |=
-        clSetKernelArg (compute_kernel, 2, sizeof (cl_mem), &neighbors_buffer);
-    err |=
-        clSetKernelArg (compute_kernel, 3, sizeof (cl_mem), &index_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &ocl_next_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 2, sizeof (cl_mem),
+                           &neighbors_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 3, sizeof (cl_mem),
+                           &index_buffer);
     check (err, "Failed to set kernel arguments");
 
-    err = clEnqueueNDRangeKernel (queue, compute_kernel, 1, NULL, global, local,
-                                  0, NULL, NULL);
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 1,
+                                  NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
 
     // Swap buffers
     {
-      cl_mem tmp  = cur_buffer;
-      cur_buffer  = next_buffer;
-      next_buffer = tmp;
-      if (do_display)
-        ezv_switch_color_buffers (ctx[0]);
+      cl_mem tmp          = ocl_cur_buffer (0);
+      ocl_cur_buffer (0)  = ocl_next_buffer (0);
+      ocl_next_buffer (0) = tmp;
     }
   }
 
-  clFinish (queue);
+  clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0,
-                       easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
-
-  ocl_release ();
+  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
 
   return 0;
 }
+
 #endif

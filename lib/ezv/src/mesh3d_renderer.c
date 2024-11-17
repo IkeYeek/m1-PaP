@@ -9,6 +9,7 @@
 #include "ezv_mesh3d_object.h"
 #include "ezv_sdl_gl.h"
 #include "ezv_shader.h"
+#include "ezv_textures.h"
 #include "mesh3d_renderer.h"
 #include "stb_image.h"
 
@@ -20,8 +21,8 @@ static const float NEARZ = 0.2f;
 static const float FARZ  = 5.0f;
 
 #define INITIAL_TRANSLATE_VAL -1.5f
-#define INITIAL_ROTATE_Y      -90.0f
-#define INITIAL_ROTATE_X      +15.0f
+#define INITIAL_ROTATE_Y -90.0f
+#define INITIAL_ROTATE_X +15.0f
 
 typedef struct render_ctx_s
 {
@@ -36,8 +37,7 @@ typedef struct render_ctx_s
                    // (cellno, drop, edgen)
   GLuint TBO_COL;  // Texture Buffer Object containing per-cell indexes to cpu
                    // color palette
-  GLuint TBO_DATACOL[2];
-  unsigned current_datacol;
+  GLuint TBO_DATACOL;
   GLuint tex_tinfo;   // GL Texture associated to TBO_INFO
   GLuint tex_color;   // TBO_COL
   GLuint tex_datacol; // TBO_DATACOL
@@ -123,7 +123,7 @@ static void mesh3d_renderer_mvp_init (ezv_ctx_t ctx)
 
     if (!mesh->bbox_set)
       mesh3d_obj_compute_bounding_box (mesh);
-      
+
     glm_vec3_sub (bbox->max, bbox->min, dim);
     msize = glm_max (glm_max (dim[0], dim[1]), dim[2]);
 
@@ -354,9 +354,7 @@ void mesh3d_renderer_init (ezv_ctx_t ctx)
   renctx->VBO_IND             = 0;
   renctx->TBO_INFO            = 0;
   renctx->TBO_COL             = 0;
-  renctx->current_datacol     = 0;
-  renctx->TBO_DATACOL[0]      = 0;
-  renctx->TBO_DATACOL[1]      = 0;
+  renctx->TBO_DATACOL         = 0;
   renctx->tex_tinfo           = 0;
   renctx->tex_color           = 0;
   renctx->depthTexture        = 0;
@@ -366,15 +364,18 @@ void mesh3d_renderer_init (ezv_ctx_t ctx)
   ezv_mesh3d_set_renderer (ctx, renctx);
 
   // compile shaders and build program
-  renctx->cpu_shader = ezv_shader_create ("mesh3d/generic.vs", "mesh3d/cpu.gs", "mesh3d/generic.fs");
-  renctx->data_shader =
-      ezv_shader_create ("mesh3d/generic.vs", "mesh3d/data.gs", "mesh3d/generic.fs");
-  renctx->dapu_shader =
-      ezv_shader_create ("mesh3d/generic.vs", "mesh3d/cpu_data.gs", "mesh3d/generic.fs");
-  renctx->picking_shader =
-      ezv_shader_create ("mesh3d/generic.vs", "mesh3d/generic.gs", "mesh3d/picking.fs");
-  renctx->clipping_shader = ezv_shader_create ("mesh3d/clipping.vs", NULL, "mesh3d/cut.fs");
-  renctx->cut_shader      = ezv_shader_create ("mesh3d/cut.vs", "mesh3d/cut.gs", "mesh3d/cut.fs");
+  renctx->cpu_shader  = ezv_shader_create ("mesh3d/generic.vs", "mesh3d/cpu.gs",
+                                           "mesh3d/generic.fs");
+  renctx->data_shader = ezv_shader_create (
+      "mesh3d/generic.vs", "mesh3d/data.gs", "mesh3d/generic.fs");
+  renctx->dapu_shader = ezv_shader_create (
+      "mesh3d/generic.vs", "mesh3d/cpu_data.gs", "mesh3d/generic.fs");
+  renctx->picking_shader = ezv_shader_create (
+      "mesh3d/generic.vs", "mesh3d/generic.gs", "mesh3d/picking.fs");
+  renctx->clipping_shader =
+      ezv_shader_create ("mesh3d/clipping.vs", NULL, "mesh3d/cut.fs");
+  renctx->cut_shader =
+      ezv_shader_create ("mesh3d/cut.vs", "mesh3d/cut.gs", "mesh3d/cut.fs");
 
   // Uniform parameters
   ezv_shader_get_uniform_loc (renctx->cpu_shader, "TriangleInfo",
@@ -495,16 +496,20 @@ void mesh3d_renderer_set_mesh (ezv_ctx_t ctx)
   glBufferData (GL_TEXTURE_BUFFER, mesh->nb_triangles * sizeof (int),
                 mesh->triangle_info,
                 GL_STATIC_DRAW); // Stored in GPU once for all
-  glActiveTexture (GL_TEXTURE2);
+  glActiveTexture (GL_TEXTURE0 + EZV_INFO_TEXTURE_NUM);
   glGenTextures (1, &renctx->tex_tinfo);
   glBindTexture (GL_TEXTURE_BUFFER, renctx->tex_tinfo);
   glTexBuffer (GL_TEXTURE_BUFFER, GL_R32I, renctx->TBO_INFO);
 
   // bind uniform buffer objects to texture #2
-  glProgramUniform1i (renctx->cpu_shader, renctx->cpu_info_loc, 2);
-  glProgramUniform1i (renctx->data_shader, renctx->data_info_loc, 2);
-  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_info_loc, 2);
-  glProgramUniform1i (renctx->cut_shader, renctx->cut_info_loc, 2);
+  glProgramUniform1i (renctx->cpu_shader, renctx->cpu_info_loc,
+                      EZV_INFO_TEXTURE_NUM);
+  glProgramUniform1i (renctx->data_shader, renctx->data_info_loc,
+                      EZV_INFO_TEXTURE_NUM);
+  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_info_loc,
+                      EZV_INFO_TEXTURE_NUM);
+  glProgramUniform1i (renctx->cut_shader, renctx->cut_info_loc,
+                      EZV_INFO_TEXTURE_NUM);
 }
 
 void ezv_mesh3d_refresh_mesh (ezv_ctx_t ctx[], unsigned nb_ctx)
@@ -542,14 +547,16 @@ void mesh3d_renderer_use_cpu_palette (ezv_ctx_t ctx)
   glBufferData (GL_TEXTURE_BUFFER, mesh->nb_cells * sizeof (int), NULL,
                 GL_DYNAMIC_DRAW); // To be refreshed regularly
 
-  glActiveTexture (GL_TEXTURE1);
+  glActiveTexture (GL_TEXTURE0 + EZV_CPU_TEXTURE_NUM);
   glGenTextures (1, &renctx->tex_color);
   glBindTexture (GL_TEXTURE_BUFFER, renctx->tex_color);
   glTexBuffer (GL_TEXTURE_BUFFER, GL_R32I, renctx->TBO_COL);
 
   // bind uniform buffer object to texture #1
-  glProgramUniform1i (renctx->cpu_shader, renctx->cpu_colors_loc, 1);
-  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_colors_loc, 1);
+  glProgramUniform1i (renctx->cpu_shader, renctx->cpu_colors_loc,
+                      EZV_CPU_TEXTURE_NUM);
+  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_colors_loc,
+                      EZV_CPU_TEXTURE_NUM);
 }
 
 void mesh3d_renderer_use_data_palette (ezv_ctx_t ctx)
@@ -588,23 +595,21 @@ void mesh3d_renderer_use_data_palette (ezv_ctx_t ctx)
                       DEFAULT_DATA_BRIGHTNESS);
 
   // Texture Buffer Objects containing float data values [0.0 … 1.0]
-  glGenBuffers (2, renctx->TBO_DATACOL);
-  for (int i = 0; i < 2; i++) {
-    glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_DATACOL[i]);
-    glBufferData (GL_TEXTURE_BUFFER, mesh->nb_cells * sizeof (float), NULL,
-                  GL_DYNAMIC_DRAW); // To be refreshed regularly
-  }
+  glGenBuffers (1, &renctx->TBO_DATACOL);
+  glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_DATACOL);
+  glBufferData (GL_TEXTURE_BUFFER, mesh->nb_cells * sizeof (float), NULL,
+                GL_DYNAMIC_DRAW); // To be refreshed regularly
 
-  renctx->current_datacol = 0;
-  glActiveTexture (GL_TEXTURE3);
+  glActiveTexture (GL_TEXTURE0 + EZV_DATA_TEXTURE_NUM);
   glGenTextures (1, &renctx->tex_datacol);
   glBindTexture (GL_TEXTURE_BUFFER, renctx->tex_datacol);
-  glTexBuffer (GL_TEXTURE_BUFFER, GL_R32F,
-               renctx->TBO_DATACOL[renctx->current_datacol]);
+  glTexBuffer (GL_TEXTURE_BUFFER, GL_R32F, renctx->TBO_DATACOL);
 
   // bind uniform buffer object to texture #3
-  glProgramUniform1i (renctx->data_shader, renctx->data_values_loc, 3);
-  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_values_loc, 3);
+  glProgramUniform1i (renctx->data_shader, renctx->data_values_loc,
+                      EZV_DATA_TEXTURE_NUM);
+  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_values_loc,
+                      EZV_DATA_TEXTURE_NUM);
 }
 
 void mesh3d_set_data_brightness (ezv_ctx_t ctx, float brightness)
@@ -617,19 +622,6 @@ void mesh3d_set_data_brightness (ezv_ctx_t ctx, float brightness)
                       brightness);
 }
 
-void mesh3d_switch_data_color_buffer (ezv_ctx_t ctx)
-{
-  mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx);
-
-  renctx->current_datacol = 1 - renctx->current_datacol;
-
-  ezv_switch_to_context (ctx);
-
-  glActiveTexture (GL_TEXTURE3);
-  glTexBuffer (GL_TEXTURE_BUFFER, GL_R32F,
-               renctx->TBO_DATACOL[renctx->current_datacol]);
-}
-
 void mesh3d_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[])
 {
   if (!ezv_palette_is_defined (&ctx->data_palette))
@@ -639,8 +631,7 @@ void mesh3d_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[])
 
   ezv_switch_to_context (ctx);
 
-  for (int i = 0; i < 2; i++)
-    buffer_ids[i] = renctx->TBO_DATACOL[i];
+  buffer_ids[0] = renctx->TBO_DATACOL;
 }
 
 void mesh3d_set_data_colors (ezv_ctx_t ctx, void *values)
@@ -653,8 +644,7 @@ void mesh3d_set_data_colors (ezv_ctx_t ctx, void *values)
 
   ezv_switch_to_context (ctx);
 
-  glBindBuffer (GL_TEXTURE_BUFFER,
-                renctx->TBO_DATACOL[renctx->current_datacol]);
+  glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_DATACOL);
   glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_cells * sizeof (float),
                    values);
 }
@@ -749,8 +739,8 @@ void mesh3d_render (ezv_ctx_t ctx)
   SDL_GL_SwapWindow (ctx->win);
 }
 
-int mesh3d_renderer_zoom (ezv_ctx_t ctx[], unsigned nb_ctx,
-                          unsigned shift_mod, unsigned in)
+int mesh3d_renderer_zoom (ezv_ctx_t ctx[], unsigned nb_ctx, unsigned shift_mod,
+                          unsigned in)
 {
   if (shift_mod) {
     // move clipping plane forward

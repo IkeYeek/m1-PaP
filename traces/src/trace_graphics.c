@@ -63,16 +63,17 @@ enum
 #define TILE_ALPHA 0x80
 #define BUTTON_ALPHA 60
 
-#define RMASK ezv_red_mask ()
-#define GMASK ezv_green_mask ()
-#define BMASK ezv_blue_mask ()
-#define AMASK ezv_alpha_mask ()
 #define BLACK_COL ezv_rgb (0, 0, 0)
+#define DARK_COL ezv_rgb (60, 60, 60)
 #define WHITE_COL ezv_rgb (255, 255, 255)
+
+static SDL_Color silver_color  = {192, 192, 192, 255};
+static SDL_Color backgrd_color = {0, 51, 51, 255}; //{50, 50, 65, 255};
 
 static SDL_Texture **square_tex_bright = NULL;
 static SDL_Texture **square_tex_dark   = NULL;
 static SDL_Texture *black_square       = NULL;
+static SDL_Texture *dark_square        = NULL;
 static SDL_Texture *white_square       = NULL;
 static SDL_Texture *stat_frame_tex     = NULL;
 static SDL_Texture *stat_caption_tex   = NULL;
@@ -138,9 +139,6 @@ static long max_time = -1;
 int use_thumbnails       = 1;
 unsigned char brightness = 150;
 unsigned soft_rendering  = 0;
-
-static SDL_Color silver_color  = {192, 192, 192, 255};
-static SDL_Color backgrd_color = {50, 50, 65, 255};
 
 extern char *trace_dir[]; // Defined in main.c
 
@@ -537,7 +535,7 @@ static void create_task_textures (unsigned nb_cores)
 
   SDL_Surface *s = SDL_CreateRGBSurfaceFrom (img, GANTT_WIDTH, TASK_HEIGHT, 32,
                                              GANTT_WIDTH * sizeof (Uint32),
-                                             RMASK, GMASK, BMASK, AMASK);
+                                             ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom () failed");
 
@@ -584,7 +582,7 @@ static void create_task_textures (unsigned nb_cores)
 
   img = malloc (width * height * sizeof (Uint32));
   s = SDL_CreateRGBSurfaceFrom (img, width, height, 32, width * sizeof (Uint32),
-                                RMASK, GMASK, BMASK, AMASK);
+                                ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom () failed");
 
@@ -616,8 +614,8 @@ static void create_task_textures (unsigned nb_cores)
   // Cache stats frame
   img = malloc (MAX_CACHE_WIDTH * (MIN_TASK_HEIGHT + 2) * sizeof (Uint32));
   s   = SDL_CreateRGBSurfaceFrom (img, MAX_CACHE_WIDTH, MIN_TASK_HEIGHT + 2, 32,
-                                  MAX_CACHE_WIDTH * sizeof (Uint32), RMASK, GMASK,
-                                  BMASK, AMASK);
+                                  MAX_CACHE_WIDTH * sizeof (Uint32), ezv_red_mask (), ezv_green_mask (),
+                                  ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom failed: %s", SDL_GetError ());
 
@@ -634,13 +632,16 @@ static void create_task_textures (unsigned nb_cores)
   SDL_FreeSurface (s);
   free (img);
 
-  s = SDL_CreateRGBSurface (0, SQUARE_SIZE, SQUARE_SIZE, 32, RMASK, GMASK,
-                            BMASK, AMASK);
+  s = SDL_CreateRGBSurface (0, SQUARE_SIZE, SQUARE_SIZE, 32, ezv_red_mask (), ezv_green_mask (),
+                            ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurface () failed");
 
   SDL_FillRect (s, NULL, BLACK_COL); // back
   black_square = SDL_CreateTextureFromSurface (renderer, s);
+
+  SDL_FillRect (s, NULL, DARK_COL); // dark
+  dark_square = SDL_CreateTextureFromSurface (renderer, s);
 
   SDL_FillRect (s, NULL, WHITE_COL); // white
   white_square = SDL_CreateTextureFromSurface (renderer, s);
@@ -796,27 +797,65 @@ static void blit_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
   SDL_FreeSurface (s);
 }
 
+static void blit_sub_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
+                                 unsigned line, unsigned color)
+{
+  SDL_Rect dst;
+  SDL_Color col;
+
+  to_sdl_color (color, &col);
+
+  SDL_Surface *s = TTF_RenderUTF8_Blended (font, "in", col);
+  if (s == NULL)
+    exit_with_error ("TTF_RenderUTF8_Blended failed: %s", SDL_GetError ());
+
+  dst.x = LEFT_MARGIN - s->w;
+  dst.y = trace_display_info[trace].gantt.y +
+          cpu_row_height (TASK_HEIGHT) * line;
+  dst.h = cpu_row_height (TASK_HEIGHT) / 2 - 1;
+
+  SDL_BlitSurface (s, NULL, surface, &dst);
+  SDL_FreeSurface (s);
+
+  s = TTF_RenderUTF8_Blended (font, "out", col);
+  if (s == NULL)
+    exit_with_error ("TTF_RenderUTF8_Blended failed: %s", SDL_GetError ());
+
+  dst.x = LEFT_MARGIN - s->w;
+  dst.y = trace_display_info[trace].gantt.y +
+          cpu_row_height (TASK_HEIGHT) * line + cpu_row_height (TASK_HEIGHT) / 2;
+
+  SDL_BlitSurface (s, NULL, surface, &dst);
+  SDL_FreeSurface (s);
+}
+
 static void create_cpu_textures (TTF_Font *font)
 {
   SDL_Surface *surface = SDL_CreateRGBSurface (0, LEFT_MARGIN, WINDOW_HEIGHT,
-                                               32, RMASK, GMASK, BMASK, AMASK);
+                                               32, ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
   if (surface == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
   for (int t = 0; t < nb_traces; t++) {
     for (int c = 0; c < trace[t].nb_cores; c++) {
       char msg[32];
+      int is_lane = 0;
       if (is_gpu (trace + t, c)) {
         int lane = c - (trace[t].nb_cores - trace[t].nb_gpu);
         int gpu  = lane >> 1;
-        if (lane & 1)
-          snprintf (msg, 32, "<-> G %d ", gpu);
-        else
+        if (lane & 1) {
+          snprintf (msg, 32, "I/O        ");
+          is_lane = 1;
+        } else
           snprintf (msg, 32, "GPU %2d ", gpu);
       } else
         snprintf (msg, 32, "CPU %2d ", c);
 
       blit_on_surface (surface, font, t, c, msg, ezp_cpu_colors[c % EZP_MAX_COLORS]);
+      if (is_lane) {
+        blit_sub_on_surface (surface, font, t, c, ezp_cpu_colors[c % EZP_MAX_COLORS]);
+        blit_sub_on_surface (surface, font, t, c, ezp_cpu_colors[c % EZP_MAX_COLORS]);
+      }
     }
   }
 
@@ -840,8 +879,8 @@ static void create_text_texture (TTF_Font *font)
 
 static void create_misc_tex (void)
 {
-  SDL_Surface *surf = SDL_CreateRGBSurface (0, 2, WINDOW_HEIGHT, 32, RMASK,
-                                            GMASK, BMASK, AMASK);
+  SDL_Surface *surf = SDL_CreateRGBSurface (0, 2, WINDOW_HEIGHT, 32, ezv_red_mask (),
+                                            ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
   if (surf == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -851,7 +890,7 @@ static void create_misc_tex (void)
   SDL_FreeSurface (surf);
 
   surf =
-      SDL_CreateRGBSurface (0, GANTT_WIDTH, 2, 32, RMASK, GMASK, BMASK, AMASK);
+      SDL_CreateRGBSurface (0, GANTT_WIDTH, 2, 32, ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
   if (surf == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -966,8 +1005,7 @@ static inline int get_tile_rect (trace_t *tr, trace_task_t *t, SDL_Rect *dst)
 static void show_tile (trace_t *tr, trace_task_t *t, unsigned cpu,
                        unsigned highlight)
 {
-  unsigned task_color =
-      is_lane (tr, cpu) ? ezp_gpu_index[t->task_type] : (cpu % EZP_MAX_COLORS);
+  unsigned task_color = cpu % EZP_MAX_COLORS;
 
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
     if (t->w) {
@@ -1323,12 +1361,13 @@ static void display_gantt_background (trace_t *tr, int _t, int first_it)
     r.h = trace_display_info[_t].gantt.h;
 
     // Background of iterations is black
-    // SDL_RenderCopy (renderer, black_square, NULL, &r);
     {
+      SDL_Texture *ptr_tex = (it % 2 ? dark_square : black_square);
+
       SDL_Rect dst = {r.x, r.y, r.w, TASK_HEIGHT + 2 * Y_MARGIN};
 
       for (int c = 0; c < tr->nb_cores; c++) {
-        SDL_RenderCopy (renderer, black_square, NULL, &dst);
+        SDL_RenderCopy (renderer, ptr_tex, NULL, &dst);
         dst.y += cpu_row_height (TASK_HEIGHT);
       }
     }
@@ -1488,7 +1527,7 @@ static void trace_graphics_display_trace (unsigned _t,
             if (t->task_type == TASK_TYPE_READ)
               dst.y += TASK_HEIGHT / 2;
 
-            task_color = ezp_gpu_index[t->task_type];
+            //task_color = ezp_gpu_index[t->task_type];
           }
 
           // Check if mouse is within the bounds of the gantt zone

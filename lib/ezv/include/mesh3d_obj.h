@@ -52,6 +52,7 @@ typedef struct
   unsigned nb_patches;
   unsigned *patch_first_cell;
   unsigned *patch_neighbors;
+  unsigned total_patch_neighbors;
   unsigned *index_first_patch_neighbor;
   // meta-partitions
   unsigned nb_metap;
@@ -82,10 +83,11 @@ void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart,
 void mesh3d_reorder_partitions (mesh3d_obj_t *mesh, int newpos[]);
 void mesh3d_shuffle_cells_in_partitions (mesh3d_obj_t *mesh);
 void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh);
+void mesh3d_shuffle_partitions (mesh3d_obj_t *mesh);
 
 void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_partitionner);
-int mesh3d_obj_get_metap_of_patch (mesh3d_obj_t *mesh, unsigned p);
 
+int mesh3d_obj_get_metap_of_patch (mesh3d_obj_t *mesh, unsigned p);
 int mesh3d_obj_get_patch_of_cell (mesh3d_obj_t *mesh, unsigned cell);
 void mesh3d_obj_get_bbox_of_cell (mesh3d_obj_t *mesh, unsigned cell, bbox_t *box);
 void mesh3d_obj_get_barycenter (mesh3d_obj_t *mesh, unsigned cell,

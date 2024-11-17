@@ -1,8 +1,6 @@
 #ifndef MESH_MGPU_ISDEF
 #define MESH_MGPU_ISDEF
 
-#ifdef ENABLE_OPENCL
-
 #include <unistd.h>
 
 #include "gpu.h"
@@ -20,12 +18,5 @@ int mesh_mgpu_offset_cells (int gpu);
 int mesh_mgpu_cells_to_compute (int gpu);
 int mesh_mgpu_nb_threads (int gpu);
 
-#ifdef ENABLE_OPENCL
-
-cl_mem mesh_mgpu_get_soa_buffer (int gpu);
-
-#endif
-
-#endif
 
 #endif

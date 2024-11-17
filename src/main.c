@@ -31,7 +31,6 @@ int max_iter             = 0;
 unsigned refresh_rate    = 0;
 unsigned do_display      = 1;
 unsigned vsync           = 1;
-unsigned soft_rendering  = 0;
 unsigned picking_enabled = 0;
 
 static char *progname    = NULL;
@@ -69,6 +68,7 @@ static unsigned show_iterations                                = 0;
 unsigned use_scotch                                            = 0;
 static unsigned data_sync_on_host                              = 1;
 static unsigned do_shuffle_cells                               = 0;
+static unsigned do_shuffle_partitions                          = 0;
 
 static hwloc_topology_t topology;
 
@@ -82,7 +82,7 @@ unsigned easypap_requested_number_of_threads (void)
     return atoi (str);
 }
 
-unsigned easypap_gpu_lane (task_type_t task_type, unsigned gpu_no)
+unsigned easypap_gpu_lane (unsigned gpu_no)
 {
   return easypap_requested_number_of_threads () + gpu_no;
 }
@@ -317,7 +317,15 @@ static void init_phases (void)
 
     // NB_PATCHES == 0  =>  do not repartition
     mesh3d_obj_partition (&easypap_mesh_desc, NB_PATCHES, flags);
+
+    if (do_shuffle_partitions)
+      mesh3d_shuffle_partitions (&easypap_mesh_desc);
+
+    if (use_multiple_gpu)
+      mesh3d_obj_meta_partition (&easypap_mesh_desc, 2, 0);
+
     NB_PATCHES = easypap_mesh_desc.nb_patches;
+
   } else {
     img_data_init ();
   }
@@ -885,7 +893,6 @@ static void usage (int val)
       "\t-sh\t| --show-hash\t\t: display SHA256 hash of last image\n"
       "\t-si\t| --show-iterations\t: display iterations in main window\n"
       "\t-sd\t| --show-devices\t: display GPU devices\n"
-      "\t-sr\t| --soft-rendering\t: disable hardware acceleration\n"
       "\t-tn\t| --thumbnails\t\t: generate thumbnails\n"
       "\t-tni\t| --thumbnails-iter <n>\t: generate thumbnails starting from "
       "iteration n\n"
@@ -942,8 +949,6 @@ static void filter_args (int *argc, char *argv[])
       quit_when_done = 1;
     } else if (!strcmp (*argv, "--help") || !strcmp (*argv, "-h")) {
       usage (0);
-    } else if (!strcmp (*argv, "--soft-rendering") || !strcmp (*argv, "-sr")) {
-      soft_rendering = 1;
     } else if (!strcmp (*argv, "--show-devices") || !strcmp (*argv, "-sd")) {
 #if defined(ENABLE_OPENCL) || defined(ENABLE_CUDA)
       show_gpu_config = 1;
@@ -1100,7 +1105,7 @@ static void filter_args (int *argc, char *argv[])
       argv++;
       easypap_image_file = *argv;
     } else if (!strcmp (*argv, "--load-mesh") || !strcmp (*argv, "-lm") ||
-               !strcmp (*argv, "-lms")) {
+               !strcmp (*argv, "-lms") || !strcmp (*argv, "-lmsc") || !strcmp (*argv, "-lmsp")) {
       if (easypap_mesh_file != NULL)
         usage_error ("Error: --load-mesh used multiple times");
       if (easypap_image_file != NULL)
@@ -1108,8 +1113,13 @@ static void filter_args (int *argc, char *argv[])
                      "exclusive options");
       if (*argc == 1)
         usage_error ("Error: filename is missing");
-      if (!strcmp (*argv, "-lms"))
+      if (!strcmp (*argv, "-lms")) { // shuffle cells AND partitions
         do_shuffle_cells = 1;
+        do_shuffle_partitions = 1;
+      } else if (!strcmp (*argv, "-lmsc"))
+        do_shuffle_cells = 1;
+      else if (!strcmp (*argv, "-lmsp"))
+        do_shuffle_partitions = 1;
       (*argc)--;
       argv++;
       easypap_mesh_file = *argv;

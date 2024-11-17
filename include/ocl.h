@@ -18,7 +18,6 @@ void ocl_build_program (int list_variants);
 void ocl_alloc_buffers (void);
 void ocl_send_data (void);
 void ocl_retrieve_data (void);
-unsigned ocl_compute (unsigned nb_iter);
 void ocl_establish_bindings (void);
 void ocl_update_texture (void);
 unsigned easypap_number_of_gpus_ocl (void);
@@ -47,16 +46,14 @@ extern unsigned ocl_nb_gpus;
 extern cl_context context;
 extern cl_program program;
 
-#define queue ocl_gpu[0].q
-#define cur_buffer ocl_gpu[0].curb
-#define next_buffer ocl_gpu[0].nextb
-#define compute_kernel ocl_gpu[0].kernel
+#define ocl_queue(gpu) ocl_gpu[gpu].q
+#define ocl_device(gpu) ocl_gpu[gpu].device
+#define ocl_cur_buffer(gpu) ocl_gpu[gpu].curb
+#define ocl_next_buffer(gpu) ocl_gpu[gpu].nextb
+#define ocl_compute_kernel(gpu) ocl_gpu[gpu].kernel
 
 int64_t ocl_monitor (cl_event evt, int x, int y, int width, int height,
                      task_type_t task_type, unsigned gpu_no);
-
-void ocl_acquire (void);
-void ocl_release (void);
 
 typedef struct
 {

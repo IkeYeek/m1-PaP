@@ -1612,21 +1612,52 @@ static void reorder_cells (mesh3d_obj_t *mesh, int newpos[])
 
 void mesh3d_reorder_partitions (mesh3d_obj_t *mesh, int newpos[])
 {
-  int *oldpos          = malloc (mesh->nb_patches * sizeof (int));
-  int *cell_npos       = malloc (mesh->nb_cells * sizeof (int));
-  unsigned *first_cell = malloc ((mesh->nb_patches + 1) * sizeof (unsigned));
-  int index            = 0;
+  int *oldpos             = malloc (mesh->nb_patches * sizeof (int));
+  int *cell_npos          = malloc (mesh->nb_cells * sizeof (int));
+  unsigned *first_cell    = malloc ((mesh->nb_patches + 1) * sizeof (unsigned));
+  int index               = 0;
+  unsigned *tmp_neighbors = NULL;
+  unsigned *tmp_index_first_neightbor = NULL;
+  unsigned ind_nei                    = 0;
+
+  if (mesh->patch_neighbors != NULL) {
+    tmp_neighbors = malloc (mesh->total_patch_neighbors * sizeof (int));
+    tmp_index_first_neightbor = malloc ((mesh->nb_patches + 1) * sizeof (int));
+  }
 
   for (int p = 0; p < mesh->nb_patches; p++)
     oldpos[newpos[p]] = p;
 
   for (int p = 0; p < mesh->nb_patches; p++) {
+    unsigned op = oldpos[p];
+
     first_cell[p] = index;
-    for (int c = mesh->patch_first_cell[oldpos[p]];
-         c < mesh->patch_first_cell[oldpos[p] + 1]; c++)
+    for (int c = mesh->patch_first_cell[op]; c < mesh->patch_first_cell[op + 1];
+         c++)
       cell_npos[c] = index++;
+
+    // move partition neighbors (if any)
+    if (mesh->patch_neighbors != NULL) {
+      tmp_index_first_neightbor[p] = ind_nei;
+      for (int in = mesh->index_first_patch_neighbor[op];
+           in < mesh->index_first_patch_neighbor[op + 1]; in++) {
+        tmp_neighbors[ind_nei] = newpos[mesh->patch_neighbors[in]];
+        ind_nei++;
+      }
+    }
   }
+
   first_cell[mesh->nb_patches] = index;
+
+  if (mesh->patch_neighbors != NULL) {
+    tmp_index_first_neightbor[mesh->nb_patches] = ind_nei;
+
+    free (mesh->patch_neighbors);
+    mesh->patch_neighbors = tmp_neighbors;
+
+    free (mesh->index_first_patch_neighbor);
+    mesh->index_first_patch_neighbor = tmp_index_first_neightbor;
+  }
 
   free (oldpos);
 
@@ -1697,10 +1728,45 @@ void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh)
   }
 }
 
+void mesh3d_shuffle_partitions (mesh3d_obj_t *mesh)
+{
+  int *npos = malloc (mesh->nb_patches * sizeof (int));
+
+  for (int p = 0; p < mesh->nb_patches; p++)
+    npos[p] = p;
+
+  for (int p = 0; p < mesh->nb_patches; p++) {
+    int j = random () % mesh->nb_patches;
+    if (p != j) {
+      int tmp = npos[p];
+      npos[p] = npos[j];
+      npos[j] = tmp;
+    }
+  }
+
+  mesh3d_reorder_partitions (mesh, npos);
+
+  free (npos);
+
+  if (mesh->nb_metap > 0) {
+    printf ("Cancelling existing meta-partitioning…\n");
+    if (mesh->metap_first_patch != NULL) {
+      free (mesh->metap_first_patch);
+      mesh->metap_first_patch = NULL;
+    }
+    mesh->nb_metap = 0;
+  }
+}
+
 static void build_part_neighbors (mesh3d_obj_t *mesh)
 {
   if (mesh->nb_patches == 0)
     exit_with_error ("Mesh has no partition data");
+
+  if (mesh->total_neighbors == 0)
+    // Very special case: mesh has no neighbor information and only a single
+    // partition was formed
+    return;
 
   if (mesh->patch_neighbors != NULL)
     free (mesh->patch_neighbors);
@@ -1724,11 +1790,11 @@ static void build_part_neighbors (mesh3d_obj_t *mesh)
       }
   }
 
-  unsigned total_neighbors = 0;
+  mesh->total_patch_neighbors = 0;
   for (int p = 0; p < mesh->nb_patches; p++)
-    total_neighbors += ezv_boolmat_sum_row (mat, p);
+    mesh->total_patch_neighbors += ezv_boolmat_sum_row (mat, p);
 
-  mesh->patch_neighbors = malloc (total_neighbors * sizeof (int));
+  mesh->patch_neighbors = malloc (mesh->total_patch_neighbors * sizeof (int));
   mesh->index_first_patch_neighbor =
       malloc ((mesh->nb_patches + 1) * sizeof (int));
 
@@ -1741,10 +1807,10 @@ static void build_part_neighbors (mesh3d_obj_t *mesh)
   }
   mesh->index_first_patch_neighbor[mesh->nb_patches] = index;
 
-  if (index != total_neighbors)
+  if (index != mesh->total_patch_neighbors)
     exit_with_error ("Data inconsistency detected in partition neighbors "
                      "(index=%d != total_neighbors=%d)",
-                     index, total_neighbors);
+                     index, mesh->total_patch_neighbors);
 
   ezv_boolmat_free (mat);
 }
@@ -1755,8 +1821,23 @@ static void do_partition (mesh3d_obj_t *mesh, unsigned nbpart,
   if (nbpart == 0)
     return;
 
-  if (mesh->total_neighbors == 0)
-    exit_with_error ("Mesh has no neighbor information");
+  if (nbpart > mesh->nb_cells) {
+    fprintf (stderr,
+             "Warning: number of requested partitions (%d) exceeds number of "
+             "cells in the mesh (%d). "
+             "Using %d…\n",
+             nbpart, mesh->nb_cells, mesh->nb_cells);
+    nbpart = mesh->nb_cells;
+  }
+
+  if (mesh->neighbors == NULL && use_partitionner) {
+    fprintf (stderr, "Warning: mesh has no neighbor information.  Falling back "
+                     "to a simple contiguous distribution.\n");
+    use_partitionner = 0;
+  }
+
+  if (nbpart == 1 || nbpart == mesh->nb_cells)
+    use_partitionner = 0;
 
   if (mesh->nb_patches > 0) {
     printf ("Overriding existing partitionning…\n");
@@ -1909,6 +1990,24 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
   if (mesh->nb_patches == 0)
     exit_with_error ("Mesh is not partitionned");
 
+  if (nbpart > mesh->nb_patches) {
+    fprintf (stderr,
+             "Warning: number of requested (meta)partitions (%d) exceeds "
+             "number of patches in the mesh (%d). "
+             "Using %d…\n",
+             nbpart, mesh->nb_patches, mesh->nb_patches);
+    nbpart = mesh->nb_patches;
+  }
+
+  if (mesh->patch_neighbors == NULL && use_partitionner) {
+    fprintf (stderr, "Warning: mesh has no patch neighbor information.  "
+                     "Falling back to a simple contiguous distribution.\n");
+    use_partitionner = 0;
+  }
+
+  if (nbpart == 1 || nbpart == mesh->nb_patches)
+    use_partitionner = 0;
+
   if (mesh->nb_metap != 0) {
     printf ("Overriding existing meta-partitionning…\n");
     if (mesh->metap_first_patch != NULL) {
@@ -1945,6 +2044,59 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
 
     printf ("Mesh meta-partitionned into %d chunks of contiguous patches\n",
             nbpart);
+  }
+
+  // Detect inner/border partitions and reorder
+  if (mesh->patch_neighbors != NULL) {
+    ezv_boolmat_t *m = ezv_boolmat_alloc (1, mesh->nb_patches);
+
+    // Identify border partitions
+    for (int mp = 0; mp < mesh->nb_metap; mp++)
+      for (int p = mesh->metap_first_patch[mp];
+           p < mesh->metap_first_patch[mp + 1]; p++)
+        for (int ni = mesh->index_first_patch_neighbor[p];
+             ni < mesh->index_first_patch_neighbor[p + 1]; ni++) {
+          int n    = mesh->patch_neighbors[ni];
+          int n_mp = mesh3d_obj_get_metap_of_patch (mesh, n);
+          if (n_mp !=
+              mp) { // partition p has a neighbor in a different meta-partition
+            ezv_boolmat_set (m, 0, p);
+            break; // no need to further inpect other neighbors
+          }
+        }
+
+    // Reorder partitions within each meta-partition
+    int *npos = malloc (mesh->nb_patches * sizeof (int));
+    int index = 0;
+
+    for (int mp = 0; mp < mesh->nb_metap; mp++) {
+      // first pass to pack inner partitions
+      for (int p = mesh->metap_first_patch[mp];
+           p < mesh->metap_first_patch[mp + 1]; p++)
+        if (ezv_boolmat_get (m, 0, p) == 0)
+          npos[p] = index++;
+
+      // second pass to pack border partitions
+      for (int p = mesh->metap_first_patch[mp];
+           p < mesh->metap_first_patch[mp + 1]; p++)
+        if (ezv_boolmat_get (m, 0, p) == 1)
+          npos[p] = index++;
+    }
+
+    if (index != mesh->nb_patches)
+      exit_with_error ("Inconsistency detected during sort of inner/border "
+                       "partitions: index (%d) != #patches (%d)",
+                       index, mesh->nb_patches);
+#if 0
+    for (int p = 0; p < mesh->nb_patches; p++)
+      printf ("partition %d becomes %d\n", p, npos[p]);
+#endif
+    ezv_boolmat_free (m);
+
+    // Reorder partitions, finally
+    mesh3d_reorder_partitions (mesh, npos);
+    
+    free (npos);
   }
 }
 

@@ -8,8 +8,6 @@ typedef unsigned (*int_func_t) (unsigned);
 typedef void (*draw_func_t) (char *);
 typedef int (*tile_func_t) (int, int, int, int);
 typedef int (*patch_func_t) (int, int);
-typedef void (*cuda_kernel_func_t)(unsigned *, unsigned *, unsigned);
-typedef void (*cuda_kernel_finish_func_t)(unsigned);
 typedef void (*debug_1d_t) (int);
 typedef void (*debug_2d_t) (int, int);
 
@@ -20,8 +18,6 @@ extern draw_func_t the_draw;
 extern void_func_t the_finalize;
 extern int_func_t the_compute;
 extern void_func_t the_tile_check;
-extern cuda_kernel_func_t the_cuda_kernel;
-extern cuda_kernel_finish_func_t the_cuda_kernel_post;
 extern debug_1d_t the_1d_debug;
 extern debug_2d_t the_2d_debug;
 extern debug_1d_t the_1d_overlay;

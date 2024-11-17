@@ -7,6 +7,7 @@
 #include "cppdefs.h"
 #include "debug.h"
 #include "error.h"
+#include "ezp_alloc.h"
 #include "ezp_ctx.h"
 #include "ezv_event.h"
 #include "global.h"
@@ -143,6 +144,8 @@ void mesh_data_refresh (unsigned iter)
   // into texture buffer Otherwise (GPU), data are already in place
   if (!gpu_used || !easypap_gl_buffer_sharing)
     ezv_set_data_colors (ctx[0], mesh_data);
+  else
+    gpu_update_texture ();
 
   ezv_render (ctx, nb_ctx);
 }
@@ -151,15 +154,8 @@ void mesh_data_alloc (void)
 {
   const unsigned size = NB_CELLS * sizeof (float);
 
-  mesh_data = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (mesh_data == NULL)
-    exit_with_error ("Cannot allocate mesh data: mmap failed");
-
-  alt_mesh_data = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (alt_mesh_data == NULL)
-    exit_with_error ("Cannot allocate alternate mesh data: mmap failed");
+  mesh_data     = ezp_alloc (size);
+  alt_mesh_data = ezp_alloc (size);
 
   PRINT_DEBUG ('i', "Init phase 4: mesh data allocated\n");
 }
@@ -168,15 +164,11 @@ void mesh_data_free (void)
 {
   const unsigned size = NB_CELLS * sizeof (float);
 
-  if (mesh_data != NULL) {
-    munmap (mesh_data, size);
-    mesh_data = NULL;
-  }
+  ezp_free (mesh_data, size);
+  mesh_data = NULL;
 
-  if (alt_mesh_data != NULL) {
-    munmap (alt_mesh_data, size);
-    alt_mesh_data = NULL;
-  }
+  ezp_free (alt_mesh_data, size);
+  alt_mesh_data = NULL;
 }
 
 void mesh_data_replicate (void)
@@ -218,7 +210,7 @@ void mesh_data_build_neighbors_soa (unsigned round)
   const unsigned size =
       neighbor_soa_offset * easypap_mesh_desc.max_neighbors * sizeof (int);
 
-  neighbors_soa = malloc (size);
+  neighbors_soa = ezp_alloc (size);
   int index     = 0;
   for (int c = 0; c < easypap_mesh_desc.nb_cells; c++) {
     int n = 0;
@@ -277,7 +269,8 @@ void mesh_data_do_pick (void)
         // partition
         set_partition_color (partoche, ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
         // neighboring partitions
-        //set_partition_neighbors_color (partoche, ezv_rgba (0xAF, 0xAF, 0xAF, 0xC0));
+        // set_partition_neighbors_color (partoche, ezv_rgba (0xAF, 0xAF, 0xAF,
+        // 0xC0));
         // cell
         ezv_set_cpu_color_1D (ctx[0], p, 1, ezv_rgba (0xFF, 0x00, 0x00, 0xC0));
       }

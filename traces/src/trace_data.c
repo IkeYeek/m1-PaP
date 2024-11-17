@@ -213,7 +213,7 @@ void trace_data_end_iteration (trace_t *tr, long end_time)
   if (tr->nb_iterations == 1) {
     // gap = 10% of first iteration
     // fixed_gap = (current_it->end_time - current_it->start_time) * 10 / 100;
-    fixed_gap = 200;
+    fixed_gap = 1;
   }
 #endif
   // printf ("Iteration %d : end %lu -> %lu\n", tr->nb_iterations, end_time,

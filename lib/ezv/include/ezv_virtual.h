@@ -11,7 +11,6 @@ typedef struct
   unsigned (*get_color_data_size) (ezv_ctx_t ctx);
   void (*activate_rgba_palette) (ezv_ctx_t ctx);
   void (*activate_data_palette) (ezv_ctx_t ctx);
-  void (*switch_color_buffers) (ezv_ctx_t ctx);
   void (*get_shareable_buffer_ids) (ezv_ctx_t ctx, int buffer_ids[]);
   void (*set_data_brightness) (ezv_ctx_t ctx, float brightness);
   int (*do_1D_picking) (ezv_ctx_t ctx, int x, int y);

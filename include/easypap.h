@@ -12,11 +12,11 @@
 #include "debug.h"
 #include "error.h"
 #include "monitoring.h"
-#include "gpu.h"
 #include "ez_pthread.h"
 #include "pthread_barrier.h"
 #include "minmax.h"
 #include "ezp_ctx.h"
+#include "ezp_alloc.h"
 
 #ifdef ENABLE_MPI
 #include <mpi.h>

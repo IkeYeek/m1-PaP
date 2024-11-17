@@ -1,14 +1,11 @@
 #ifndef EASYPAP_GPU_H
 #define EASYPAP_GPU_H
 
-#include "hooks.h"
-
 #define MAX_NB_GPU 2
 
 #ifdef ENABLE_OPENCL ////////// OPENCL //////////
 
 #include "ocl.h"
-#include "debug.h"
 
 #define GPU_CAN_BE_USED 1
 

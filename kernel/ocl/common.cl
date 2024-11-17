@@ -10,6 +10,9 @@
 #define DIM 1
 #define TILE_W 1
 #define TILE_H 1
+#endif
+
+#ifndef PARAM
 #define PARAM 1
 #endif
 
@@ -171,22 +174,22 @@ static inline unsigned rgb (uchar r, uchar g, uchar b)
   return rgba (r, g, b, 255);
 }
 
-static int4 color_to_int4 (unsigned c)
+static inline int4 color_to_int4 (unsigned c)
 {
   return convert_int4 (color_to_char4 (c));
 }
 
-static unsigned int4_to_color (int4 v)
+static inline unsigned int4_to_color (int4 v)
 {
   return char4_to_color (convert_uchar4 (v));
 }
 
-static float4 color_to_float4 (unsigned c)
+static inline float4 color_to_float4 (unsigned c)
 {
   return convert_float4 (color_to_char4 (c)) / 255.0f;
 }
 
-static unsigned float4_to_color (float4 v)
+static inline unsigned float4_to_color (float4 v)
 {
   return char4_to_color (convert_uchar4 (v * 255.0f));
 }
@@ -204,7 +207,7 @@ __kernel void update_texture (__global unsigned *cur, __write_only image2d_t tex
   write_imagef (tex, (int2)(x, y), color_to_float4 (cur [y * DIM + x]));
 }
 
-#endif
+#endif // GL_BUFFER_SHARING
 
 __kernel void bench_kernel (void)
 {

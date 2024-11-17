@@ -129,8 +129,8 @@ void scrollup_draw_ocl_ouf (char *param)
   // We send the mask buffer to GPU
   // (not need to send twin_buffer : its content will be erased during 1st
   // iteration)
-  err = clEnqueueWriteBuffer (queue, mask_buffer, CL_TRUE, 0, size, tmp, 0,
-                              NULL, NULL);
+  err = clEnqueueWriteBuffer (ocl_queue (0), mask_buffer, CL_TRUE, 0, size, tmp,
+                              0, NULL, NULL);
   check (err, "Failed to write to extra buffer");
 
   free (tmp);
@@ -140,39 +140,45 @@ void scrollup_draw_ocl_ouf (char *param)
 
 unsigned scrollup_compute_ocl_ouf (unsigned nb_iter)
 {
-  size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y}; // global domain size for our calculation
+  size_t global[2] = {GPU_SIZE_X,
+                      GPU_SIZE_Y};     // global domain size for our calculation
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
     unsigned color = ezv_rgb (255, 0, 0); // red
     // Set kernel arguments
     //
     err = 0;
-    err |= clSetKernelArg (compute_kernel, 0, sizeof (cl_mem), &next_buffer);
-    err |= clSetKernelArg (compute_kernel, 1, sizeof (cl_mem), &twin_buffer);
-    err |= clSetKernelArg (compute_kernel, 2, sizeof (cl_mem), &cur_buffer);
-    err |= clSetKernelArg (compute_kernel, 3, sizeof (cl_mem), &mask_buffer);
-    err |= clSetKernelArg (compute_kernel, 4, sizeof (unsigned), &color);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_next_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &twin_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 2, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 3, sizeof (cl_mem),
+                           &mask_buffer);
+    err |=
+        clSetKernelArg (ocl_compute_kernel (0), 4, sizeof (unsigned), &color);
     check (err, "Failed to set kernel arguments");
 
-    err = clEnqueueNDRangeKernel (queue, compute_kernel, 2, NULL, global, local,
-                                  0, NULL, NULL);
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
+                                  NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
 
     // Swap buffers
     {
-      cl_mem tmp  = twin_buffer;
-      twin_buffer = next_buffer;
-      next_buffer = tmp;
+      cl_mem tmp          = twin_buffer;
+      twin_buffer         = ocl_next_buffer (0);
+      ocl_next_buffer (0) = tmp;
     }
   }
 
-  clFinish (queue);
+  clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (TASK_TYPE_COMPUTE, 0));
+  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (0));
 
   return 0;
 }

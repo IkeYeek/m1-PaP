@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "error.h"
+#include "ezv_textures.h"
 #include "ezv_ctx.h"
 #include "ezv_hud.h"
 #include "ezv_sdl_gl.h"
@@ -340,7 +341,7 @@ void img2d_renderer_use_cpu_palette (ezv_ctx_t ctx)
 
   // Allocate a new 2D texture
   glGenTextures (1, &renctx->cpuTexture);
-  glActiveTexture (GL_TEXTURE1);
+  glActiveTexture (GL_TEXTURE0 + EZV_CPU_TEXTURE_NUM);
 
   glBindTexture (GL_TEXTURE_2D, renctx->cpuTexture);
   glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, img->width, img->height, 0,
@@ -349,8 +350,8 @@ void img2d_renderer_use_cpu_palette (ezv_ctx_t ctx)
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
   // bind uniform buffer object to texture #1
-  glProgramUniform1i (renctx->cpu_shader, renctx->cpu_imgtex_loc, 1);
-  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_cputex_loc, 1);
+  glProgramUniform1i (renctx->cpu_shader, renctx->cpu_imgtex_loc, EZV_CPU_TEXTURE_NUM);
+  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_cputex_loc, EZV_CPU_TEXTURE_NUM);
 }
 
 void img2d_renderer_use_data_palette (ezv_ctx_t ctx)
@@ -372,7 +373,7 @@ void img2d_renderer_use_data_palette (ezv_ctx_t ctx)
 
   // Allocate a new 2D texture
   glGenTextures (1, &renctx->dataTexture);
-  glActiveTexture (GL_TEXTURE3);
+  glActiveTexture (GL_TEXTURE0 + EZV_DATA_TEXTURE_NUM);
 
   glBindTexture (GL_TEXTURE_2D, renctx->dataTexture);
   glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, img->width, img->height, 0,
@@ -381,8 +382,8 @@ void img2d_renderer_use_data_palette (ezv_ctx_t ctx)
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
   // bind uniform buffer object to texture #3
-  glProgramUniform1i (renctx->data_shader, renctx->data_imgtex_loc, 3);
-  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_datatex_loc, 3);
+  glProgramUniform1i (renctx->data_shader, renctx->data_imgtex_loc, EZV_DATA_TEXTURE_NUM);
+  glProgramUniform1i (renctx->dapu_shader, renctx->dapu_datatex_loc, EZV_DATA_TEXTURE_NUM);
 }
 
 void img2d_set_data_brightness (ezv_ctx_t ctx, float brightness)
@@ -402,6 +403,8 @@ void img2d_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[])
 
   img2d_render_ctx_t *renctx = ezv_img2d_renderer (ctx);
 
+  ezv_switch_to_context (ctx);
+
   buffer_ids[0] = renctx->dataTexture;
 }
 
@@ -414,7 +417,7 @@ void img2d_set_data_colors (ezv_ctx_t ctx, void *values)
 
   ezv_switch_to_context (ctx);
 
-  glActiveTexture (GL_TEXTURE3);
+  glActiveTexture (GL_TEXTURE0 + EZV_DATA_TEXTURE_NUM);
   glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, img->width, img->height, GL_RGBA,
                    GL_UNSIGNED_BYTE, values);
 }
@@ -473,7 +476,7 @@ void img2d_render (ezv_ctx_t ctx)
 
   if (ezv_palette_is_defined (&ctx->cpu_palette)) {
 
-    glActiveTexture (GL_TEXTURE1);
+    glActiveTexture (GL_TEXTURE0 + EZV_CPU_TEXTURE_NUM);
     glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, img->width, img->height, GL_RGBA,
                    GL_UNSIGNED_BYTE, ctx->cpu_colors);
 
