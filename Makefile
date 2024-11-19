@@ -114,7 +114,7 @@ endif
 MAKEFILES		:= Makefile
 
 ifeq ($(OS_NAME), DARWIN)
-LDFLAGS			+= -Wl,-ld_classic
+#LDFLAGS			+= -Wl,-ld_classic
 else
 CFLAGS			+= -pthread -rdynamic
 LDFLAGS			+= -export-dynamic
