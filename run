@@ -62,16 +62,16 @@ if [[ $TRACE = "yes" ]]; then
 fi
 
 # if no thread binding is specified, use OMP_PLACES=cores on Linux systems
-if [[ -z $OMP_PLACES ]]; then
-    if [[ $ARCH == "Linux" ]]; then
-        export OMP_PLACES="cores"
-    else # MacOS
-        # OMP_PLACES is not supported by libgomp yet
-        if ! otool -L ${SIMU} | grep -q libgomp; then
-            export OMP_PLACES="cores"
-        fi
-    fi
-fi
+# if [[ -z $OMP_PLACES ]]; then
+#     if [[ $ARCH == "Linux" ]]; then
+#         export OMP_PLACES="cores"
+#     else # MacOS
+#         # OMP_PLACES is not supported by libgomp yet
+#         if ! otool -L ${SIMU} | grep -q libgomp; then
+#             export OMP_PLACES="cores"
+#         fi
+#     fi
+# fi
 
 # Run under debugger 
 if [[ $DEBUG = "lldb" ]]; then
