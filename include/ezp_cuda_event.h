@@ -28,6 +28,8 @@ typedef struct
 
 void ezp_cuda_event_init (char **taskids);
 void ezp_cuda_event_record (ezp_cuda_event_t evt, unsigned g);
+void ezp_cuda_event_always_record (ezp_cuda_event_t evt, unsigned g);
+
 void ezp_cuda_event_reset (void);
 void ezp_cuda_event_monitor (int gpu, ezp_cuda_event_t start_evt,
                              uint64_t clock, ezp_cuda_event_footprint_t *footp,

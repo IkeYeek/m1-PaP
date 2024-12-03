@@ -59,7 +59,7 @@ static mgpu_part_info_t *mesh_mgpu_info = NULL;
 
 static unsigned halo = 1;
 
-mgpu_gpu_data_t gpu_data[MAX_NB_GPU] = {
+mgpu_gpu_data_t gpu_data[MAX_GPU_DEVICES] = {
     {NULL, NULL, NULL, 0, 0, NULL, 0, 0},
     {NULL, NULL, NULL, 0, 0, NULL, 0, 0},
 };
@@ -110,6 +110,9 @@ int mesh_mgpu_nb_threads (int gpu)
 static void mesh_mgpu_display_stats (void)
 {
   for (int i = 0; i < easypap_mesh_desc.nb_metap; i++) {
+    PRINT_DEBUG ('m', "MP%d regroups partitions [%d..%d], outer partitions start from %d\n", i,
+            easypap_mesh_desc.metap_first_patch[i], easypap_mesh_desc.metap_first_patch[i + 1],
+            easypap_mesh_desc.metap_first_border_patch[i]);
     PRINT_DEBUG ('m', "MP%d stores %d cells\n", i, mesh_mgpu_info[i].nb_cells);
     PRINT_DEBUG (
         'm', "MP%d has a total of %d outgoing and %d incoming border cells\n",
@@ -585,12 +588,18 @@ void mesh_mgpu_overlay (int cell)
         mesh3d_obj_get_patch_of_cell (&easypap_mesh_desc, cell));
     int p1 = easypap_mesh_desc.metap_first_patch[mpart];
     int p2 = easypap_mesh_desc.metap_first_patch[mpart + 1];
+    int po = easypap_mesh_desc.metap_first_border_patch[mpart];
     int c1 = patch_start (p1);
+    int co = patch_start (po);
     int c2 = patch_start (p2);
 
-    // highlight meta-partition
-    ezv_set_cpu_color_1D (ctx[0], c1, c2 - c1,
-                          ezv_rgba (0xC0, 0xC0, 0xC0, 0xC0));
+    if (po != p1) // inner partitions
+      ezv_set_cpu_color_1D (ctx[0], c1, co - c1,
+                            ezv_rgba (0xC0, 0xC0, 0xC0, 0xC0));
+
+    // highlight outer partitions
+    ezv_set_cpu_color_1D (ctx[0], co, c2 - co,
+                          ezv_rgba (0xE0, 0xE0, 0xE0, 0xE0));
 
     // highlight internal border
     // for (int i = 0; i < mesh_mgpu_info[mpart].outgoing_size; i++) {
@@ -608,7 +617,7 @@ void mesh_mgpu_overlay (int cell)
         int cell =
             gpu_data[n_mp].outgoing_index[i] + mesh_mgpu_info[n_mp].part_offset;
         ezv_set_cpu_color_1D (ctx[0], cell, 1,
-                              ezv_rgba (0xFF, 0xFF, 0x00, 0xC0));
+                              ezv_rgba (0xFF, 0xFF, 0x00, 0xE0));
       }
 
     // highlight cell

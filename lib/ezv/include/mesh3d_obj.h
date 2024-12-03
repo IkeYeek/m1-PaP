@@ -17,7 +17,7 @@ typedef enum
 #define EDGE1 (1U << 2)
 #define EDGE2 (1U << 3)
 #define FRONTIER_SHIFT 4U
-#define FRONTIER_MASK  7U
+#define FRONTIER_MASK 7U
 #define FRONTIER(n) (1U << (FRONTIER_SHIFT + n))
 #define CELLNO_SHIFT 7U
 
@@ -26,8 +26,9 @@ typedef struct
   float min[3], max[3];
 } bbox_t;
 
-#define MESH3D_PART_USE_SCOTCH     1
-#define MESH3D_PART_SHOW_FRONTIERS 2
+#define MESH3D_PART_USE_SCOTCH            1
+#define MESH3D_PART_SHOW_FRONTIERS        2
+#define MESH3D_PART_REGROUP_INNER_PATCHES 4
 
 typedef struct
 {
@@ -57,6 +58,7 @@ typedef struct
   // meta-partitions
   unsigned nb_metap;
   unsigned *metap_first_patch;
+  unsigned *metap_first_border_patch;
 } mesh3d_obj_t;
 
 void mesh3d_obj_init (mesh3d_obj_t *mesh);
@@ -78,19 +80,19 @@ void mesh3d_obj_load (const char *filename, mesh3d_obj_t *mesh);
 void mesh3d_obj_store (const char *filename, mesh3d_obj_t *mesh,
                        int with_patches);
 
-void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart,
-                           int flag);
+void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag);
 void mesh3d_reorder_partitions (mesh3d_obj_t *mesh, int newpos[]);
 void mesh3d_shuffle_cells_in_partitions (mesh3d_obj_t *mesh);
 void mesh3d_shuffle_all_cells (mesh3d_obj_t *mesh);
 void mesh3d_shuffle_partitions (mesh3d_obj_t *mesh);
 
-void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int use_partitionner);
+void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag);
 
 int mesh3d_obj_get_metap_of_patch (mesh3d_obj_t *mesh, unsigned p);
 int mesh3d_obj_get_patch_of_cell (mesh3d_obj_t *mesh, unsigned cell);
-void mesh3d_obj_get_bbox_of_cell (mesh3d_obj_t *mesh, unsigned cell, bbox_t *box);
-void mesh3d_obj_get_barycenter (mesh3d_obj_t *mesh, unsigned cell,
-                                float *bx, float *by, float *bz);
+void mesh3d_obj_get_bbox_of_cell (mesh3d_obj_t *mesh, unsigned cell,
+                                  bbox_t *box);
+void mesh3d_obj_get_barycenter (mesh3d_obj_t *mesh, unsigned cell, float *bx,
+                                float *by, float *bz);
 
 #endif

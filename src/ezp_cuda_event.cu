@@ -18,15 +18,14 @@ static inline unsigned is_recorded (ezp_cuda_event_t evt, unsigned gpu)
 
 static void create_events (void)
 {
-  if (easypap_monitoring_is_active ()) {
-    cudaError_t ret;
+  // always create events
+  cudaError_t ret;
 
-    for (int g = 0; g < cuda_nb_gpus; g++) {
-      cudaSetDevice (cuda_device (g));
-      for (int e = 0; e < _EVENT_NB; e++) {
-        ret = cudaEventCreate (&the_events[g][e]);
-        check (ret, "cudaEventCreate");
-      }
+  for (int g = 0; g < cuda_nb_gpus; g++) {
+    cudaSetDevice (cuda_device (g));
+    for (int e = 0; e < _EVENT_NB; e++) {
+      ret = cudaEventCreate (&the_events[g][e]);
+      check (ret, "cudaEventCreate");
     }
   }
 }
@@ -56,12 +55,23 @@ void ezp_cuda_event_record (ezp_cuda_event_t evt, unsigned g)
   }
 }
 
+void ezp_cuda_event_always_record (ezp_cuda_event_t evt, unsigned g)
+{
+  cudaError_t ret;
+
+  ret = cudaEventRecord (the_events[g][evt], cuda_stream (g));
+  check (ret, "cudaEventRecord(ev:%d)", evt);
+
+  mark_recorded (evt, g);
+}
+
 void ezp_cuda_wait_event (int gpu_wait, int gpu_signal, ezp_cuda_event_t evt)
 {
   if (is_recorded (evt, gpu_signal))
     cudaStreamWaitEvent (cuda_stream (gpu_wait), the_events[gpu_signal][evt]);
   else
-    exit_with_error ("Cannot wait for event %d from GPU %d (not recorded)\n", evt, gpu_signal);
+    exit_with_error ("Cannot wait for event %d from GPU %d (not recorded)\n",
+                     evt, gpu_signal);
 }
 
 void ezp_cuda_event_monitor (int gpu, ezp_cuda_event_t start_evt,

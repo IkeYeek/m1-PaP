@@ -1,7 +1,7 @@
 #ifndef EASYPAP_GPU_H
 #define EASYPAP_GPU_H
 
-#define MAX_NB_GPU 2
+#define MAX_GPU_DEVICES 2
 
 #ifdef ENABLE_OPENCL ////////// OPENCL //////////
 

@@ -2,7 +2,6 @@
 #include "constants.h"
 #include "cpustat.h"
 #include "easypap.h"
-#include "events.h"
 #include "gpu.h"
 #include "hooks.h"
 #include "trace_record.h"
@@ -322,10 +321,11 @@ static void init_phases (void)
       mesh3d_shuffle_partitions (&easypap_mesh_desc);
 
     if (use_multiple_gpu)
-      mesh3d_obj_meta_partition (&easypap_mesh_desc, 2, 0);
+      mesh3d_obj_meta_partition (&easypap_mesh_desc, 2,
+                                 MESH3D_PART_USE_SCOTCH |
+                                     MESH3D_PART_REGROUP_INNER_PATCHES);
 
     NB_PATCHES = easypap_mesh_desc.nb_patches;
-
   } else {
     img_data_init ();
   }
@@ -589,7 +589,7 @@ int main (int argc, char **argv)
         do {
           SDL_Event evt;
 
-          r = easypap_get_event (&evt, do_pause | stable);
+          r = ezv_get_event (&evt, do_pause | stable);
           if (r > 0) {
             switch (evt.type) {
 
@@ -1105,7 +1105,8 @@ static void filter_args (int *argc, char *argv[])
       argv++;
       easypap_image_file = *argv;
     } else if (!strcmp (*argv, "--load-mesh") || !strcmp (*argv, "-lm") ||
-               !strcmp (*argv, "-lms") || !strcmp (*argv, "-lmsc") || !strcmp (*argv, "-lmsp")) {
+               !strcmp (*argv, "-lms") || !strcmp (*argv, "-lmsc") ||
+               !strcmp (*argv, "-lmsp")) {
       if (easypap_mesh_file != NULL)
         usage_error ("Error: --load-mesh used multiple times");
       if (easypap_image_file != NULL)
@@ -1114,7 +1115,7 @@ static void filter_args (int *argc, char *argv[])
       if (*argc == 1)
         usage_error ("Error: filename is missing");
       if (!strcmp (*argv, "-lms")) { // shuffle cells AND partitions
-        do_shuffle_cells = 1;
+        do_shuffle_cells      = 1;
         do_shuffle_partitions = 1;
       } else if (!strcmp (*argv, "-lmsc"))
         do_shuffle_cells = 1;

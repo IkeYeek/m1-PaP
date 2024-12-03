@@ -11,6 +11,7 @@
 #include "mesh_data.h"
 #include "minmax.h"
 #include "time_macros.h"
+#include "gpu.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -56,7 +57,7 @@ static cl_kernel bench_kernel; // bench null kernel
 static cl_mem tex_buffer; // both for 2Dimg and 3Dmesh
 static cl_mem neighbor_soa_buffer;
 
-ocl_gpu_t ocl_gpu[MAX_DEVICES];
+ocl_gpu_t ocl_gpu[MAX_GPU_DEVICES];
 unsigned ocl_nb_gpus = 0;
 
 static size_t file_size (const char *filename)
@@ -173,7 +174,7 @@ static void ocl_show_config (int quit, int verbose)
     chosen_p = 0;
 
   // Go through the list of platforms
-  for (cl_uint p = 0; p < nbp; p++) {
+  for (cl_uint p = 0; p < nbp && ocl_nb_gpus < MAX_GPU_DEVICES; p++) {
     char name[1024], vendor[1024];
     cl_device_id devices[MAX_DEVICES];
     cl_int nbd = 0;
@@ -208,7 +209,7 @@ static void ocl_show_config (int quit, int verbose)
     }
 
     // Go through the list of devices for platform p
-    for (cl_uint d = 0; d < nbd; d++) {
+    for (cl_uint d = 0; d < nbd && ocl_nb_gpus < MAX_GPU_DEVICES; d++) {
       int disp = 0;
 
       err = clGetDeviceInfo (devices[d], CL_DEVICE_NAME, 1024, name, NULL);
@@ -311,7 +312,7 @@ void ocl_init (int show_config, int silent)
 
     context = clCreateContext (properties, 1, &chosen_device, NULL, NULL, &err);
   } else {
-    cl_device_id devices[MAX_DEVICES];
+    cl_device_id devices[MAX_GPU_DEVICES];
     for (int g = 0; g < ocl_nb_gpus; g++)
       devices[g] = ocl_gpu[g].device;
     context = clCreateContext (NULL, ocl_nb_gpus, devices, NULL, NULL, &err);

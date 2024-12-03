@@ -84,7 +84,7 @@ EXTERN void mesh_mgpu_launch_cell_gathering_kernel (
   ezp_cuda_event_record (EVENT_START_KERNEL0, gpu);
   cuda_gather_cells<<<grid, block, 0, cuda_stream (gpu)>>> (
       arg0_curbuf, arg1_outindex, arg2_outval, arg3_outsize);
-  ezp_cuda_event_record (EVENT_END_KERNEL0, gpu);
+  ezp_cuda_event_always_record (EVENT_END_KERNEL0, gpu);
 }
 
 EXTERN void mesh_mgpu_wait_gathering_kernel (int gpu_wait, int gpu_signal)

@@ -1981,8 +1981,86 @@ void mesh3d_obj_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag)
   }
 }
 
-void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
-                                int use_partitionner)
+static ezv_boolmat_t *identify_border_partition (mesh3d_obj_t *mesh)
+{
+  ezv_boolmat_t *m = ezv_boolmat_alloc (1, mesh->nb_patches);
+
+  // Identify border partitions
+  for (int mp = 0; mp < mesh->nb_metap; mp++)
+    for (int p = mesh->metap_first_patch[mp];
+         p < mesh->metap_first_patch[mp + 1]; p++)
+      for (int ni = mesh->index_first_patch_neighbor[p];
+           ni < mesh->index_first_patch_neighbor[p + 1]; ni++) {
+        int n    = mesh->patch_neighbors[ni];
+        int n_mp = mesh3d_obj_get_metap_of_patch (mesh, n);
+        if (n_mp != mp) {
+          // partition p has a neighbor in a different meta-partition
+          ezv_boolmat_set (m, 0, p);
+          break; // no need to further inpect other neighbors
+        }
+      }
+
+  return m;
+}
+
+// To be used when meta-partitions are not formed yet
+// parttab[p] contains meta-partition to which partition 'p' belongs
+static ezv_boolmat_t *identify_border_partition_with_tab (mesh3d_obj_t *mesh,
+                                                          int *parttab)
+{
+  ezv_boolmat_t *m = ezv_boolmat_alloc (1, mesh->nb_patches);
+
+  // Identify border partitions
+  for (int p = 0; p < mesh->nb_patches; p++)
+    for (int ni = mesh->index_first_patch_neighbor[p];
+         ni < mesh->index_first_patch_neighbor[p + 1]; ni++) {
+      int n = mesh->patch_neighbors[ni];
+      if (parttab[p] != parttab[n]) {
+        // partition p has a neighbor in a different meta-partition
+        ezv_boolmat_set (m, 0, p);
+        break; // no need to further inpect other neighbors
+      }
+    }
+
+  return m;
+}
+
+static void separate_inner_outer (mesh3d_obj_t *mesh, ezv_boolmat_t *mat)
+{
+  // Reorder partitions within each meta-partition
+  int *npos = malloc (mesh->nb_patches * sizeof (int));
+  int index = 0;
+
+  for (int mp = 0; mp < mesh->nb_metap; mp++) {
+    // First pass to pack inner partitions
+    for (int p = mesh->metap_first_patch[mp];
+         p < mesh->metap_first_patch[mp + 1]; p++)
+      if (ezv_boolmat_get (mat, 0, p) == 0)
+        npos[p] = index++;
+
+    // First border partition starts here
+    mesh->metap_first_border_patch[mp] = index;
+
+    // Second pass to pack border partitions
+    for (int p = mesh->metap_first_patch[mp];
+         p < mesh->metap_first_patch[mp + 1]; p++)
+      if (ezv_boolmat_get (mat, 0, p) == 1)
+        npos[p] = index++;
+  }
+
+  if (index != mesh->nb_patches)
+    exit_with_error ("Inconsistency detected during sort of inner/border "
+                     "partitions: index (%d) != #patches (%d)",
+                     index, mesh->nb_patches);
+
+  // Reorder partitions, finally
+  mesh3d_reorder_partitions (mesh, npos);
+
+  free (npos);
+}
+
+static void do_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
+                               int use_partitionner, int regroup_inner)
 {
   if (nbpart == 0)
     return;
@@ -1999,10 +2077,17 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
     nbpart = mesh->nb_patches;
   }
 
-  if (mesh->patch_neighbors == NULL && use_partitionner) {
-    fprintf (stderr, "Warning: mesh has no patch neighbor information.  "
-                     "Falling back to a simple contiguous distribution.\n");
-    use_partitionner = 0;
+  if (mesh->patch_neighbors == NULL) {
+    if (use_partitionner) {
+      fprintf (stderr, "Warning: mesh has no patch neighbor information.  "
+                       "Falling back to a simple contiguous distribution.\n");
+      use_partitionner = 0;
+    }
+    if (regroup_inner) {
+      fprintf (stderr, "Warning: mesh has no patch neighbor information.  "
+                       "Cannot distinguish inner/outer partitions.\n");
+      regroup_inner = 0;
+    }
   }
 
   if (nbpart == 1 || nbpart == mesh->nb_patches)
@@ -2016,13 +2101,105 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
     }
   }
 
-  mesh->nb_metap          = nbpart;
-  mesh->metap_first_patch = malloc ((nbpart + 1) * sizeof (int));
+  mesh->nb_metap                 = nbpart;
+  mesh->metap_first_patch        = malloc ((nbpart + 1) * sizeof (int));
+  mesh->metap_first_border_patch = malloc (nbpart * sizeof (int));
 
 #ifdef USE_SCOTCH
   if (use_partitionner) {
-    // TODO
-    exit_with_error ("Not yet implemented");
+    SCOTCH_Strat strategy;
+    SCOTCH_Graph graph;
+
+    SCOTCH_stratInit (&strategy); // Default strategy
+    SCOTCH_graphInit (&graph);
+
+    int r = SCOTCH_graphBuild (
+        &graph,
+        0,                                              // baseval
+        mesh->nb_patches,                               // vertnbr
+        (SCOTCH_Num *)mesh->index_first_patch_neighbor, // verttab
+        NULL,                                           // vendtab
+        NULL,                                           // velotab
+        NULL,                                           // vlbltab
+        mesh->total_patch_neighbors,                    // edgenbr
+        (SCOTCH_Num *)mesh->patch_neighbors,            // edgetab
+        NULL);                                          // edlotab
+    if (r != 0)
+      exit_with_error ("SCOTCH_graphBuild");
+
+    int *parttab  = calloc (mesh->nb_patches, sizeof (int));
+    int *newpos   = calloc (mesh->nb_patches, sizeof (int));
+    int *partsize = calloc (nbpart, sizeof (int));
+    int *prefix   = calloc (nbpart + 1, sizeof (int));
+
+    struct timespec t1, t2;
+
+    clock_gettime (CLOCK_MONOTONIC, &t1);
+
+    r = SCOTCH_graphPart (&graph, nbpart, &strategy, parttab);
+    if (r != 0)
+      exit_with_error ("SCOTCH_graphPart");
+
+    // free Scotch data structures
+    SCOTCH_graphExit (&graph);
+    SCOTCH_stratExit (&strategy);
+
+    for (int p = 0; p < mesh->nb_patches; p++)
+      partsize[parttab[p]]++;
+
+    for (int mp = 1; mp < nbpart + 1; mp++)
+      prefix[mp] = prefix[mp - 1] + partsize[mp - 1];
+
+    // metap_first_patch is a prefix sum of partsize
+    // beware to copy the prefix array before it gets modified
+    memcpy (mesh->metap_first_patch, prefix, (nbpart + 1) * sizeof (int));
+
+    if (regroup_inner) {
+      // Separate inner/border partitions
+      ezv_boolmat_t *mat = identify_border_partition_with_tab (mesh, parttab);
+
+      // First pass to pack inner partitions
+      for (int p = 0; p < mesh->nb_patches; p++)
+        if (ezv_boolmat_get (mat, 0, p) == 0)
+          newpos[p] = prefix[parttab[p]]++;
+
+      for (int mp = 0; mp < nbpart; mp++)
+       // First border partition starts here
+        mesh->metap_first_border_patch[mp] = prefix[mp];
+
+      // Second pass to pack border partitions
+      for (int p = 0; p < mesh->nb_patches; p++)
+        if (ezv_boolmat_get (mat, 0, p) == 1)
+          newpos[p] = prefix[parttab[p]]++;
+
+      ezv_boolmat_free (mat);
+    } else {
+      // calculate new indexes of patches
+      for (int p = 0; p < mesh->nb_patches; p++)
+        newpos[p] = prefix[parttab[p]]++;
+
+      // every partition is considered 'on the border'
+      memcpy (mesh->metap_first_border_patch, mesh->metap_first_patch,
+              nbpart * sizeof (int));
+    }
+
+    // We can get rid of some arrays at this point
+    free (parttab);
+    parttab = NULL;
+    free (prefix);
+    prefix = NULL;
+    free (partsize);
+    partsize = NULL;
+
+    clock_gettime (CLOCK_MONOTONIC, &t2);
+
+    printf ("Mesh partitionned into %d meta-patches using Scotch (%llu usec)\n",
+            nbpart, TIMESPEC2USEC (t2) - TIMESPEC2USEC (t1));
+
+    // relayout everything :(
+    mesh3d_reorder_partitions (mesh, newpos);
+
+    free (newpos);
   } else
 #endif
   {
@@ -2044,60 +2221,23 @@ void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart,
 
     printf ("Mesh meta-partitionned into %d chunks of contiguous patches\n",
             nbpart);
+
+    if (regroup_inner) {
+      // Separate inner/border partitions
+      ezv_boolmat_t *mat = identify_border_partition (mesh);
+      separate_inner_outer (mesh, mat);
+      ezv_boolmat_free (mat);
+    } else
+      // every partition is considered 'on the border'
+      memcpy (mesh->metap_first_border_patch, mesh->metap_first_patch,
+              nbpart * sizeof (int));
   }
+}
 
-  // Detect inner/border partitions and reorder
-  if (mesh->patch_neighbors != NULL) {
-    ezv_boolmat_t *m = ezv_boolmat_alloc (1, mesh->nb_patches);
-
-    // Identify border partitions
-    for (int mp = 0; mp < mesh->nb_metap; mp++)
-      for (int p = mesh->metap_first_patch[mp];
-           p < mesh->metap_first_patch[mp + 1]; p++)
-        for (int ni = mesh->index_first_patch_neighbor[p];
-             ni < mesh->index_first_patch_neighbor[p + 1]; ni++) {
-          int n    = mesh->patch_neighbors[ni];
-          int n_mp = mesh3d_obj_get_metap_of_patch (mesh, n);
-          if (n_mp !=
-              mp) { // partition p has a neighbor in a different meta-partition
-            ezv_boolmat_set (m, 0, p);
-            break; // no need to further inpect other neighbors
-          }
-        }
-
-    // Reorder partitions within each meta-partition
-    int *npos = malloc (mesh->nb_patches * sizeof (int));
-    int index = 0;
-
-    for (int mp = 0; mp < mesh->nb_metap; mp++) {
-      // first pass to pack inner partitions
-      for (int p = mesh->metap_first_patch[mp];
-           p < mesh->metap_first_patch[mp + 1]; p++)
-        if (ezv_boolmat_get (m, 0, p) == 0)
-          npos[p] = index++;
-
-      // second pass to pack border partitions
-      for (int p = mesh->metap_first_patch[mp];
-           p < mesh->metap_first_patch[mp + 1]; p++)
-        if (ezv_boolmat_get (m, 0, p) == 1)
-          npos[p] = index++;
-    }
-
-    if (index != mesh->nb_patches)
-      exit_with_error ("Inconsistency detected during sort of inner/border "
-                       "partitions: index (%d) != #patches (%d)",
-                       index, mesh->nb_patches);
-#if 0
-    for (int p = 0; p < mesh->nb_patches; p++)
-      printf ("partition %d becomes %d\n", p, npos[p]);
-#endif
-    ezv_boolmat_free (m);
-
-    // Reorder partitions, finally
-    mesh3d_reorder_partitions (mesh, npos);
-    
-    free (npos);
-  }
+void mesh3d_obj_meta_partition (mesh3d_obj_t *mesh, unsigned nbpart, int flag)
+{
+  do_meta_partition (mesh, nbpart, flag & MESH3D_PART_USE_SCOTCH,
+                     flag & MESH3D_PART_REGROUP_INNER_PATCHES);
 }
 
 int mesh3d_obj_get_patch_of_cell (mesh3d_obj_t *mesh, unsigned cell)

@@ -9,6 +9,7 @@ typedef struct ezv_ctx_s *ezv_ctx_t;
 int ezv_perform_1D_picking (ezv_ctx_t ctx[], unsigned nb_ctx);
 void ezv_perform_2D_picking (ezv_ctx_t ctx[], unsigned nb_ctx, int *x, int *y);
 
+int ezv_get_event (SDL_Event *event, int blocking);
 void ezv_process_event (ezv_ctx_t ctx[], unsigned nb_ctx, SDL_Event *event,
                         int *refresh, int *pick);
 

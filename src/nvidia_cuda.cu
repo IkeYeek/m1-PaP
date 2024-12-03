@@ -39,9 +39,7 @@ static cudaGraphicsResource_t texResource;
 static cudaSurfaceObject_t surfaceObject;
 static float *tex_buffer_object = NULL;
 
-#define MAX_DEVICES 4
-
-cuda_gpu_t cuda_gpu[MAX_DEVICES];
+cuda_gpu_t cuda_gpu[MAX_GPU_DEVICES];
 unsigned cuda_nb_gpus = 0;
 
 static int *neighbor_soa_buffer = NULL;
@@ -249,7 +247,7 @@ EXTERN void cuda_init (int show_config, int silent)
   check (ret, "cudaGetDeviceCount");
 
   if (use_multiple_gpu) {
-    for (int id = 0; id < MIN (total_gpus, MAX_DEVICES); id++)
+    for (int id = 0; id < MIN (total_gpus, MAX_GPU_DEVICES); id++)
       add_gpu (id);
   } else { // mono-GPU mode
     int id_gpu = 0;
