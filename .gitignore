@@ -2,7 +2,3 @@ public
 .vscode
 *.pdf
 *.csv
-*.png
-*.sha256
-images
-.clang-format

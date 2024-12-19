@@ -1,0 +1,12 @@
+BasedOnStyle: LLVM
+BreakBeforeBraces: Custom
+BraceWrapping:
+    AfterFunction: true
+    AfterEnum: true
+    AfterStruct: true
+    BeforeElse: false
+    AfterControlStatement: false
+AlignConsecutiveAssignments: true
+AlignTrailingComments: true
+AllowShortFunctionsOnASingleLine: false
+SpaceBeforeParens: Always
