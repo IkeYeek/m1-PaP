@@ -18,6 +18,7 @@ void img2d_obj_load (img2d_obj_t *img, char *filename, void *buffer);
 void img2d_obj_store (img2d_obj_t *img, char *filename, void *buffer);
 void img2d_obj_store_resized (img2d_obj_t *img, char *filename, void *buffer,
                               unsigned width, unsigned height);
+void img2d_obj_load_resized (img2d_obj_t *img, char *filename, void *buffer);
 
 
 #endif

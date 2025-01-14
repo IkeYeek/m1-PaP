@@ -11,8 +11,6 @@ void trace_graphics_setview (int start_iteration, int end_iteration);
 void trace_graphics_display_all (void);
 void trace_graphics_clean ();
 
-extern int use_thumbnails;
 extern unsigned char brightness;
-extern unsigned soft_rendering;
 
 #endif

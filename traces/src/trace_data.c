@@ -108,7 +108,7 @@ void trace_data_add_taskid (trace_t *tr, char *id)
   strcpy (tr->task_ids[i], id);
 }
 
-void trace_data_add_task (trace_t *tr, long start_time, long end_time,
+void trace_data_add_task (trace_t *tr, uint64_t start_time, uint64_t end_time,
                           unsigned x, unsigned y, unsigned w, unsigned h,
                           unsigned iteration, unsigned cpu,
                           task_type_t task_type, int task_id, int64_t *counters)
@@ -167,7 +167,7 @@ static void trace_data_display_all (trace_t *tr)
           if (t->iteration > it + 1)
             break;
 
-          printf ("Task: time [%lu-%lu], tile [%d, %d, %d, %d], iteration %d\n",
+          printf ("Task: time [%llu-%llu], tile [%d, %d, %d, %d], iteration %d\n",
                   task_start_time (tr, t), task_end_time (tr, t), t->x, t->y,
                   t->w, t->h, t->iteration);
         }
@@ -175,7 +175,7 @@ static void trace_data_display_all (trace_t *tr)
   }
 }
 
-void trace_data_start_iteration (trace_t *tr, long start_time)
+void trace_data_start_iteration (trace_t *tr, uint64_t start_time)
 {
   tr->nb_iterations++;
 
@@ -205,7 +205,7 @@ void trace_data_start_iteration (trace_t *tr, long start_time)
   list_add_tail (&current_it->chain, &tmp_list);
 }
 
-void trace_data_end_iteration (trace_t *tr, long end_time)
+void trace_data_end_iteration (trace_t *tr, uint64_t end_time)
 {
   current_it->end_time = shift (end_time);
 #ifdef REMOVE_OVERHEAD

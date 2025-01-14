@@ -469,7 +469,7 @@ static void calibrate (void)
                                       global, local, 0, NULL, &events[it]);
 
       clFinish (ocl_queue (g));
-      t = what_time_is_it ();
+      t = ezp_gettime ();
 
       cl_ulong end;
 
@@ -730,7 +730,7 @@ static unsigned ocl_compute_2dimg (unsigned nb_iter)
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
+  monitoring_start (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -757,7 +757,7 @@ static unsigned ocl_compute_2dimg (unsigned nb_iter)
 
   clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (0));
+  monitoring_end_tile (0, 0, DIM, DIM, easypap_gpu_lane (0));
 
   return 0;
 }
@@ -768,7 +768,7 @@ static unsigned ocl_compute_3dmesh (unsigned nb_iter)
   size_t local[1]  = {TILE};     // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
+  monitoring_start (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -797,7 +797,7 @@ static unsigned ocl_compute_3dmesh (unsigned nb_iter)
 
   clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
+  monitoring_end_patch (0, NB_CELLS, easypap_gpu_lane (0));
 
   return 0;
 }
@@ -889,7 +889,7 @@ int64_t ocl_monitor (cl_event evt, int x, int y, int width, int height,
   start = ocl_start_time (evt, gpu_no);
   end   = ocl_end_time (evt, gpu_no);
 
-  int64_t now = what_time_is_it ();
+  int64_t now = ezp_gettime ();
   if (end > now)
     PRINT_DEBUG ('c',
                  "Warning: end of kernel (%s) ahead of current time by %" PRId64
@@ -901,7 +901,10 @@ int64_t ocl_monitor (cl_event evt, int x, int y, int width, int height,
   // PRINT_DEBUG ('o', "[%s] start: %" PRId64 ", end: %" PRId64 "\n", "kernel",
   //              start, end);
 
-  monitoring_gpu_tile (x, y, width, height, gpu_lane, start, end, task_type);
+  if (height)
+    monitoring_gpu_tile (x, y, width, height, gpu_lane, start, end, task_type, 0);
+  else
+    monitoring_gpu_patch (x, width, gpu_lane, start, end, task_type, 0);
 
   return end - start;
 }
@@ -912,7 +915,7 @@ static void callback (cl_event event, cl_int event_command_status,
   ocl_stamp_t *stamp = (ocl_stamp_t *)user_data;
 
   if (event_command_status == CL_COMPLETE) {
-    stamp->end = what_time_is_it ();
+    stamp->end = ezp_gettime ();
     printf ("Event time stamp : %" PRId64 " to %" PRId64 "\n", stamp->start,
             stamp->end);
   }

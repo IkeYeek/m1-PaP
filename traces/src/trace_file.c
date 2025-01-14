@@ -103,6 +103,46 @@ void trace_file_load (char *file)
             INT_EXTRACT_HIGH (ev.param[4]), NULL);
       break;
 
+    case TRACE_TILE_EXT:
+      trace_data_add_task (
+          &trace[nb_traces], ev.param[0], ev.param[2],
+          INT_EXTRACT_LOW (ev.param[3]), INT_EXTRACT_HIGH (ev.param[3]),
+          INT_EXTRACT_LOW (ev.param[4]), INT_EXTRACT_HIGH (ev.param[4]),
+          current_iteration, cpu, INT_EXTRACT_LOW (ev.param[5]),
+          INT_EXTRACT_HIGH (ev.param[5]), NULL);
+      break;
+
+    case TRACE_TILE_MIN:
+        trace_data_add_task (
+            &trace[nb_traces], ev.param[0], ev.time / 1000,
+            INT_EXTRACT_LOW (ev.param[2]), INT_EXTRACT_HIGH (ev.param[2]),
+            INT_EXTRACT_LOW (ev.param[3]), INT_EXTRACT_HIGH (ev.param[3]),
+            current_iteration, cpu, TASK_TYPE_COMPUTE, 0, NULL);
+      break;
+
+    case TRACE_PATCH:
+      trace_data_add_task (&trace[nb_traces], ev.param[0], ev.time / 1000,
+                           INT_EXTRACT_LOW (ev.param[2]), 0,
+                           INT_EXTRACT_HIGH (ev.param[2]), 0, current_iteration,
+                           cpu, INT_EXTRACT_LOW (ev.param[3]),
+                           INT_EXTRACT_HIGH (ev.param[3]), NULL);
+      break;
+
+    case TRACE_PATCH_EXT:
+      trace_data_add_task (&trace[nb_traces], ev.param[0], ev.param[2],
+                           INT_EXTRACT_LOW (ev.param[3]), 0,
+                           INT_EXTRACT_HIGH (ev.param[3]), 0, current_iteration,
+                           cpu, INT_EXTRACT_LOW (ev.param[4]),
+                           INT_EXTRACT_HIGH (ev.param[4]), NULL);
+      break;
+
+    case TRACE_PATCH_MIN:
+      trace_data_add_task (&trace[nb_traces], ev.param[0], ev.time / 1000,
+                           INT_EXTRACT_LOW (ev.param[2]), 0,
+                           INT_EXTRACT_HIGH (ev.param[2]), 0, current_iteration,
+                           cpu, TASK_TYPE_COMPUTE, 0, NULL);
+      break;
+
     case TRACE_DIM:
       trace_data_set_dim (&trace[nb_traces], ev.param[0]);
       break;
@@ -126,7 +166,7 @@ void trace_file_load (char *file)
     case TRACE_DO_CACHE:
       trace_data_set_do_cache (&trace[nb_traces], (unsigned)ev.param[0]);
       break;
-      
+
     case TRACE_MESHFILE:
       trace_data_set_meshfile (&trace[nb_traces], (char *)ev.raw);
       break;
@@ -160,13 +200,13 @@ void trace_file_load (char *file)
 
   trace_data_no_more_data (&trace[nb_traces]);
 
-  printf ("Trace #%d \"%s\" successfully opened: %d iterations on %d CPUs [%s] - %s "
+  printf ("Trace #%d \"%s\" successfully opened: %d iterations on %d CPUs "
+          "%s"
           "(%s)\n",
           nb_traces, trace[nb_traces].label, trace[nb_traces].nb_iterations,
           trace[nb_traces].nb_cores,
-          trace[nb_traces].mesh_file ? trace[nb_traces].mesh_file : "",
-          trace[nb_traces].has_cache_data ? "cache usage found"
-                                          : "no cache data",
+          trace[nb_traces].has_cache_data ? "- cache usage found "
+                                          : "",
           file);
 
   nb_traces++;

@@ -1,7 +1,8 @@
 #include "trace_graphics.h"
 #include "error.h"
-#include "ezp_colors.h"
 #include "ezv.h"
+#include "ezv_sdl_gl.h"
+#include "trace_colors.h"
 
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
@@ -39,9 +40,6 @@ enum
 #define MIN_TASK_HEIGHT 6
 #define MAX_TASK_HEIGHT 44
 
-#define MAX_PREVIEW_DIM 512
-#define MIN_PREVIEW_DIM 128
-
 #define MAX_CACHE_WIDTH (100 + 2)
 
 #define MAGNIFICATION 2
@@ -50,8 +48,7 @@ enum
 #define task_height(space) ((space) - 2 * Y_MARGIN - 1)
 
 #define GANTT_WIDTH                                                            \
-  (WINDOW_WIDTH -                                                              \
-   (LEFT_MARGIN + PREVIEW_DIM + 2 * RIGHT_MARGIN + CACHE_STATS_WIDTH))
+  (WINDOW_WIDTH - (LEFT_MARGIN + RIGHT_MARGIN + CACHE_STATS_WIDTH))
 #define LEFT_MARGIN 80
 #define RIGHT_MARGIN 24
 #define TOP_MARGIN 48
@@ -70,22 +67,20 @@ enum
 static SDL_Color silver_color  = {192, 192, 192, 255};
 static SDL_Color backgrd_color = {0, 51, 51, 255}; //{50, 50, 65, 255};
 
-static SDL_Texture **square_tex_bright = NULL;
-static SDL_Texture **square_tex_dark   = NULL;
-static SDL_Texture *black_square       = NULL;
-static SDL_Texture *dark_square        = NULL;
-static SDL_Texture *white_square       = NULL;
-static SDL_Texture *stat_frame_tex     = NULL;
-static SDL_Texture *stat_caption_tex   = NULL;
-static SDL_Texture *stat_background    = NULL;
+static SDL_Texture *black_square     = NULL;
+static SDL_Texture *dark_square      = NULL;
+static SDL_Texture *white_square     = NULL;
+static SDL_Texture *stat_frame_tex   = NULL;
+static SDL_Texture *stat_caption_tex = NULL;
+static SDL_Texture *stat_background  = NULL;
 
-static SDL_Texture **thumb_tex[MAX_TRACES] = {NULL, NULL};
+static void **thumb_data[MAX_TRACES] = {NULL, NULL};
 
 static int TASK_HEIGHT   = MAX_TASK_HEIGHT;
 static int WINDOW_HEIGHT = -1;
 static int WINDOW_WIDTH  = -1;
 
-static int GANTT_HEIGHT, PREVIEW_DIM, CACHE_STATS_WIDTH;
+static int GANTT_HEIGHT, CACHE_STATS_WIDTH;
 
 static int BUBBLE_WIDTH, BUBBLE_HEIGHT, REDUCED_BUBBLE_WIDTH,
     REDUCED_BUBBLE_HEIGHT;
@@ -124,6 +119,7 @@ static int quick_nav_mode = 0;
 static int horiz_mode     = 0;
 static int tracking_mode  = 0;
 static int footprint_mode = 0;
+static int backlog_mode   = 0;
 
 static long start_time = 0, end_time = 0, duration = 0;
 
@@ -136,15 +132,16 @@ static int mouse_down          = 0;
 static int max_cores = -1, max_iterations = -1;
 static long max_time = -1;
 
-int use_thumbnails       = 1;
 unsigned char brightness = 150;
-unsigned soft_rendering  = 0;
 
 extern char *trace_dir[]; // Defined in main.c
 
+static char easyview_img_dir[1024];
+static char easyview_font_dir[1024];
+
 struct
 {
-  SDL_Rect gantt, mosaic;
+  SDL_Rect gantt;
   SDL_Texture *label_tex;
   unsigned label_width, label_height;
   SDL_Texture **task_ids_tex;
@@ -158,27 +155,66 @@ struct
   int first_displayed_iter, last_displayed_iter;
 } trace_ctrl[MAX_TRACES];
 
+static ezv_ctx_t ctx[MAX_TRACES] = {NULL, NULL};
+
+static SDL_Point mouse_pick = {-1, 0};
 // 3D meshes
 static mesh3d_obj_t mesh;
-static ezv_ctx_t ctx[MAX_TRACES] = {NULL, NULL};
-static int picked                = -1;
+// 2D images
+static img2d_obj_t img2d;
+
+static void find_shared_directories (void)
+{
+  char *pi = stpcpy (easyview_img_dir, SDL_GetBasePath());
+  char *pf = stpcpy (easyview_font_dir, easyview_img_dir);
+
+  strcpy (pi, "../img/");
+  strcpy (pf, "../fonts/");
+}
+
+static SDL_Surface *load_img (const char *filename)
+{
+  char path[1024];
+  SDL_Surface *s;
+  char *p = stpcpy (path, easyview_img_dir);
+  strcpy (p, filename);
+
+  s = IMG_Load (path);
+  if (s == NULL)
+    exit_with_error ("IMG_Load (%s) failed: %s", filename, SDL_GetError ());
+
+  return s;
+}
+
+static TTF_Font *load_font (const char *filename, int ptsize)
+{
+  char path[1024];
+  TTF_Font *f;
+  char *p = stpcpy (path, easyview_font_dir);
+  strcpy (p, filename);
+
+  f = TTF_OpenFont (path, ptsize);
+  if (f == NULL)
+    exit_with_error ("TTF_OpenFont (%s) failed: %s", filename, TTF_GetError ());
+
+  return f;
+}
 
 static inline unsigned layout_get_min_width (void)
 {
   return WINDOW_MIN_WIDTH;
 }
 
-static unsigned layout_get_height (unsigned preview_dim, unsigned task_height)
+static unsigned layout_get_height (unsigned task_height)
 {
   unsigned need_left, need_right, gantt_h;
 
   if (nb_traces == 1) {
-    need_right = TOP_MARGIN + preview_dim + BOTTOM_MARGIN;
+    need_right = TOP_MARGIN + BOTTOM_MARGIN;
     gantt_h    = trace[0].nb_cores * cpu_row_height (task_height);
     need_left  = TOP_MARGIN + gantt_h + BOTTOM_MARGIN;
   } else {
-    need_right =
-        TOP_MARGIN + 2 * preview_dim + INTERTRACE_MARGIN + BOTTOM_MARGIN;
+    need_right = TOP_MARGIN + 2 * INTERTRACE_MARGIN + BOTTOM_MARGIN;
     gantt_h =
         (trace[0].nb_cores + trace[1].nb_cores) * cpu_row_height (task_height) +
         INTERTRACE_MARGIN;
@@ -189,18 +225,12 @@ static unsigned layout_get_height (unsigned preview_dim, unsigned task_height)
 
 static unsigned layout_get_min_height (void)
 {
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-    return layout_get_height (0, MIN_TASK_HEIGHT);
-
-  return layout_get_height (MIN_PREVIEW_DIM, MIN_TASK_HEIGHT);
+  return layout_get_height (MIN_TASK_HEIGHT);
 }
 
 static unsigned layout_get_max_height (void)
 {
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-    return layout_get_height (0, MAX_TASK_HEIGHT);
-
-  return layout_get_height (MAX_PREVIEW_DIM, MAX_TASK_HEIGHT);
+  return layout_get_height (MAX_TASK_HEIGHT);
 }
 
 static void layout_place_buttons (void)
@@ -224,15 +254,6 @@ static void layout_recompute (int at_init)
   unsigned need_left;
 
   if (nb_traces == 1) {
-    // Compute preview size
-    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-      PREVIEW_DIM = 0;
-    else
-      PREVIEW_DIM = min (MAX_PREVIEW_DIM,
-                         max (MIN_PREVIEW_DIM, min (WINDOW_WIDTH / 4,
-                                                    WINDOW_HEIGHT - TOP_MARGIN -
-                                                        BOTTOM_MARGIN)));
-
     // See how much space we have for GANTT chart
     unsigned space = WINDOW_HEIGHT - TOP_MARGIN - BOTTOM_MARGIN;
     space /= trace[0].nb_cores;
@@ -246,7 +267,7 @@ static void layout_recompute (int at_init)
       TASK_HEIGHT = MAX_TASK_HEIGHT;
 
     if (at_init)
-      WINDOW_HEIGHT = layout_get_height (PREVIEW_DIM, TASK_HEIGHT);
+      WINDOW_HEIGHT = layout_get_height (TASK_HEIGHT);
 
     GANTT_HEIGHT = trace[0].nb_cores * cpu_row_height (TASK_HEIGHT);
 
@@ -256,25 +277,8 @@ static void layout_recompute (int at_init)
     trace_display_info[0].gantt.y = TOP_MARGIN;
     trace_display_info[0].gantt.w = GANTT_WIDTH;
     trace_display_info[0].gantt.h = GANTT_HEIGHT;
-
-    trace_display_info[0].mosaic.x =
-        LEFT_MARGIN + GANTT_WIDTH + RIGHT_MARGIN + CACHE_STATS_WIDTH;
-    trace_display_info[0].mosaic.y = TOP_MARGIN;
-    trace_display_info[0].mosaic.w = PREVIEW_DIM;
-    trace_display_info[0].mosaic.h = PREVIEW_DIM;
   } else {
     unsigned padding = 0;
-
-    // Compute preview size
-    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-      PREVIEW_DIM = 0;
-    else
-      PREVIEW_DIM =
-          min (MAX_PREVIEW_DIM,
-               max (MIN_PREVIEW_DIM,
-                    min (WINDOW_WIDTH / 4, (WINDOW_HEIGHT - TOP_MARGIN -
-                                            BOTTOM_MARGIN - INTERTRACE_MARGIN) /
-                                               2)));
 
     // See how much space we have for GANTT chart
     unsigned space =
@@ -290,7 +294,7 @@ static void layout_recompute (int at_init)
       TASK_HEIGHT = MAX_TASK_HEIGHT;
 
     if (at_init)
-      WINDOW_HEIGHT = layout_get_height (PREVIEW_DIM, TASK_HEIGHT);
+      WINDOW_HEIGHT = layout_get_height (TASK_HEIGHT);
 
     CACHE_STATS_WIDTH = (trace[0].has_cache_data || trace[1].has_cache_data)
                             ? MAX_CACHE_WIDTH + RIGHT_MARGIN
@@ -311,25 +315,12 @@ static void layout_recompute (int at_init)
     trace_display_info[0].gantt.h =
         trace[0].nb_cores * cpu_row_height (TASK_HEIGHT);
 
-    trace_display_info[0].mosaic.x =
-        LEFT_MARGIN + GANTT_WIDTH + RIGHT_MARGIN + CACHE_STATS_WIDTH;
-    trace_display_info[0].mosaic.y = TOP_MARGIN;
-    trace_display_info[0].mosaic.w = PREVIEW_DIM;
-    trace_display_info[0].mosaic.h = PREVIEW_DIM;
-
     trace_display_info[1].gantt.x = LEFT_MARGIN;
     trace_display_info[1].gantt.y = TOP_MARGIN + INTERTRACE_MARGIN +
                                     trace_display_info[0].gantt.h + padding / 2;
     trace_display_info[1].gantt.w = GANTT_WIDTH;
     trace_display_info[1].gantt.h =
         trace[1].nb_cores * cpu_row_height (TASK_HEIGHT);
-
-    trace_display_info[1].mosaic.w = PREVIEW_DIM;
-    trace_display_info[1].mosaic.h = PREVIEW_DIM;
-    trace_display_info[1].mosaic.x =
-        LEFT_MARGIN + GANTT_WIDTH + RIGHT_MARGIN + CACHE_STATS_WIDTH;
-    trace_display_info[1].mosaic.y =
-        WINDOW_HEIGHT - BOTTOM_MARGIN - trace_display_info[1].mosaic.h;
   }
 
   gantts_bounding_box.x = trace_display_info[0].gantt.x;
@@ -370,10 +361,7 @@ static inline int point_in_rect (const SDL_Point *p, const SDL_Rect *r)
 
 static inline int point_inside_mosaic (const SDL_Point *p, unsigned trace_num)
 {
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-    return ezv_ctx_is_in_focus (ctx[trace_num]);
-  } else
-    return point_in_rect (p, &trace_display_info[trace_num].mosaic);
+  return ezv_ctx_is_in_focus (ctx[trace_num]);
 }
 
 static inline int point_inside_mosaics (const SDL_Point *p)
@@ -400,9 +388,13 @@ static inline int rects_do_intersect (const SDL_Rect *r1, const SDL_Rect *r2)
 static inline void get_raw_rect (trace_task_t *t, SDL_Rect *dst)
 {
   dst->x = t->x;
-  dst->y = t->y;
   dst->w = t->w;
-  dst->h = t->h;
+
+  dst->y = t->y;
+  if (easyview_mode != EASYVIEW_MODE_3D_MESHES)
+    dst->h = t->h;
+  else
+    dst->h = 1;
 }
 
 static int get_y_mouse_sibbling (void)
@@ -460,82 +452,79 @@ static unsigned preload_thumbnails (unsigned nb_iter)
 {
   unsigned success = 0, expected = 0;
 
-  if (use_thumbnails) {
-    unsigned nb_dirs  = 0;
-    unsigned bound[2] = {nb_iter, nb_iter};
-    char *dir[2]      = {trace_dir[0], trace_dir[1]};
+  unsigned nb_dirs  = 0;
+  unsigned bound[2] = {nb_iter, nb_iter};
+  char *dir[2]      = {trace_dir[0], trace_dir[1]};
 
-    if (trace_dir[1] ||
-        trace[0].first_iteration != trace[nb_traces - 1].first_iteration) {
-      // Ok, we have to use two separate arrays to store textures,
-      // either because thumbnails are located in two separate folders
-      // or because we compare two traces starting from a different iteration
-      // number. (Note that in this latter case -- and if iteration ranges
-      // overlap -- we could probably try to load once and shift the indexes in
-      // the second array... I don't think it is worth it.)
+  if (trace_dir[1] ||
+      trace[0].first_iteration != trace[nb_traces - 1].first_iteration) {
+    // Ok, we have to use two separate arrays to store textures,
+    // either because thumbnails are located in two separate folders
+    // or because we compare two traces starting from a different iteration
+    // number. (Note that in this latter case -- and if iteration ranges
+    // overlap -- we could probably try to load once and shift the indexes in
+    // the second array... I don't think it is worth it.)
 
-      nb_dirs = 2;
-      if (!dir[1])
-        dir[1] = dir[0];
-      bound[0]     = trace[0].nb_iterations;
-      bound[1]     = trace[1].nb_iterations;
-      expected     = bound[0] + bound[1];
-      thumb_tex[0] = malloc (bound[0] * sizeof (SDL_Texture *));
-      thumb_tex[1] = malloc (bound[1] * sizeof (SDL_Texture *));
-    } else {
-      // We use a unique array to store thumbnails, either because we're
-      // displaying a single trace or because we compare two traces with one
-      // iteration range being a subset of the other (in this case, nb_iter is
-      // the maximum number of iterations).
-      nb_dirs      = 1;
-      expected     = bound[0];
-      thumb_tex[0] = malloc (nb_iter * sizeof (SDL_Texture *));
-      thumb_tex[1] = thumb_tex[0];
-    }
+    nb_dirs = 2;
+    if (!dir[1])
+      dir[1] = dir[0];
+    bound[0]      = trace[0].nb_iterations;
+    bound[1]      = trace[1].nb_iterations;
+    expected      = bound[0] + bound[1];
+    thumb_data[0] = malloc (bound[0] * sizeof (void *));
+    thumb_data[1] = malloc (bound[1] * sizeof (void *));
+  } else {
+    // We use a unique array to store thumbnails, either because we're
+    // displaying a single trace or because we compare two traces with one
+    // iteration range being a subset of the other (in this case, nb_iter is
+    // the maximum number of iterations).
+    nb_dirs       = 1;
+    expected      = bound[0];
+    thumb_data[0] = malloc (nb_iter * sizeof (void *));
+    thumb_data[1] = thumb_data[0];
+  }
 
-    for (int d = 0; d < nb_dirs; d++)
-      for (int iter = 0; iter < bound[d]; iter++) {
-        SDL_Surface *thumb = NULL;
-        char filename[MAX_FILENAME];
+  for (int d = 0; d < nb_dirs; d++)
+    for (int iter = 0; iter < bound[d]; iter++) {
+      void *thumb = NULL;
+      char filename[MAX_FILENAME];
+      img2d_obj_t thumb2d;
+      img2d_obj_init (&thumb2d, trace[0].dimensions, trace[0].dimensions);
 
-        if (easyview_mode == EASYVIEW_MODE_2D_IMAGES) {
-          sprintf (filename, "%s/thumb_%04d.png", dir[d],
-                   trace[d].first_iteration + iter);
-          thumb = IMG_Load (filename);
-        } else {
-          sprintf (filename, "%s/thumb_%04d.raw", dir[d],
-                   trace[d].first_iteration + iter);
-          thumb = (SDL_Surface *)mesh_load_raw_data (filename);
+      if (easyview_mode == EASYVIEW_MODE_2D_IMAGES) {
+        sprintf (filename, "%s/thumb_%04d.png", dir[d],
+                 trace[d].first_iteration + iter);
+        if (access (filename, R_OK) != -1) {
+          thumb = malloc (img2d_obj_size (&thumb2d));
+          img2d_obj_load_resized (&thumb2d, filename, thumb);
         }
-
-        if (thumb != NULL) {
-          success++;
-
-          if (easyview_mode == EASYVIEW_MODE_2D_IMAGES) {
-            thumb_tex[d][iter] = SDL_CreateTextureFromSurface (renderer, thumb);
-            SDL_FreeSurface (thumb);
-            SDL_SetTextureAlphaMod (thumb_tex[d][iter], brightness);
-          } else {
-            thumb_tex[d][iter] = (SDL_Texture *)thumb;
-          }
-        } else
-          thumb_tex[d][iter] = NULL;
+      } else {
+        sprintf (filename, "%s/thumb_%04d.raw", dir[d],
+                 trace[d].first_iteration + iter);
+        thumb = mesh_load_raw_data (filename);
       }
 
-    printf ("%d/%u thumbnails successfully preloaded\n", success, expected);
-  }
+      if (thumb != NULL) {
+        success++;
+        thumb_data[d][iter] = thumb;
+      } else
+        thumb_data[d][iter] = NULL;
+    }
+
+  printf ("%d/%u thumbnails successfully preloaded\n", success, expected);
+
   return success;
 }
 
-static void create_task_textures (unsigned nb_cores)
+static void create_task_textures (void)
 {
   Uint32 *restrict img = malloc (GANTT_WIDTH * TASK_HEIGHT * sizeof (Uint32));
 
-  perf_fill = malloc ((EZP_MAX_COLORS + 1) * sizeof (SDL_Texture *));
+  perf_fill = malloc ((TRACE_MAX_COLORS + 1) * sizeof (SDL_Texture *));
 
-  SDL_Surface *s = SDL_CreateRGBSurfaceFrom (img, GANTT_WIDTH, TASK_HEIGHT, 32,
-                                             GANTT_WIDTH * sizeof (Uint32),
-                                             ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
+  SDL_Surface *s = SDL_CreateRGBSurfaceFrom (
+      img, GANTT_WIDTH, TASK_HEIGHT, 32, GANTT_WIDTH * sizeof (Uint32),
+      ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom () failed");
 
@@ -544,17 +533,17 @@ static void create_task_textures (unsigned nb_cores)
   float attenuation_depart         = 1.0;
   float attenuation_finale         = 0.3;
 
-  for (int c = 0; c < EZP_MAX_COLORS + 1; c++) {
+  for (int c = 0; c < TRACE_MAX_COLORS + 1; c++) {
     bzero (img, GANTT_WIDTH * TASK_HEIGHT * sizeof (Uint32));
 
-    if (c == EZP_MAX_COLORS) // special treatment for white color
+    if (c == TRACE_MAX_COLORS) // special treatment for white color
       attenuation_finale = 0.5;
 
     for (int j = 0; j < GANTT_WIDTH; j++) {
-      uint32_t couleur = ezp_cpu_colors[c];
-      uint8_t r       = ezv_c2r (couleur);
-      uint8_t g       = ezv_c2g (couleur);
-      uint8_t b       = ezv_c2b (couleur);
+      uint32_t couleur = trace_cpu_color (c);
+      uint8_t r        = ezv_c2r (couleur);
+      uint8_t g        = ezv_c2g (couleur);
+      uint8_t b        = ezv_c2b (couleur);
 
       if (j >= largeur_couleur_origine) {
         float coef =
@@ -582,7 +571,8 @@ static void create_task_textures (unsigned nb_cores)
 
   img = malloc (width * height * sizeof (Uint32));
   s = SDL_CreateRGBSurfaceFrom (img, width, height, 32, width * sizeof (Uint32),
-                                ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
+                                ezv_red_mask (), ezv_green_mask (),
+                                ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom () failed");
 
@@ -614,7 +604,8 @@ static void create_task_textures (unsigned nb_cores)
   // Cache stats frame
   img = malloc (MAX_CACHE_WIDTH * (MIN_TASK_HEIGHT + 2) * sizeof (Uint32));
   s   = SDL_CreateRGBSurfaceFrom (img, MAX_CACHE_WIDTH, MIN_TASK_HEIGHT + 2, 32,
-                                  MAX_CACHE_WIDTH * sizeof (Uint32), ezv_red_mask (), ezv_green_mask (),
+                                  MAX_CACHE_WIDTH * sizeof (Uint32),
+                                  ezv_red_mask (), ezv_green_mask (),
                                   ezv_blue_mask (), ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurfaceFrom failed: %s", SDL_GetError ());
@@ -632,8 +623,9 @@ static void create_task_textures (unsigned nb_cores)
   SDL_FreeSurface (s);
   free (img);
 
-  s = SDL_CreateRGBSurface (0, SQUARE_SIZE, SQUARE_SIZE, 32, ezv_red_mask (), ezv_green_mask (),
-                            ezv_blue_mask (), ezv_alpha_mask ());
+  s = SDL_CreateRGBSurface (0, SQUARE_SIZE, SQUARE_SIZE, 32, ezv_red_mask (),
+                            ezv_green_mask (), ezv_blue_mask (),
+                            ezv_alpha_mask ());
   if (s == NULL)
     exit_with_error ("SDL_CreateRGBSurface () failed");
 
@@ -645,17 +637,6 @@ static void create_task_textures (unsigned nb_cores)
 
   SDL_FillRect (s, NULL, WHITE_COL); // white
   white_square = SDL_CreateTextureFromSurface (renderer, s);
-
-  square_tex_bright = malloc ((EZP_MAX_COLORS + 1) * sizeof (SDL_Texture *));
-  square_tex_dark   = malloc ((EZP_MAX_COLORS + 1) * sizeof (SDL_Texture *));
-
-  for (int c = 0; c < EZP_MAX_COLORS + 1; c++) {
-    SDL_FillRect (s, NULL, ezp_cpu_colors[c]);
-    square_tex_bright[c] = SDL_CreateTextureFromSurface (renderer, s);
-    square_tex_dark[c]   = SDL_CreateTextureFromSurface (renderer, s);
-    // Dark tiles are semi-transparent
-    SDL_SetTextureAlphaMod (square_tex_dark[c], TILE_ALPHA);
-  }
 
   SDL_FreeSurface (s);
 }
@@ -704,31 +685,19 @@ static void create_digit_textures (TTF_Font *font)
 
 static void create_tab_textures (TTF_Font *font)
 {
-  SDL_Surface *surf = IMG_Load ("./traces/img/tab-left.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
-
+  SDL_Surface *surf = load_img ("tab-left.png");
   tab_left = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/tab-high.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
-
+  surf = load_img ("tab-high.png");
   tab_high = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/tab-right.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
-
+  surf = load_img ("tab-right.png");
   tab_right = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/tab-low.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
-
+  surf = load_img ("tab-low.png");
   tab_low = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
@@ -797,8 +766,8 @@ static void blit_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
   SDL_FreeSurface (s);
 }
 
-static void blit_sub_on_surface (SDL_Surface *surface, TTF_Font *font, int trace,
-                                 unsigned line, unsigned color)
+static void blit_sub_on_surface (SDL_Surface *surface, TTF_Font *font,
+                                 int trace, unsigned line, unsigned color)
 {
   SDL_Rect dst;
   SDL_Color col;
@@ -810,8 +779,8 @@ static void blit_sub_on_surface (SDL_Surface *surface, TTF_Font *font, int trace
     exit_with_error ("TTF_RenderUTF8_Blended failed: %s", SDL_GetError ());
 
   dst.x = LEFT_MARGIN - s->w;
-  dst.y = trace_display_info[trace].gantt.y +
-          cpu_row_height (TASK_HEIGHT) * line;
+  dst.y =
+      trace_display_info[trace].gantt.y + cpu_row_height (TASK_HEIGHT) * line;
   dst.h = cpu_row_height (TASK_HEIGHT) / 2 - 1;
 
   SDL_BlitSurface (s, NULL, surface, &dst);
@@ -823,7 +792,8 @@ static void blit_sub_on_surface (SDL_Surface *surface, TTF_Font *font, int trace
 
   dst.x = LEFT_MARGIN - s->w;
   dst.y = trace_display_info[trace].gantt.y +
-          cpu_row_height (TASK_HEIGHT) * line + cpu_row_height (TASK_HEIGHT) / 2;
+          cpu_row_height (TASK_HEIGHT) * line +
+          cpu_row_height (TASK_HEIGHT) / 2;
 
   SDL_BlitSurface (s, NULL, surface, &dst);
   SDL_FreeSurface (s);
@@ -831,8 +801,9 @@ static void blit_sub_on_surface (SDL_Surface *surface, TTF_Font *font, int trace
 
 static void create_cpu_textures (TTF_Font *font)
 {
-  SDL_Surface *surface = SDL_CreateRGBSurface (0, LEFT_MARGIN, WINDOW_HEIGHT,
-                                               32, ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
+  SDL_Surface *surface = SDL_CreateRGBSurface (
+      0, LEFT_MARGIN, WINDOW_HEIGHT, 32, ezv_red_mask (), ezv_green_mask (),
+      ezv_blue_mask (), ezv_alpha_mask ());
   if (surface == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -851,10 +822,10 @@ static void create_cpu_textures (TTF_Font *font)
       } else
         snprintf (msg, 32, "CPU %2d ", c);
 
-      blit_on_surface (surface, font, t, c, msg, ezp_cpu_colors[c % EZP_MAX_COLORS]);
+      blit_on_surface (surface, font, t, c, msg, trace_cpu_color (c));
       if (is_lane) {
-        blit_sub_on_surface (surface, font, t, c, ezp_cpu_colors[c % EZP_MAX_COLORS]);
-        blit_sub_on_surface (surface, font, t, c, ezp_cpu_colors[c % EZP_MAX_COLORS]);
+        blit_sub_on_surface (surface, font, t, c, trace_cpu_color (c));
+        blit_sub_on_surface (surface, font, t, c, trace_cpu_color (c));
       }
     }
   }
@@ -879,8 +850,9 @@ static void create_text_texture (TTF_Font *font)
 
 static void create_misc_tex (void)
 {
-  SDL_Surface *surf = SDL_CreateRGBSurface (0, 2, WINDOW_HEIGHT, 32, ezv_red_mask (),
-                                            ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
+  SDL_Surface *surf = SDL_CreateRGBSurface (
+      0, 2, WINDOW_HEIGHT, 32, ezv_red_mask (), ezv_green_mask (),
+      ezv_blue_mask (), ezv_alpha_mask ());
   if (surf == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -889,8 +861,9 @@ static void create_misc_tex (void)
   SDL_SetTextureBlendMode (vertical_line, SDL_BLENDMODE_BLEND);
   SDL_FreeSurface (surf);
 
-  surf =
-      SDL_CreateRGBSurface (0, GANTT_WIDTH, 2, 32, ezv_red_mask (), ezv_green_mask (), ezv_blue_mask (), ezv_alpha_mask ());
+  surf = SDL_CreateRGBSurface (0, GANTT_WIDTH, 2, 32, ezv_red_mask (),
+                               ezv_green_mask (), ezv_blue_mask (),
+                               ezv_alpha_mask ());
   if (surf == NULL)
     exit_with_error ("SDL_CreateRGBSurface failed: %s", SDL_GetError ());
 
@@ -904,16 +877,11 @@ static void create_misc_tex (void)
 
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/mouse-cursor.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
-
+  surf = load_img ("mouse-cursor.png");
   mouse_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/frame.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
+  surf = load_img ("frame.png");
 
   BUBBLE_WIDTH  = surf->w;
   BUBBLE_HEIGHT = surf->h;
@@ -921,9 +889,7 @@ static void create_misc_tex (void)
   bulle_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/frame-reduced.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
+  surf = load_img ("frame-reduced.png");
 
   REDUCED_BUBBLE_WIDTH  = surf->w;
   REDUCED_BUBBLE_HEIGHT = surf->h;
@@ -931,9 +897,7 @@ static void create_misc_tex (void)
   reduced_bulle_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
 
-  surf = IMG_Load ("./traces/img/quick-nav.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
+  surf = load_img ("quick-nav.png");
 
   quick_nav_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
@@ -942,9 +906,7 @@ static void create_misc_tex (void)
   SDL_QueryTexture (quick_nav_tex, NULL, NULL, &quick_nav_rect.w,
                     &quick_nav_rect.h);
 
-  surf = IMG_Load ("./traces/img/auto-align.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
+  surf = load_img ("auto-align.png");
 
   align_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
@@ -953,9 +915,7 @@ static void create_misc_tex (void)
 
   SDL_QueryTexture (align_tex, NULL, NULL, &align_rect.w, &align_rect.h);
 
-  surf = IMG_Load ("./traces/img/track-mode.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
+  surf = load_img ("track-mode.png");
 
   track_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
@@ -963,9 +923,7 @@ static void create_misc_tex (void)
 
   SDL_QueryTexture (track_tex, NULL, NULL, &track_rect.w, &track_rect.h);
 
-  surf = IMG_Load ("./traces/img/footprint.png");
-  if (surf == NULL)
-    exit_with_error ("IMG_Load failed: %s", SDL_GetError ());
+  surf = load_img ("footprint.png");
 
   footprint_tex = SDL_CreateTextureFromSurface (renderer, surf);
   SDL_FreeSurface (surf);
@@ -977,52 +935,25 @@ static void create_misc_tex (void)
 
 // Display functions
 
-static inline int get_tile_rect (trace_t *tr, trace_task_t *t, SDL_Rect *dst)
-{
-  if (t->w && t->h) {
-    dst->x = t->x * trace_display_info[tr->num].mosaic.w / tr->dimensions +
-             trace_display_info[tr->num].mosaic.x;
-    dst->y = t->y * trace_display_info[tr->num].mosaic.h / tr->dimensions +
-             trace_display_info[tr->num].mosaic.y;
-    dst->w =
-        ((t->x + t->w) * trace_display_info[tr->num].mosaic.w / tr->dimensions +
-         trace_display_info[tr->num].mosaic.x - dst->x)
-            ?: 1;
-    dst->h =
-        ((t->y + t->h) * trace_display_info[tr->num].mosaic.h / tr->dimensions +
-         trace_display_info[tr->num].mosaic.y - dst->y)
-            ?: 1;
-    return 1;
-  } else { // task has no associated tile
-    dst->x = 0;
-    dst->y = 0;
-    dst->w = 0;
-    dst->h = 0;
-    return 0;
-  }
-}
-
 static void show_tile (trace_t *tr, trace_task_t *t, unsigned cpu,
                        unsigned highlight)
 {
-  unsigned task_color = cpu % EZP_MAX_COLORS;
+  uint32_t task_color = trace_cpu_color (cpu);
 
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
     if (t->w) {
       ezv_set_cpu_color_1D (
           ctx[tr->num], t->x, t->w,
-          (highlight ? ezp_cpu_colors[task_color]
-                     : (ezp_cpu_colors[task_color] & ezv_rgb_mask ()) | ezv_a2c (0xC0)));
+          (highlight ? task_color
+                     : (task_color & ezv_rgb_mask ()) | ezv_a2c (0xC0)));
     }
   } else {
-    SDL_Rect dst;
-
-    get_tile_rect (tr, t, &dst);
-
-    SDL_RenderCopy (renderer,
-                    (highlight ? square_tex_bright[task_color]
-                               : square_tex_dark[task_color]),
-                    NULL, &dst);
+    if (t->w && t->h) {
+      ezv_set_cpu_color_2D (
+          ctx[tr->num], t->x, t->w, t->y, t->h,
+          (highlight ? task_color
+                     : (task_color & ezv_rgb_mask ()) | ezv_a2c (0xC0)));
+    }
   }
 }
 
@@ -1318,30 +1249,23 @@ static void display_misc_status (void)
 static void display_tile_background (int tr)
 {
   static int displayed_iter[MAX_TRACES] = {-1, -1};
-  static SDL_Texture *tex[MAX_TRACES]   = {NULL};
+  static void *tex[MAX_TRACES]          = {NULL, NULL};
 
-  if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
-    SDL_RenderCopy (renderer, black_square, NULL,
-                    &trace_display_info[tr].mosaic);
+  if (mouse_in_gantt_zone) {
+    long time = pixel_to_time (mouse.x);
+    int iter  = trace_data_search_iteration (&trace[tr], time);
 
-  if (use_thumbnails) {
-
-    if (mouse_in_gantt_zone) {
-      long time = pixel_to_time (mouse.x);
-      int iter  = trace_data_search_iteration (&trace[tr], time);
-
-      if (iter != -1 && iter != displayed_iter[tr]) {
-        displayed_iter[tr] = iter;
-        tex[tr]            = thumb_tex[tr][iter];
-      }
+    if (iter != -1 && iter != displayed_iter[tr]) {
+      displayed_iter[tr] = iter;
+      tex[tr]            = thumb_data[tr][iter];
     }
   }
 
   if (tex[tr] != NULL) {
     if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
-      SDL_RenderCopy (renderer, tex[tr], NULL, &trace_display_info[tr].mosaic);
+      ezv_set_data_colors (ctx[tr], tex[tr]);
     else
-      ezv_set_data_colors (ctx[tr], (float *)tex[tr]);
+      ezv_set_data_colors (ctx[tr], tex[tr]);
   }
 }
 
@@ -1434,19 +1358,16 @@ static void trace_graphics_display_trace (unsigned _t,
       *to_be_emphasized[max_cores]; // FIXME: there is no need to use max_cores
                                     // any more. The number of cores within the
                                     // trace should be ok.
-  SDL_Rect target_tile_rect;        // Only used when mouse is over Mosaic
-  int target_tile = 0;              // Only used when mouse is over Mosaic
-  int cpu         = 0;              // Only used in tracking mode
-  unsigned wh     = trace_display_info[_t].gantt.y + Y_MARGIN;
+  unsigned wh         = trace_display_info[_t].gantt.y + Y_MARGIN;
+  uint64_t mouse_time = 0;
+  unsigned mouse_iter = 0;
   perfcounter_array_t cumulated_cache_stat[max_cores];
 
   bzero (to_be_emphasized, max_cores * sizeof (trace_task_t *));
   if (tr->has_cache_data)
     bzero (cumulated_cache_stat, max_cores * sizeof (perfcounter_array_t));
 
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-    ezv_reset_cpu_colors (ctx[_t]);
-  }
+  ezv_reset_cpu_colors (ctx[_t]);
 
   // Set clipping region
   {
@@ -1462,11 +1383,17 @@ static void trace_graphics_display_trace (unsigned _t,
 
   display_gantt_background (tr, _t, first_it);
 
+  display_tile_background (_t);
+
   SDL_Point virt_mouse = mouse;
   int in_mosaic        = 0;
 
   // Normalize (virt_mouse.x, virt_mouse.y) mouse coordinates
   if (mouse_in_gantt_zone) {
+    mouse_time = pixel_to_time (mouse.x);
+    mouse_iter =
+        tr->first_iteration + trace_data_search_iteration (tr, mouse_time);
+
     if (point_inside_gantt (&mouse, _t))
       selected->trace = tr;
 
@@ -1481,10 +1408,8 @@ static void trace_graphics_display_trace (unsigned _t,
     } else if ((nb_traces > 1) && point_inside_mosaic (&mouse, 1 - _t)) {
       // Mouse is over the other tile mosaic
       in_mosaic    = 1;
-      virt_mouse.x = trace_display_info[_t].mosaic.x +
-                     (mouse.x - trace_display_info[1 - _t].mosaic.x);
-      virt_mouse.y = trace_display_info[_t].mosaic.y +
-                     (mouse.y - trace_display_info[1 - _t].mosaic.y);
+      virt_mouse.x = mouse.x;
+      virt_mouse.y = mouse.y;
     }
   }
 
@@ -1495,7 +1420,6 @@ static void trace_graphics_display_trace (unsigned _t,
       // We get a pointer on the first task executed by
       // CPU 'c' at first displayed iteration
       trace_task_t *first = tr->iteration[first_it].first_cpu_task[c];
-      unsigned task_color = c % EZP_MAX_COLORS;
 
       if (first != NULL)
         // We follow the list of tasks, starting from this first task
@@ -1521,105 +1445,90 @@ static void trace_graphics_display_trace (unsigned _t,
           dst.w = time_to_pixel (task_end_time (tr, t)) - dst.x + 1;
           dst.h = TASK_HEIGHT;
 
+          unsigned col = c;
+
           // If task is a GPU tranfer lane, modify height, y-offset and color
           if (is_lane (tr, c)) {
             dst.h = TASK_HEIGHT / 2;
             if (t->task_type == TASK_TYPE_READ)
               dst.y += TASK_HEIGHT / 2;
-
-            //task_color = ezp_gpu_index[t->task_type];
           }
 
           // Check if mouse is within the bounds of the gantt zone
           if (mouse_in_gantt_zone) {
+            int done = 0;
 
-            if (horiz_mode &&
-                (footprint_mode | point_in_yrange (&dst, virt_mouse.y))) {
-              if (to_be_emphasized[c] == NULL)
-                to_be_emphasized[c] =
-                    first; // store a ref to the first task on this lane
-            }
-
-            if (point_in_xrange (&dst, virt_mouse.x)) {
-              // vertical line crosses the task
-              if (point_in_yrange (&dst, virt_mouse.y)) {
-
+            if (point_in_yrange (&dst, virt_mouse.y)) {
+              if (point_in_xrange (&dst, virt_mouse.x)) {
+                // Mouse pointer is over task t
                 selected->task = t;
 
                 if (tracking_mode) {
-                  cpu            = c;
                   selected->iter = tr->first_iteration + t->iteration;
                   get_raw_rect (t, &selected->area);
                 }
                 // The task is under the mouse cursor: display it a little
                 // bigger!
                 magnify (&dst);
-              }
 
-              if (!horiz_mode && !tracking_mode &&
-                  t->w) // task has as associated tile to be displayed
-                to_be_emphasized[c] = t;
+                show_tile (tr, t, c, 1);
+                done = 1;
+              } else if (horiz_mode) {
+                show_tile (tr, t, c, 0);
+                done = 1;
+              }
+            } else if (!horiz_mode && !tracking_mode &&
+                       point_in_xrange (&dst, virt_mouse.x)) {
+              show_tile (tr, t, c, 0);
+              done = 1;
             }
 
-            // If tracking mode is enabled, we highlight tasks which work on
-            // tiles intersecting the working set of selected task
-            if (tracking_mode && selected->task != NULL &&
-                _t != selected->trace->num &&
-                selected->iter == t->iteration + tr->first_iteration &&
-                selected->task->task_id == t->task_id) {
-              SDL_Rect r;
+            if (footprint_mode && !done)
+              show_tile (tr, t, c, 0);
 
-              get_raw_rect (t, &r);
-              if (rects_do_intersect (&r, &selected->area)) {
-                selected->cumulated_duration += t->end_time - t->start_time;
-                for (int l = 0; l < EASYPAP_NB_COUNTERS; l++)
-                  selected->cumulated_cstats[l] += t->counters[l];
+            if (backlog_mode) {
+              if (!done && (t->iteration + tr->first_iteration == mouse_iter) &&
+                  (task_start_time (tr, t) <= mouse_time))
+                show_tile (tr, t, c, 0);
+            } else if (tracking_mode) {
+              // If tracking mode is enabled, we highlight tasks which work on
+              // tiles intersecting the working set of selected task
+              if (selected->task != NULL && _t != selected->trace->num &&
+                  selected->iter == t->iteration + tr->first_iteration &&
+                  selected->task->task_id == t->task_id) {
+                SDL_Rect r;
 
-                SDL_RenderCopy (renderer, perf_fill[EZP_MAX_COLORS], NULL,
-                                &dst); // white
-                if (to_be_emphasized[c] == NULL)
-                  to_be_emphasized[c] = t;
-              } else
-                SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
-            } else
-              SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
+                get_raw_rect (t, &r);
+                if (rects_do_intersect (&r, &selected->area)) {
+                  selected->cumulated_duration += t->end_time - t->start_time;
+                  for (int l = 0; l < EASYPAP_NB_COUNTERS; l++)
+                    selected->cumulated_cstats[l] += t->counters[l];
 
-          } else if (in_mosaic) {
-            if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-              int task_match = 0;
-
-              if (picked != -1 && t->w)
-                task_match = ((picked >= t->x) & (picked < t->x + t->w));
-
-              if (task_match) {
-                target_tile        = 1;
-                target_tile_rect.x = t->x;
-                target_tile_rect.w = t->w;
-                // Display task a little bigger!
-                magnify (&dst);
-                SDL_RenderCopy (renderer, perf_fill[EZP_MAX_COLORS], NULL, &dst);
-              } else {
-                SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
-              }
-            } else {
-              SDL_Rect r;
-
-              get_tile_rect (tr, t, &r);
-
-              if (point_in_rect (&virt_mouse, &r)) {
-                if (!target_tile) {
-                  target_tile      = 1;
-                  target_tile_rect = r;
+                  col = TRACE_MAX_COLORS;
+                  show_tile (tr, t, c, 0);
                 }
-                // Display task a little bigger!
-                magnify (&dst);
-                SDL_RenderCopy (renderer, perf_fill[EZP_MAX_COLORS], NULL,
-                                &dst); // white
-              } else
-                SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
+              }
             }
-          } else
-            SDL_RenderCopy (renderer, perf_fill[task_color], NULL, &dst);
+          } else if (in_mosaic) {
+            SDL_Rect r;
+
+            get_raw_rect (t, &r);
+            if (point_in_rect (&mouse_pick, &r)) {
+              // Mouse in right window matches the footprint of current task
+              if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+                ezv_set_cpu_color_1D (ctx[_t], t->x, t->w,
+                                      ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
+              else
+                ezv_set_cpu_color_2D (ctx[_t], t->x, t->w, t->y, t->h,
+                                      ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
+
+              // Display task a little bigger!
+              magnify (&dst);
+              col = TRACE_MAX_COLORS;
+            }
+          }
+
+          SDL_RenderCopy (renderer, perf_fill[col], NULL, &dst);
         }
 
       wh += cpu_row_height (TASK_HEIGHT);
@@ -1633,89 +1542,6 @@ static void trace_graphics_display_trace (unsigned _t,
 
   if (tr->has_cache_data)
     display_cache_stats (tr, _t, cumulated_cache_stat);
-
-  display_tile_background (_t);
-
-  if (target_tile) {
-    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-      // Highlight cells in mesh
-      ezv_set_cpu_color_1D (ctx[_t], target_tile_rect.x, target_tile_rect.w,
-                            ezv_rgba (0xFF, 0xFF, 0xFF, 0xC0));
-    else
-      // Display mouse-selected tile in white color
-      SDL_RenderCopy (renderer, square_tex_dark[EZP_MAX_COLORS], NULL,
-                      &target_tile_rect);
-  } else if (horiz_mode) {
-    for (int c = 0; c < tr->nb_cores; c++) {
-
-      if (to_be_emphasized[c] != NULL) {
-        // We follow the list of tasks, starting from this first task
-        list_for_each_entry_from (trace_task_t, t, tr->per_cpu + c,
-                                  to_be_emphasized[c], cpu_chain)
-        {
-          // Skip if the task has no associated tile
-          if (t->w == 0)
-            continue;
-
-          if (task_end_time (tr, t) < start_time)
-            continue;
-
-          // We stop if we encounter a task belonging to a greater iteration
-          if (task_start_time (tr, t) > end_time)
-            break;
-
-          // Ok, this task should have its tile displayed
-          show_tile (tr, t, c, (t == selected->task));
-        }
-      }
-    }
-  } else if (tracking_mode) {
-    if (selected->task != NULL && selected->task->w && selected->task->h) {
-      if (selected->trace->num == _t) {
-        show_tile (tr, selected->task, cpu, 1);
-      } else {
-        int raw_iter = selected->iter - tr->first_iteration;
-
-        for (int c = 0; c < tr->nb_cores; c++) {
-          if (to_be_emphasized[c] != NULL)
-            // We follow the list of tasks, starting from this first task
-            list_for_each_entry_from (trace_task_t, t, tr->per_cpu + c,
-                                      to_be_emphasized[c], cpu_chain)
-            {
-              if (task_end_time (tr, t) < start_time)
-                continue;
-
-              // Skip if the task has no associated tile
-              if (t->w == 0)
-                continue;
-
-              // Stop when reaching next iteration
-              if (t->iteration > raw_iter)
-                break;
-
-              // Stop if we encounter a task not displayed on screen
-              if (task_start_time (tr, t) > end_time)
-                break;
-
-              SDL_Rect r;
-
-              get_raw_rect (t, &r);
-              if (rects_do_intersect (&r, &selected->area))
-                show_tile (tr, t, c, 1);
-            }
-        }
-      }
-    }
-  } else {
-    // Display tiles corresponding to tasks intersecting with mouse "iso x"
-    // axis
-    for (int c = 0; c < tr->nb_cores; c++) {
-      if (to_be_emphasized[c] != NULL) {
-        show_tile (tr, to_be_emphasized[c], c,
-                   (to_be_emphasized[c] == selected->task));
-      }
-    }
-  }
 }
 
 static void trace_graphics_display (void)
@@ -1738,32 +1564,22 @@ static void trace_graphics_display (void)
   // Draw the text indicating CPU numbers
   display_text ();
 
-  // We fix the bounds of the "trace loop" so that the trace hovered by the
+  // Fix the loop "direction" so that the trace hovered by the
   // mouse pointer is displayed first
-  int loop_start = 0;
-  int loop_stop  = nb_traces;
-  int loop_inc   = 1;
-
-  if (nb_traces > 1) {
-    if (point_inside_gantt (&mouse, 1) || point_inside_mosaic (&mouse, 1)) {
-      loop_start = nb_traces - 1;
-      loop_stop  = -1;
-      loop_inc   = -1;
-    }
-  }
-
-  // main loop
-  for (int _t = loop_start; _t != loop_stop; _t = _t + loop_inc) {
-    trace_graphics_display_trace (_t, &selected);
-  } // for (_t)
+  if (nb_traces > 1 &&
+      (point_inside_gantt (&mouse, 1) || point_inside_mosaic (&mouse, 1)))
+    for (int _t = nb_traces - 1; _t != -1; _t--)
+      trace_graphics_display_trace (_t, &selected);
+  else
+    for (int _t = 0; _t < nb_traces; _t++)
+      trace_graphics_display_trace (_t, &selected);
 
   // Mouse
   display_mouse_selection (&selected);
 
   SDL_RenderPresent (renderer);
 
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-    ezv_render (ctx, nb_traces);
+  ezv_render (ctx, nb_traces);
 }
 
 static void trace_graphics_save_screenshot (void)
@@ -1802,8 +1618,7 @@ static void trace_graphics_save_screenshot (void)
     timer   = time (NULL);
     tm_info = localtime (&timer);
     strftime (filename, MAX_FILENAME,
-              DEFAULT_EZV_DUMP_DIR "/screenshot-%Y_%m_%d-%H_%M_%S.png",
-              tm_info);
+              "data/dump/screenshot-%Y_%m_%d-%H_%M_%S.png", tm_info);
   }
 
   // Save screenshot as PNG file
@@ -1823,6 +1638,7 @@ static void trace_graphics_toggle_vh_mode (void)
 {
   horiz_mode ^= 1;
 
+  backlog_mode = 0;
   if (tracking_mode) {
     tracking_mode = 0;
     SDL_SetTextureAlphaMod (track_tex, BUTTON_ALPHA);
@@ -1831,12 +1647,24 @@ static void trace_graphics_toggle_vh_mode (void)
     footprint_mode = 0;
     SDL_SetTextureAlphaMod (footprint_tex, BUTTON_ALPHA);
   }
+
+  trace_graphics_display ();
+}
+
+static void trace_graphics_toggle_backlog_mode (void)
+{
+  backlog_mode ^= 1;
+  if (backlog_mode) {
+    horiz_mode     = 0;
+    tracking_mode  = 0;
+    footprint_mode = 0;
+  }
   trace_graphics_display ();
 }
 
 static void trace_graphics_toggle_footprint_mode (void)
 {
-  static unsigned old_horiz, old_track;
+  static unsigned old_horiz, old_track, old_backlog;
 
   footprint_mode ^= 1;
   SDL_SetTextureAlphaMod (footprint_tex, footprint_mode ? 255 : BUTTON_ALPHA);
@@ -1844,11 +1672,14 @@ static void trace_graphics_toggle_footprint_mode (void)
   if (footprint_mode) {
     old_horiz     = horiz_mode;
     old_track     = tracking_mode;
+    old_backlog   = backlog_mode;
     horiz_mode    = 1;
     tracking_mode = 0;
+    backlog_mode  = 0;
   } else {
     horiz_mode    = old_horiz;
     tracking_mode = old_track;
+    backlog_mode  = old_backlog;
   }
   SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 255 : BUTTON_ALPHA);
 
@@ -1861,11 +1692,14 @@ static void trace_graphics_toggle_tracking_mode (void)
     tracking_mode ^= 1;
     SDL_SetTextureAlphaMod (track_tex, tracking_mode ? 255 : BUTTON_ALPHA);
 
-    horiz_mode = 0;
+    if (tracking_mode) {
+      horiz_mode   = 0;
+      backlog_mode = 0;
 
-    if (footprint_mode) {
-      footprint_mode = 0;
-      SDL_SetTextureAlphaMod (footprint_tex, BUTTON_ALPHA);
+      if (footprint_mode) {
+        footprint_mode = 0;
+        SDL_SetTextureAlphaMod (footprint_tex, BUTTON_ALPHA);
+      }
     }
 
     trace_graphics_display ();
@@ -2284,8 +2118,10 @@ static void trace_graphics_relayout (unsigned w, unsigned h)
   trace_graphics_display ();
 }
 
-void trace_graphics_init (unsigned w, unsigned h)
+void trace_graphics_init (unsigned width, unsigned height)
 {
+  find_shared_directories ();
+
   max_iterations =
       max (trace[0].nb_iterations, trace[nb_traces - 1].nb_iterations);
   max_cores = max (trace[0].nb_cores, trace[nb_traces - 1].nb_cores);
@@ -2293,10 +2129,8 @@ void trace_graphics_init (unsigned w, unsigned h)
                    iteration_end_time (trace + nb_traces - 1,
                                        trace[nb_traces - 1].nb_iterations - 1));
 
-  if (trace[0].mesh_file != NULL) {
-    easyview_mode = EASYVIEW_MODE_3D_MESHES;
-  } else
-    easyview_mode = EASYVIEW_MODE_2D_IMAGES;
+  easyview_mode = (trace[0].mesh_file != NULL) ? EASYVIEW_MODE_3D_MESHES
+                                               : EASYVIEW_MODE_2D_IMAGES;
 
   if (SDL_Init (SDL_INIT_VIDEO) != 0)
     exit_with_error ("SDL_Init");
@@ -2308,13 +2142,12 @@ void trace_graphics_init (unsigned w, unsigned h)
 
   dm.h -= 128; // to account for headers, footers, etc.
 
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-    w -= 512;
+  width -= 512;
 
   const unsigned min_width  = layout_get_min_width ();
   const unsigned min_height = layout_get_min_height ();
 
-  WINDOW_WIDTH  = max (w, min_width);
+  WINDOW_WIDTH  = max (width, min_width);
   WINDOW_HEIGHT = max (dm.h, min_height);
 
   if (min_height > dm.h)
@@ -2343,14 +2176,6 @@ void trace_graphics_init (unsigned w, unsigned h)
 
   SDL_SetWindowMinimumSize (window, min_width, min_height);
 
-  // No Vsync provides a (much) smoother experience
-  Uint32 render_flags = 0;
-
-  if (soft_rendering)
-    render_flags = SDL_RENDERER_SOFTWARE;
-  else
-    render_flags = SDL_RENDERER_ACCELERATED;
-
   int choosen_renderer = -1;
 
   unsigned drivers = SDL_GetNumRenderDrivers ();
@@ -2365,7 +2190,8 @@ void trace_graphics_init (unsigned w, unsigned h)
 #endif
   }
 
-  renderer = SDL_CreateRenderer (window, choosen_renderer, render_flags);
+  renderer =
+      SDL_CreateRenderer (window, choosen_renderer, SDL_RENDERER_ACCELERATED);
   if (renderer == NULL)
     exit_with_error ("SDL_CreateRenderer");
 
@@ -2373,14 +2199,9 @@ void trace_graphics_init (unsigned w, unsigned h)
   SDL_GetRendererInfo (renderer, &info);
   // printf ("Renderer used: [%s]\n", info.name);
 
-#ifdef USE_GLAD
-  if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
-    ezv_load_opengl ();
-#endif
+  trace_colors_init (max_cores);
 
-  ezp_colors_init ();
-
-  create_task_textures (min (max_cores, EZP_MAX_COLORS));
+  create_task_textures ();
 
   create_misc_tex ();
 
@@ -2389,10 +2210,7 @@ void trace_graphics_init (unsigned w, unsigned h)
   if (TTF_Init () < 0)
     exit_with_error ("TTF_Init");
 
-  the_font = TTF_OpenFont ("fonts/FreeSansBold.ttf", FONT_HEIGHT - 4);
-
-  if (the_font == NULL)
-    exit_with_error ("TTF_OpenFont: %s", TTF_GetError ());
+  the_font = load_font ("FreeSansBold.ttf", FONT_HEIGHT - 4);
 
   create_text_texture (the_font);
 
@@ -2400,56 +2218,78 @@ void trace_graphics_init (unsigned w, unsigned h)
 
   SDL_SetRenderDrawBlendMode (renderer, SDL_BLENDMODE_BLEND);
 
-  // 3D Meshes
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-    ezv_init ("./lib/ezv");
+  ezv_init ("./lib/ezv");
 
+  if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
     mesh3d_obj_init (&mesh);
     mesh3d_obj_load (trace[0].mesh_file, &mesh);
-
-    int x = -1, y = -1, w = 0;
-
-    SDL_GetWindowPosition (window, &x, &y);
-    SDL_GetWindowSize (window, &w, NULL);
-
-    for (int c = 0; c < nb_traces; c++) {
-      ctx[c] = ezv_ctx_create (EZV_CTX_TYPE_MESH3D, "Tile Mapping", x + w,
-                               y + c * (512 + 96), 512, 512,
-                               EZV_ENABLE_PICKING | EZV_ENABLE_CLIPPING);
-
-      ezv_mesh3d_set_mesh (ctx[c], &mesh);
-
-      // Color cell according to CPU
-      ezv_use_cpu_colors (ctx[c]);
-
-      if (nbthumbs > 0) {
-        ezv_use_data_colors_predefined (ctx[c], trace[c].palette);
-        ezv_set_data_brightness (ctx[c], (float)brightness / 255.0f);
-      }
-    }
-
-    SDL_RaiseWindow (window);
+  } else {
+    img2d_obj_init (&img2d, trace[0].dimensions, trace[0].dimensions);
   }
+  int x = -1, y = -1, w = 0, offset = 0;
+
+  SDL_GetWindowPosition (window, &x, &y);
+  SDL_GetWindowSize (window, &w, NULL);
+
+  for (int c = 0; c < nb_traces; c++) {
+    if (c > 0) {
+      SDL_Window *win = ezv_sdl_window (ctx[c - 1]);
+      SDL_GetWindowSize (win, NULL, &offset);
+      offset += 30;
+    }
+    ctx[c] = ezv_ctx_create (easyview_mode == EASYVIEW_MODE_3D_MESHES
+                                 ? EZV_CTX_TYPE_MESH3D
+                                 : EZV_CTX_TYPE_IMG2D,
+                             "Tile Mapping", x + w, y + c * offset, 512, 512,
+                             EZV_ENABLE_PICKING | EZV_ENABLE_CLIPPING);
+
+    if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+      ezv_mesh3d_set_mesh (ctx[c], &mesh);
+    else
+      ezv_img2d_set_img (ctx[c], &img2d);
+
+    // Color cell according to CPU
+    ezv_use_cpu_colors (ctx[c]);
+
+    if (nbthumbs > 0) {
+      if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+        ezv_use_data_colors_predefined (ctx[c], trace[c].palette);
+      else
+        ezv_use_data_colors_predefined (ctx[c], EZV_PALETTE_RGBA_PASSTHROUGH);
+
+      ezv_set_data_brightness (ctx[c], (float)brightness / 255.0f);
+    }
+  }
+
+  SDL_RaiseWindow (window);
 }
 
 void trace_graphics_process_event (SDL_Event *event)
 {
   int refresh, pick;
+  static int shifted = 0; // event->key.keysym.mod & KMOD_SHIFT;
 
-  if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
-    if (event->wheel.windowID != main_windowID ||
-        event->type == SDL_MOUSEWHEEL) {
-      // event is for OpenGL tiling window(s)
-      ezv_process_event (ctx, nb_traces, event, &refresh, &pick);
-      if (pick)
-        picked = ezv_perform_1D_picking (ctx, nb_traces);
-      if (refresh | pick)
-        trace_graphics_display ();
-      return;
+  if (event->wheel.windowID != main_windowID ||
+      (event->type == SDL_MOUSEWHEEL && shifted)) {
+    // event is for OpenGL tiling window(s)
+    ezv_process_event (ctx, nb_traces, event, &refresh, &pick);
+    if (pick) {
+      if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+        mouse_pick.x = ezv_perform_1D_picking (ctx, nb_traces);
+      else
+        ezv_perform_2D_picking (ctx, nb_traces, &mouse_pick.x, &mouse_pick.y);
     }
+    if (refresh | pick)
+      trace_graphics_display ();
+    return;
+  }
 
   if (event->type == SDL_KEYDOWN) {
     switch (event->key.keysym.sym) {
+    case SDLK_LSHIFT:
+    case SDLK_RSHIFT:
+      shifted = 1;
+      break;
     case SDLK_RIGHT:
       trace_graphics_shift_left ();
       break;
@@ -2479,12 +2319,13 @@ void trace_graphics_process_event (SDL_Event *event)
       trace_graphics_toggle_vh_mode ();
       break;
     case SDLK_t:
-      if (easyview_mode == EASYVIEW_MODE_2D_IMAGES)
-        trace_graphics_toggle_tracking_mode ();
-      // FIXME: not yet supported in MESH3D mode
+      trace_graphics_toggle_tracking_mode ();
       break;
     case SDLK_f:
       trace_graphics_toggle_footprint_mode ();
+      break;
+    case SDLK_b:
+      trace_graphics_toggle_backlog_mode ();
       break;
     case SDLK_z:
       trace_graphics_zoom_to_selection ();
@@ -2493,15 +2334,21 @@ void trace_graphics_process_event (SDL_Event *event)
       trace_graphics_save_screenshot ();
       break;
     default:
-      if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
-        ezv_process_event (ctx, nb_traces, event, &refresh, &pick);
-        if (pick)
-          picked = ezv_perform_1D_picking (ctx, nb_traces);
-        if (pick | refresh)
-          trace_graphics_display ();
+      ezv_process_event (ctx, nb_traces, event, &refresh, &pick);
+      if (pick) {
+        if (easyview_mode == EASYVIEW_MODE_3D_MESHES)
+          mouse_pick.x = ezv_perform_1D_picking (ctx, nb_traces);
+        else
+          ezv_perform_2D_picking (ctx, nb_traces, &mouse_pick.x, &mouse_pick.y);
       }
+      if (pick | refresh)
+        trace_graphics_display ();
       break;
     }
+  } else if (event->type == SDL_KEYUP) {
+    if (event->key.keysym.sym == SDLK_LSHIFT ||
+        event->key.keysym.sym == SDLK_RSHIFT)
+      shifted = 0;
   } else if (event->type == SDL_MOUSEMOTION) {
     trace_graphics_mouse_moved (event->motion.x, event->motion.y);
   } else if (event->type == SDL_MOUSEBUTTONDOWN) {

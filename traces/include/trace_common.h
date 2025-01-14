@@ -17,13 +17,11 @@
 #define TRACE_TILE         0x10D
 #define TRACE_MESHFILE     0x10E
 #define TRACE_PALETTE      0x10F
-
-#define DEFAULT_EZV_TRACE_DIR "data/traces"
-#define DEFAULT_EZV_DUMP_DIR "data/dump"
-#define DEFAULT_EZV_TRACE_BASE "ezv_trace_current"
-#define DEFAULT_EZV_TRACE_EXT  ".evt"
-#define DEFAULT_EZV_TRACE_FILE DEFAULT_EZV_TRACE_BASE DEFAULT_EZV_TRACE_EXT
-#define DEFAULT_EASYVIEW_FILE DEFAULT_EZV_TRACE_DIR "/" DEFAULT_EZV_TRACE_FILE
+#define TRACE_PATCH        0x110
+#define TRACE_TILE_EXT     0x111
+#define TRACE_PATCH_EXT    0x112
+#define TRACE_TILE_MIN     0x113
+#define TRACE_PATCH_MIN    0x114
 
 typedef enum {
     TASK_TYPE_COMPUTE,

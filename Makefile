@@ -64,24 +64,17 @@ KERNELS			:= $(wildcard kernel/c/*.c)
 CXX_KERNELS	 	:= $(wildcard kernel/mipp/*.cpp)
 CUDA_KERNELS	:= $(wildcard kernel/cuda/*.cu)
 
-T_SOURCE		:= traces/src/ezp_colors.c
-
-ifeq ($(ENABLE_TRACE), 1)
-T_SOURCE		+= traces/src/trace_record.c
-endif
-
 L_SOURCE		:= $(wildcard src/*.l)
 L_GEN			:= $(L_SOURCE:src/%.l=obj/%.c)
 
 OBJECTS			:= $(SOURCES:src/%.c=obj/%.o)
 K_OBJECTS		:= $(KERNELS:kernel/c/%.c=obj/%.o)
 CXX_K_OBJECTS	:= $(CXX_KERNELS:kernel/mipp/%.cpp=obj/mipp_%.o)
-T_OBJECTS		:= $(T_SOURCE:traces/src/%.c=obj/%.o)
 L_OBJECTS		:= $(L_SOURCE:src/%.l=obj/%.o)
 CUDA_OBJECTS	:= $(CUDA_SOURCE:src/%.cu=obj/%.o)
 CUDA_K_OBJECTS	:= $(CUDA_KERNELS:kernel/cuda/%.cu=obj/cuda_%.o)
 
-ALL_OBJECTS	:= $(OBJECTS) $(K_OBJECTS) $(T_OBJECTS) $(L_OBJECTS)
+ALL_OBJECTS	:= $(OBJECTS) $(K_OBJECTS) $(L_OBJECTS)
 
 ifeq ($(ENABLE_CUDA), 1)
 ALL_OBJECTS		+= $(CUDA_OBJECTS) $(CUDA_K_OBJECTS)
@@ -151,7 +144,7 @@ endif
 PACKAGES		:= hwloc
 
 # Simple DirectMedia Layer (SDL)
-PACKAGES		+= SDL2_image SDL2_ttf
+PACKAGES		+= sdl2
 ifeq ($(OS_NAME), DARWIN)
 CFLAGS			+= -DGL_SILENCE_DEPRECATION
 LDLIBS			+= -framework OpenGL
@@ -230,6 +223,14 @@ LDLIBS			+= -lezv -lscotch
 CFLAGS			+= -I$(EZV_DIR)/include
 CUDA_CFLAGS		+= -I$(EZV_DIR)/include
 
+# EZM lib
+EZM_DIR			:= ./lib/ezm
+EZM_LIB 		:= $(EZM_DIR)/lib/libezm.a
+LDFLAGS			+= -L$(EZM_DIR)/lib
+LDLIBS			+= -lezm
+CFLAGS			+= -I$(EZM_DIR)/include
+CUDA_CFLAGS		+= -I$(EZM_DIR)/include
+
 CXXFLAGS		+= $(CFLAGS)
 
 ifeq ($(NEED_CPP_LINK), 1)
@@ -243,7 +244,7 @@ endif
 
 $(ALL_OBJECTS): $(MAKEFILES)
 
-$(PROGRAM): $(ALL_OBJECTS) $(EZV_LIB)
+$(PROGRAM): $(ALL_OBJECTS) $(EZV_LIB) $(EZM_LIB)
 	$(LD) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c
@@ -256,9 +257,6 @@ ifeq ($(ENABLE_MIPP), 1)
 $(CXX_K_OBJECTS): obj/mipp_%.o: kernel/mipp/%.cpp
 	$(CXX) -o $@ $(CXXFLAGS) -c $<
 endif
-
-$(T_OBJECTS): obj/%.o: traces/src/%.c
-	$(CC) -o $@ $(CFLAGS) -c $<
 
 $(L_OBJECTS): obj/%.o: obj/%.c
 	$(CC) -o $@ $(CFLAGS) -c $<

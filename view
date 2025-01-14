@@ -8,10 +8,11 @@ unset _main_dir
 error()
 {
     echo "$@" >&2
-    exit 1
+    exec ${VIEW} -h
 }
 
 COMPARE=no
+TRACEFILE=no
 ARGS=()
 
 for ((i = 1; i <= $#; i++ )); do
@@ -21,17 +22,50 @@ for ((i = 1; i <= $#; i++ )); do
             continue
             ;;
         -d|--dir)
-            if (( i < $# )); then
-                n=$((i + 1))
-                TRACEDIR=${!n}
+            if (( i + 1 > $#)); then
+                error "Missing trace directory"
             fi
+            n=$((i + 1))
+            TRACEDIR=${!n}
+            ARGS+=("${!i}")
+            i=$((i + 1))
             ;;
         -p|--params)
             # use params file if available
             use_params=yes
             continue
             ;;
+        -i|--iteration)
+            if ((i + 1 > $#)); then
+                error "Missing iteration number"
+            fi
+            ARGS+=("${!i}")
+            i=$((i + 1))
+            ;;
+        -r|--range)
+            if ((i + 2 > $#)); then
+                error "Missing range parameter"
+            fi
+            ARGS+=("${!i}")
+            i=$((i + 1))
+            ARGS+=("${!i}")
+            i=$((i + 1))
+            ;;
+        -b|--brightness)
+            if ((i + 1 > $#)); then
+                error "Missing brightness parameter"
+            fi
+            ARGS+=("${!i}")
+            i=$((i + 1))
+            ;;
+        -a|--align)
+            ;;
+        -w|--whole-trace)
+            ;;
+        -h|--help)
+            ;;
         *)
+            TRACEFILE=yes
             ;;
     esac
     ARGS+=("${!i}")
@@ -56,6 +90,13 @@ fi
 if [[ ${COMPARE} == "yes" ]]; then
     [[ -f ${TRACEDIR}/${CUR_TRACEFILE} && -f ${TRACEDIR}/${PREV_TRACEFILE} ]] || error "Comparing trace files requires two files under ${TRACEDIR}"
     ARGS+=("${TRACEDIR}/${CUR_TRACEFILE}" "${TRACEDIR}/${PREV_TRACEFILE}")
+    TRACEFILE=yes
 fi
 
+if [[ ${TRACEFILE} == "no" ]]; then
+    [[ -f ${TRACEDIR}/${CUR_TRACEFILE} ]] || error "Trace file not found under ${TRACEDIR}"
+    ARGS+=("${TRACEDIR}/${CUR_TRACEFILE}")
+fi
+
+#echo "exec ${VIEW} ${ARGS[@]}"
 exec ${VIEW} ${ARGS[@]}

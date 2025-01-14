@@ -45,7 +45,7 @@ void ezp_cuda_event_reset (void)
 
 void ezp_cuda_event_record (ezp_cuda_event_t evt, unsigned g)
 {
-  if (easypap_monitoring_is_active ()) {
+  if (ezp_monitoring_is_active ()) {
     cudaError_t ret;
 
     ret = cudaEventRecord (the_events[g][evt], cuda_stream (g));
@@ -96,8 +96,12 @@ void ezp_cuda_event_monitor (int gpu, ezp_cuda_event_t start_evt,
     if (footp == EZP_NO_FOOTPRINT)
       footp = &zero_footprint;
 
-    monitoring_gpu_tile_id (footp->x, footp->y, footp->w, footp->h,
-                            easypap_gpu_lane (gpu), stamp[0], stamp[1],
-                            task_type, task_id);
+    if (footp->h)
+      monitoring_gpu_tile (footp->x, footp->y, footp->w, footp->h,
+                           easypap_gpu_lane (gpu), stamp[0], stamp[1],
+                           task_type, task_id);
+    else
+      monitoring_gpu_patch (footp->x, footp->w, easypap_gpu_lane (gpu),
+                            stamp[0], stamp[1], task_type, task_id);
   }
 }

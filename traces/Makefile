@@ -12,7 +12,7 @@ ENABLE_FUT	=	1
 
 ARCH		:= $(shell uname -s | tr a-z A-Z)
 
-SOURCES		:= $(filter-out src/trace_record.c, $(wildcard src/*.c))
+SOURCES		:= $(wildcard src/*.c)
 
 OBJECTS		:= $(SOURCES:src/%.c=obj/%.o)
 DEPENDS		:= $(SOURCES:src/%.c=deps/%.d)

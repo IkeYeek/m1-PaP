@@ -36,7 +36,7 @@ void ezv_img2d_set_img (ezv_ctx_t ctx, img2d_obj_t *img)
 
   obj->img = img;
 
-  // tell renderer that mesh is known
+  // tell renderer that img is known
   img2d_renderer_set_img (ctx);
 }
 

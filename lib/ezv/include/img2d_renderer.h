@@ -13,7 +13,6 @@ void img2d_set_data_colors (ezv_ctx_t ctx, void *values);
 
 void img2d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
                                  float dy, float dz);
-void img2d_renderer_zplane_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dz);
 void img2d_render (ezv_ctx_t ctx);
 void img2d_reset_view (ezv_ctx_t ctx[], unsigned nb_ctx);
 void img2d_get_shareable_buffer_ids (ezv_ctx_t ctx, int buffer_ids[]);

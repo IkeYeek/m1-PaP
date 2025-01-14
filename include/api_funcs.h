@@ -2,8 +2,6 @@
 #define API_FUNCS_IS_DEF
 
 
-#include "trace_common.h"
-
 typedef enum {
     VEC_TYPE_CHAR,
     VEC_TYPE_INT,

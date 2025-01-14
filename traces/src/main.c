@@ -52,9 +52,7 @@ static char **filter_args (int *argc, char *argv[])
   argv++;
 
   while (*argc > 0) {
-    if (!strcmp (*argv, "--no-thumbs") || !strcmp (*argv, "-nt")) {
-      use_thumbnails = 0;
-    } else if (!strcmp (*argv, "--align") || !strcmp (*argv, "-a")) {
+    if (!strcmp (*argv, "--align") || !strcmp (*argv, "-a")) {
       trace_data_align_mode = 1;
     } else if (!strcmp (*argv, "--brightness") || !strcmp (*argv, "-b")) {
       if (*argc <= 1) {
@@ -64,8 +62,6 @@ static char **filter_args (int *argc, char *argv[])
       (*argc)--;
       argv++;
       brightness = atoi (*argv);
-    } else if (!strcmp (*argv, "--soft-rendering") || !strcmp (*argv, "-sr")) {
-      soft_rendering = 1;
     } else if (!strcmp (*argv, "--whole-trace") || !strcmp (*argv, "-w")) {
       whole_trace = 1;
     } else if (!strcmp (*argv, "--help") || !strcmp (*argv, "-h")) {
@@ -109,7 +105,7 @@ static char **filter_args (int *argc, char *argv[])
   }
 
   if (trace_dir[0] == NULL)
-    trace_dir[0] = DEFAULT_EZV_TRACE_DIR;
+    trace_dir[0] = "data/traces";
 
   return argv;
 }
@@ -182,11 +178,11 @@ int main (int argc, char **argv)
   case 0: {
     char file[1024];
 
-    sprintf (file, "%s/%s", trace_dir[0], DEFAULT_EZV_TRACE_FILE);
+    sprintf (file, "%s/%s", trace_dir[0], "ezv_trace_current.evt");
     trace_file_load (file);
 
     if (trace_dir[1] != NULL) {
-      sprintf (file, "%s/%s", trace_dir[1], DEFAULT_EZV_TRACE_FILE);
+      sprintf (file, "%s/%s", trace_dir[1], "ezv_trace_current.evt");
       trace_file_load (file);
     }
 

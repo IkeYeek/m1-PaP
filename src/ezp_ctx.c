@@ -4,6 +4,7 @@
 #include "debug.h"
 #include "error.h"
 #include "ezp_ctx.h"
+#include "ezm.h"
 #include "ezv.h"
 #include "ezv_sdl_gl.h"
 #include "global.h"
@@ -13,9 +14,9 @@ static unsigned LARGE_WIN_HEIGHT[2];
 static unsigned SMALL_WIN_WIDTH[2];
 static unsigned SMALL_WIN_HEIGHT[2];
 
-#define MAX_CTX 2
+#define MAX_CTX 3
 
-ezv_ctx_t ctx[MAX_CTX] = {NULL, NULL};
+ezv_ctx_t ctx[MAX_CTX] = {NULL, NULL, NULL};
 unsigned nb_ctx        = 0;
 
 static int iteration_hud = -1;
@@ -24,10 +25,10 @@ void ezp_ctx_init (void)
 {
   ezv_init ("lib/ezv");
 
-  LARGE_WIN_WIDTH[EZV_CTX_TYPE_MESH3D]  = 1280;
-  LARGE_WIN_HEIGHT[EZV_CTX_TYPE_MESH3D] = 960;
-  SMALL_WIN_WIDTH[EZV_CTX_TYPE_MESH3D]  = 768;
-  SMALL_WIN_HEIGHT[EZV_CTX_TYPE_MESH3D] = 576;
+  LARGE_WIN_WIDTH[EZV_CTX_TYPE_MESH3D]  = 1024;
+  LARGE_WIN_HEIGHT[EZV_CTX_TYPE_MESH3D] = 768;
+  SMALL_WIN_WIDTH[EZV_CTX_TYPE_MESH3D]  = 512; // 768;
+  SMALL_WIN_HEIGHT[EZV_CTX_TYPE_MESH3D] = 384; // 576;
 
   LARGE_WIN_WIDTH[EZV_CTX_TYPE_IMG2D]  = 1024;
   LARGE_WIN_HEIGHT[EZV_CTX_TYPE_IMG2D] = 1024;
@@ -35,12 +36,15 @@ void ezp_ctx_init (void)
   SMALL_WIN_HEIGHT[EZV_CTX_TYPE_IMG2D] = 512;
 }
 
-void ezp_ctx_coord_next (ezv_ctx_type_t ctx_type, unsigned ctx_no, int *xwin, int *ywin)
+void ezp_ctx_coord_next (ezv_ctx_type_t ctx_type, unsigned ctx_no, int *xwin,
+                         int *ywin)
 {
   if (ctx_no == 0) {
     if (easypap_mpirun && easypap_mpi_size () > 1 && debug_enabled ('M')) {
-        *xwin = (easypap_mpi_rank () % 2) * (LARGE_WIN_WIDTH[ctx_type] / 2 + SMALL_WIN_WIDTH[ctx_type] / 2+ 352);
-        *ywin = (easypap_mpi_rank () / 2) * (LARGE_WIN_HEIGHT[ctx_type] / 2 + 82);
+      // FIXME: layout computation should take ctx_type into account
+      *xwin = (easypap_mpi_rank () % 2) * (LARGE_WIN_WIDTH[ctx_type] / 2 +
+                                           SMALL_WIN_WIDTH[ctx_type] / 2 + 352);
+      *ywin = (easypap_mpi_rank () / 2) * (LARGE_WIN_HEIGHT[ctx_type] / 2 + 82);
     } else {
       *xwin = 0;
       *ywin = 0;
@@ -65,7 +69,7 @@ static void ezp_ctx_dim_next (ezv_ctx_type_t ctx_type, unsigned ctx_no,
 
   if (ctx_no == 0) {
     // Use large dimensions
-    w  = LARGE_WIN_WIDTH[ctx_type];
+    w = LARGE_WIN_WIDTH[ctx_type];
     h = LARGE_WIN_HEIGHT[ctx_type];
   } else {
     // Use small dimensions
@@ -76,7 +80,7 @@ static void ezp_ctx_dim_next (ezv_ctx_type_t ctx_type, unsigned ctx_no,
     w /= 2;
     h /= 2;
   }
-  *width = w;
+  *width  = w;
   *height = h;
 }
 

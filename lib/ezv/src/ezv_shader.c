@@ -5,9 +5,8 @@
 #include <unistd.h>
 
 #include "error.h"
+#include "ezv_prefix.h"
 #include "ezv_shader.h"
-
-const char *ezv_prefix = NULL;
 
 static size_t file_size (const char *filename)
 {
@@ -27,8 +26,7 @@ static char *file_load (const char *file)
   size_t r;
 
   char filename[1024];
-  sprintf (filename, "%s/shaders/%s", (ezv_prefix ? ezv_prefix : "."),
-           file);
+  sprintf (filename, "%s/shaders/%s", ezv_prefix, file);
 
   s = file_size (filename);
   b = malloc (s + 1);
@@ -86,8 +84,8 @@ static void link_program (unsigned int shader_program)
 }
 
 GLuint ezv_shader_create (const char *vertex_shader,
-                             const char *geometry_shader,
-                             const char *fragment_shader)
+                          const char *geometry_shader,
+                          const char *fragment_shader)
 {
   char *source;
   // vertex shader
@@ -129,7 +127,7 @@ GLuint ezv_shader_create (const char *vertex_shader,
 }
 
 void ezv_shader_get_uniform_loc (GLuint program, const char *name,
-                                    GLuint *location)
+                                 GLuint *location)
 {
   GLuint loc = glGetUniformLocation (program, name);
   check (loc != GL_INVALID_INDEX, "glGetUniformLocation for %s", name);
@@ -137,7 +135,7 @@ void ezv_shader_get_uniform_loc (GLuint program, const char *name,
 }
 
 void ezv_shader_bind_uniform_buf (GLuint program, const char *name,
-                                     GLuint blockbinding)
+                                  GLuint blockbinding)
 {
   GLuint index = glGetUniformBlockIndex (program, name);
   check (index != GL_INVALID_INDEX, "glGetUniformBlockIndex for %s", name);
