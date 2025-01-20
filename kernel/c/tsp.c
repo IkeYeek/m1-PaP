@@ -82,9 +82,6 @@ void tsp_seq (int etape, int lg, chemin_t chemin, int mask)
 {
   int ici, dist;
 
- // if (lg + distance[0][chemin[etape - 1]] > minimum)
- //    return;
- // else 
   if (etape == nbVilles)
     verifier_minimum (lg, chemin);
   else {
@@ -99,6 +96,8 @@ void tsp_seq (int etape, int lg, chemin_t chemin, int mask)
     }
   }
 }
+
+// TD2
 
 void tsp_ompfor (int etape, int lg, chemin_t chemin, int mask)
 {
@@ -119,6 +118,8 @@ void tsp_ompcol2 ()
 {
  
 }
+
+// TD3
 
 void tsp_omptaskwait (int etape, int lg, chemin_t chemin, int mask)
 {
