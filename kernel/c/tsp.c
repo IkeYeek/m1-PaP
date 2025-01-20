@@ -101,39 +101,39 @@ void tsp_seq (int etape, int lg, chemin_t chemin, int mask)
 
 void tsp_ompfor (int etape, int lg, chemin_t chemin, int mask)
 {
-
+  exit (0);
 }
 
 void tsp_ompcol4 ()
 {
- 
+  exit (0);
 }
 
 void tsp_ompcol3 ()
 {
- 
+  exit (0);
 }
 
 void tsp_ompcol2 ()
 {
- 
+  exit (0);
 }
 
 // TD3
 
 void tsp_omptaskwait (int etape, int lg, chemin_t chemin, int mask)
 {
-  
+  exit (0);
 }
 
 void tsp_omptaskpriv (int etape, int lg, chemin_t chemin, int mask)
 {
-
+  exit (0);
 }
 
 void tsp_omptaskdyn (int etape, int lg, chemin_t chemin, int mask)
 {
- 
+  exit (0);
 }
 
 int tsp_compute_seq (unsigned nb_iter)
