@@ -138,13 +138,14 @@ void tsp_omptaskdyn (int etape, int lg, chemin_t chemin, int mask)
 
 int tsp_compute_seq (unsigned nb_iter)
 {
+  grain = 0;
+
   for (int step = 1; step <= nb_iter; step++) {
 
     initialisation ();
     chemin_t chemin;
     chemin[0] = 0;
     tsp_monitor (1, 0, chemin, 1);
-    swap_images ();
   }
   return 0;
 }
@@ -157,7 +158,6 @@ int tsp_compute_taskdyn (unsigned nb_iter)
     chemin_t chemin;
     chemin[0] = 0;
     tsp_omptaskdyn (1, 0, chemin, 1);
-    swap_images ();
   }
   return 0;
 }
@@ -170,7 +170,6 @@ int tsp_compute_taskwait (unsigned nb_iter)
     chemin_t chemin;
     chemin[0] = 0;
     tsp_omptaskwait (1, 0, chemin, 1);
-    swap_images ();
   }
   return 0;
 }
@@ -183,7 +182,6 @@ int tsp_compute_taskpriv (unsigned nb_iter)
     chemin_t chemin;
     chemin[0] = 0;
     tsp_omptaskpriv (1, 0, chemin, 1);
-    swap_images ();
   }
   return 0;
 }
@@ -197,7 +195,6 @@ int tsp_compute_ompfor (unsigned nb_iter)
     chemin_t chemin;
     chemin[0] = 0;
     tsp_ompfor (1, 0, chemin, 1);
-    swap_images ();
   }
   return 0;
 }
@@ -209,7 +206,6 @@ int tsp_compute_ompcol2 (unsigned nb_iter)
 
     initialisation ();
     tsp_ompcol2 ();
-    swap_images ();
   }
   return 0;
 }
@@ -221,7 +217,6 @@ int tsp_compute_ompcol3 (unsigned nb_iter)
 
     initialisation ();
     tsp_ompcol3 ();
-    swap_images ();
   }
   return 0;
 }
@@ -267,8 +262,10 @@ static void emplacement(int *x, int *y, int *largeur, int *hauteur, chemin_t che
 static void tsp_monitor (int etape, int lg, chemin_t chemin, int mask)
 {
   int x = 0, y = 0, largeur = DIM, hauteur = DIM;
+
   emplacement (&x, &y, &largeur, &hauteur, chemin, 1);
-  uint64_t clock = monitoring_start_tile (omp_get_thread_num ());
+
+  monitoring_start (omp_get_thread_num ());
   tsp_seq (etape, lg, chemin, mask);
-  monitoring_end_tile (clock, x, y, largeur, hauteur, omp_get_thread_num ());
+  monitoring_end_tile (x, y, largeur, hauteur, omp_get_thread_num ());
 }
