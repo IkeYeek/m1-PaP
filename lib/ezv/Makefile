@@ -1,5 +1,3 @@
-
-
 ### config section ###
 
 USE_SCOTCH	:= 1
@@ -13,7 +11,7 @@ ARCH		:= $(shell uname -s | tr a-z A-Z)
 PSOURCES	:= $(wildcard test/*.c)
 POBJECTS	:= $(PSOURCES:test/%.c=obj/%.o)
 PDEPENDS	:= $(PSOURCES:test/%.c=deps/%.d)
-PROGRAMS	:= $(PSOURCES:test/%.c=%)
+PROGRAMS	:= $(PSOURCES:test/%.c=bin/%)
 
 LIB			:= lib/libezv.a
 
@@ -57,14 +55,18 @@ LDLIBS		+= $(shell pkg-config --libs-only-l $(PACKAGES))
 
 
 # Must be the first rule
-.PHONY: default lib
-default: $(PROGRAMS)
+.PHONY: default lib exec
+default: lib
 
 lib: $(LIB)
 
+exec: $(PROGRAMS)
+
 $(OBJECTS) $(POBJECTS): $(MAKEFILES)
 
-$(PROGRAMS): %: obj/%.o $(LIB) #$(OBJECTS)
+
+# Règle pour compiler les programmes
+$(PROGRAMS): bin/%: obj/%.o $(LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c

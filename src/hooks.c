@@ -16,18 +16,18 @@
 #define DLSYM_FLAG NULL
 #endif
 
-draw_func_t the_config                           = NULL;
-void_func_t the_init                             = NULL;
-void_func_t the_first_touch                      = NULL;
-draw_func_t the_draw                             = NULL;
-void_func_t the_finalize                         = NULL;
-int_func_t the_compute                           = NULL;
-void_func_t the_tile_check                       = NULL;
-debug_1d_t the_1d_debug                          = NULL;
-debug_2d_t the_2d_debug                          = NULL;
-debug_1d_t the_1d_overlay                        = NULL;
-debug_2d_t the_2d_overlay                        = NULL;
-void_func_t the_send_data                        = NULL;
+draw_func_t the_config      = NULL;
+void_func_t the_init        = NULL;
+void_func_t the_first_touch = NULL;
+draw_func_t the_draw        = NULL;
+void_func_t the_finalize    = NULL;
+int_func_t the_compute      = NULL;
+void_func_t the_tile_check  = NULL;
+debug_1d_t the_1d_debug     = NULL;
+debug_2d_t the_2d_debug     = NULL;
+debug_1d_t the_1d_overlay   = NULL;
+debug_2d_t the_2d_overlay   = NULL;
+void_func_t the_send_data   = NULL;
 
 static void_func_t the_refresh_img = NULL;
 static tile_func_t the_tile_func   = NULL;
@@ -38,7 +38,8 @@ void *hooks_find_symbol (char *symbol)
   return dlsym (DLSYM_FLAG, symbol);
 }
 
-void *bind_it (const char *kernel, const char *s, const char *variant, int print_error)
+void *bind_it (const char *kernel, const char *s, const char *variant,
+               int print_error)
 {
   char buffer[1024];
   void *fun = NULL;
@@ -274,23 +275,22 @@ int hooks_refresh_img (void)
 
 int do_tile_id (int x, int y, int width, int height, int who)
 {
-  uint64_t clock = monitoring_start_tile (who);
+  monitoring_start (who);
 
   int r = the_tile_func (x, y, width, height);
 
-  monitoring_end_tile (clock, x, y, width, height, who);
+  monitoring_end_tile (x, y, width, height, who);
 
   return r;
 }
 
 int do_patch_id (int patch, int who)
 {
-  uint64_t clock = monitoring_start_tile (who);
+  monitoring_start (who);
 
   int r = the_patch_func (patch_start (patch), patch_end (patch));
 
-  monitoring_end_tile (clock, patch_start (patch), 0, patch_size (patch), 0,
-                       who);
+  monitoring_end_patch (patch_start (patch), patch_size (patch), who);
 
   return r;
 }

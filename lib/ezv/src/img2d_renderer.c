@@ -175,12 +175,14 @@ void img2d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
   glm_mat4_mul (Matrices.vp_unclipped, model, Matrices.mvp_unclipped);
 
   for (int c = 0; c < nb_ctx; c++) {
-    img2d_render_ctx_t *renctx = ezv_img2d_renderer (ctx[c]);
+    if (ctx[c]->type == EZV_CTX_TYPE_IMG2D) {
+      img2d_render_ctx_t *renctx = ezv_img2d_renderer (ctx[c]);
 
-    ezv_switch_to_context (ctx[c]);
+      ezv_switch_to_context (ctx[c]);
 
-    glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_MAT);
-    glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Matrices), &Matrices);
+      glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_MAT);
+      glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Matrices), &Matrices);
+    }
   }
 }
 

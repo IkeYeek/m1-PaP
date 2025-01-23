@@ -4,7 +4,7 @@
 #include <cuda.h>
 #include <stdint.h>
 
-#include "ezp_cuda_event.h"
+#include "ezp_gpu_event.h"
 
 // Index manipulation macros
 #define gpu_get_row() (blockIdx.y * blockDim.y + threadIdx.y)

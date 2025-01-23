@@ -229,15 +229,17 @@ void mesh3d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
   set_transformed_zplane ();
 
   for (int c = 0; c < nb_ctx; c++) {
-    mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx[c]);
+    if (ctx[c]->type == EZV_CTX_TYPE_MESH3D) {
+      mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx[c]);
 
-    ezv_switch_to_context (ctx[c]);
+      ezv_switch_to_context (ctx[c]);
 
-    glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_MAT);
-    glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Matrices), &Matrices);
+      glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_MAT);
+      glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Matrices), &Matrices);
 
-    glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_CLIP);
-    glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Clipping), &Clipping);
+      glBindBuffer (GL_UNIFORM_BUFFER, renctx->UBO_CLIP);
+      glBufferSubData (GL_UNIFORM_BUFFER, 0, sizeof (Clipping), &Clipping);
+    }
   }
 }
 
@@ -515,19 +517,21 @@ void mesh3d_renderer_set_mesh (ezv_ctx_t ctx)
 void ezv_mesh3d_refresh_mesh (ezv_ctx_t ctx[], unsigned nb_ctx)
 {
   for (int c = 0; c < nb_ctx; c++) {
-    mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx[c]);
-    mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx[c]);
+    if (ctx[c]->type == EZV_CTX_TYPE_MESH3D) {
+      mesh3d_obj_t *mesh          = ezv_mesh3d_mesh (ctx[c]);
+      mesh3d_render_ctx_t *renctx = ezv_mesh3d_renderer (ctx[c]);
 
-    ezv_switch_to_context (ctx[c]);
+      ezv_switch_to_context (ctx[c]);
 
-    glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, renctx->VBO_IND);
-    glBufferSubData (GL_ELEMENT_ARRAY_BUFFER, 0,
-                     mesh->nb_triangles * 3 * sizeof (int), mesh->triangles);
+      glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, renctx->VBO_IND);
+      glBufferSubData (GL_ELEMENT_ARRAY_BUFFER, 0,
+                       mesh->nb_triangles * 3 * sizeof (int), mesh->triangles);
 
-    // Texture Buffer Object containing per-triangle info
-    glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_INFO);
-    glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_triangles * sizeof (int),
-                     mesh->triangle_info);
+      // Texture Buffer Object containing per-triangle info
+      glBindBuffer (GL_TEXTURE_BUFFER, renctx->TBO_INFO);
+      glBufferSubData (GL_TEXTURE_BUFFER, 0, mesh->nb_triangles * sizeof (int),
+                       mesh->triangle_info);
+    }
   }
 }
 

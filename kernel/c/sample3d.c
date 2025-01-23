@@ -67,7 +67,7 @@ unsigned sample3d_compute_ocl (unsigned nb_iter)
   size_t local[1]  = {TILE};     // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
+  monitoring_start (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
 
@@ -85,7 +85,7 @@ unsigned sample3d_compute_ocl (unsigned nb_iter)
 
   clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
+  monitoring_end_tile (0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
 
   // Stop after first iteration
   return 1;

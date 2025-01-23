@@ -55,12 +55,12 @@ EXTERN void mesh_gpu_copy_device_to_device (int gpu, void *dest_buffer,
 {
   cudaError_t ret;
 
-  ezp_cuda_event_record (EVENT_START_TRANSFER, gpu);
+  ezp_cuda_event_record (EVENT_START_TRANSFER0, gpu);
   ret = cudaMemcpyAsync (dest_buffer,
                          src_buffer, bytes,
                          cudaMemcpyDeviceToDevice, cuda_stream (gpu));
   check (ret, "cudaMemcpyAsync");
-  ezp_cuda_event_record (EVENT_END_TRANSFER, gpu);
+  ezp_cuda_event_record (EVENT_END_TRANSFER0, gpu);
 }
 
 static __global__ void cuda_gather_cells (float *in, unsigned *indexes,
@@ -89,5 +89,5 @@ EXTERN void mesh_mgpu_launch_cell_gathering_kernel (
 
 EXTERN void mesh_mgpu_wait_gathering_kernel (int gpu_wait, int gpu_signal)
 {
-  ezp_cuda_wait_event (gpu_wait, gpu_signal, EVENT_END_KERNEL0);
+  ezp_gpu_wait_event (gpu_wait, gpu_signal, EVENT_END_KERNEL0);
 }

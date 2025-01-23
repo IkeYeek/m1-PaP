@@ -1,157 +1,87 @@
 #ifndef MONITORING_IS_DEF
 #define MONITORING_IS_DEF
 
-#include "gmonitor.h"
+#include "ezm.h"
 #include "perfcounter.h"
 #include "time_macros.h"
-#include "trace_record.h"
 
+extern ezm_recorder_t ezp_monitor;
+extern char easypap_trace_label[];
+extern unsigned do_trace;
+extern unsigned trace_may_be_used;
+extern unsigned do_gmonitor;
 
-static inline int easypap_monitoring_is_active (void)
+void ezp_monitoring_init (unsigned nb_cpus, unsigned nb_gpus);
+void ezp_monitoring_cleanup (void);
+
+static inline int ezp_monitoring_is_active (void)
 {
-#ifdef ENABLE_MONITORING
-  return do_gmonitor | trace_may_be_used;
-#else
-  return 0;
-#endif
+  return ezm_recorder_is_enabled (ezp_monitor);
 }
-
-#ifdef ENABLE_MONITORING
 
 static inline void monitoring_declare_task_ids (char *task_ids[])
 {
-  trace_record_declare_task_ids (task_ids);
+  ezm_recorder_declare_task_ids (ezp_monitor, task_ids);
 }
 
 static inline void monitoring_start_iteration (void)
 {
-#ifdef ENABLE_PAPI
-  if (do_cache)
-    easypap_perfcounter_monitor_start_iteration ();
-#endif
-  if (do_gmonitor)
-    gmonitor_start_iteration (what_time_is_it ());
-  if (do_trace)
-    trace_record_start_iteration ();
+  ezm_start_iteration (ezp_monitor);
 }
 
 static inline void monitoring_end_iteration (void)
 {
-#ifdef ENABLE_PAPI
-  if (do_cache)
-    easypap_perfcounter_monitor_stop_iteration ();
-#endif
-  if (do_gmonitor)
-    gmonitor_end_iteration (what_time_is_it ());
-  if (do_trace)
-    trace_record_end_iteration ();
+  ezm_end_iteration (ezp_monitor);
 }
 
-static inline uint64_t monitoring_start_tile (unsigned cpu)
+static inline void monitoring_start (unsigned cpu)
 {
-  uint64_t t = 0;
-  if (do_gmonitor | do_trace)
-    t = what_time_is_it ();
-
-#ifdef ENABLE_PAPI
-  if (do_cache)
-    easypap_perfcounter_monitor_start_tile (cpu);
-#endif
-
-  return t;
+  ezm_start_work (ezp_monitor, cpu);
 }
 
-static inline void monitoring_end_tile (uint64_t clock, unsigned x, unsigned y,
-                                        unsigned w, unsigned h, unsigned cpu)
-{
-#ifdef ENABLE_PAPI
-  if (do_cache)
-    easypap_perfcounter_monitor_stop_tile (cpu);
-#endif
+// 1D
 
-  if (do_gmonitor)
-    gmonitor_tile (clock, what_time_is_it (), cpu, x, y, w, h);
-  if (do_trace) {
-#ifdef ENABLE_PAPI
-    if (do_cache) {
-      int64_t counters[EASYPAP_NB_COUNTERS];
-      easypap_perfcounter_get_counters (counters, cpu);
-      trace_record_tile (clock, cpu, x, y, w, h, TASK_TYPE_COMPUTE, 0,
-                         counters);
-    } else {
-      trace_record_tile (clock, cpu, x, y, w, h, TASK_TYPE_COMPUTE, 0, NULL);
-    }
-#else
-    trace_record_tile (clock, cpu, x, y, w, h, TASK_TYPE_COMPUTE, 0, NULL);
-#endif
-  }
+static inline void monitoring_end_patch (unsigned patch, unsigned count,
+                                         unsigned cpu)
+{
+  ezm_end_1D (ezp_monitor, cpu, patch, count);
 }
 
-static inline void monitoring_end_tile_id (uint64_t clock, unsigned x,
-                                           unsigned y, unsigned w, unsigned h,
-                                           unsigned cpu, unsigned task_id)
+static inline void monitoring_end_patch_id (unsigned patch, unsigned count,
+                                            unsigned cpu, unsigned task_id)
 {
-#ifdef ENABLE_PAPI
-  if (do_cache)
-    easypap_perfcounter_monitor_stop_tile (cpu);
-#endif
+  ezm_end_1D_task (ezp_monitor, cpu, patch, count, task_id);
+}
 
-  if (do_gmonitor)
-    gmonitor_tile (clock, what_time_is_it (), cpu, x, y, w, h);
-  if (do_trace) {
-#ifdef ENABLE_PAPI
-    if (do_cache) {
-      int64_t counters[EASYPAP_NB_COUNTERS];
-      easypap_perfcounter_get_counters (counters, cpu);
-      trace_record_tile (clock, cpu, x, y, w, h, TASK_TYPE_COMPUTE, task_id + 1,
-                         counters);
-    } else {
+static inline void monitoring_gpu_patch (unsigned patch, unsigned count,
+                                         unsigned cpu, long start, long end,
+                                         task_type_t task_type,
+                                         unsigned task_id)
+{
+  ezm_1D_ext (ezp_monitor, start, end, cpu, patch, count, task_type, task_id);
+}
 
-      trace_record_tile (clock, cpu, x, y, w, h, TASK_TYPE_COMPUTE, task_id + 1,
-                         NULL);
-    }
-#else
-    trace_record_tile (clock, cpu, x, y, w, h, TASK_TYPE_COMPUTE, task_id + 1,
-                       NULL);
-#endif
-  }
+// 2D
+
+static inline void monitoring_end_tile (unsigned x, unsigned y, unsigned w,
+                                        unsigned h, unsigned cpu)
+{
+  ezm_end_2D (ezp_monitor, cpu, x, y, w, h);
+}
+
+static inline void monitoring_end_tile_id (unsigned x, unsigned y, unsigned w,
+                                           unsigned h, unsigned cpu,
+                                           unsigned task_id)
+{
+  ezm_end_2D_task (ezp_monitor, cpu, x, y, w, h, task_id);
 }
 
 static inline void monitoring_gpu_tile (unsigned x, unsigned y, unsigned w,
                                         unsigned h, unsigned cpu, long start,
-                                        long end, task_type_t task_type)
+                                        long end, task_type_t task_type,
+                                        unsigned task_id)
 {
-  if (do_gmonitor | do_trace) {
-    trace_record_start_tile (start, cpu, task_type);
-    if (task_type == TASK_TYPE_COMPUTE)
-      gmonitor_tile (start, end, cpu, x, y, w, h);
-    trace_record_end_tile (end, cpu, x, y, w, h, task_type, 0, NULL);
-  }
+  ezm_2D_ext (ezp_monitor, start, end, cpu, x, y, w, h, task_type, task_id);
 }
-
-static inline void monitoring_gpu_tile_id (unsigned x, unsigned y, unsigned w,
-                                           unsigned h, unsigned cpu, long start,
-                                           long end, task_type_t task_type, unsigned task_id)
-{
-  if (do_gmonitor | do_trace) {
-    trace_record_start_tile (start, cpu, task_type);
-    if (task_type == TASK_TYPE_COMPUTE)
-      gmonitor_tile (start, end, cpu, x, y, w, h);
-    trace_record_end_tile (end, cpu, x, y, w, h, task_type, task_id + 1, NULL);
-  }
-}
-
-#else
-
-#define monitoring_declare_task_ids (task_ids) (void) 0
-#define monitoring_start_iteration() (void)0
-#define monitoring_end_iteration() (void)0
-#define monitoring_start_tile(c) (uint64_t)0
-#define monitoring_end_tile(cl, x, y, w, h, c) (void)0
-#define monitoring_end_tile_id(cl, x, y, w, h, c, id) (void)0
-#define monitoring_gpu_tile(x, y, w, h, c, s, e, tt) (void)0
-#define monitoring_gpu_tile_id(x, y, w, h, c, s, e, tt, id) (void)0
-
-#endif
 
 #endif

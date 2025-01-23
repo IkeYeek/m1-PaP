@@ -52,22 +52,34 @@ _easypap_variants()
 
     for f in $tmp; do
         v=${f#*_compute_}
-        if [[ ! $v =~ ^ocl* ]]; then
-            variants="$variants $v"
+        if [[ $v =~ ^ocl* || $v =~ ^cuda* ]]; then
+            continue
+        fi
+        variants="$variants $v"
+    done
+}
+
+# result places in gpu_flavor
+_easypap_gpu_flavor()
+{
+    gpu_enabled()
+    {
+        grep -q "^ENABLE_$1[[:space:]]*=[[:space:]]1$" ${EASYPAPDIR}/Makefile
+    }
+
+    gpu_flavor=
+    for f in OPENCL CUDA; do
+        if gpu_enabled $f ; then
+            gpu_flavor=$f
+            break
         fi
     done
 }
 
 # result placed in gvariants
-_easypap_gpu_variants()
+_easypap_opencl_variants()
 {
     local f tmp k
-
-    gvariants=
-
-    if (( $# == 0 )); then
-        set none
-    fi
 
     # The most secure way of finding GPU kernels is to ask easypap…
     tmp=$(./run -k $1 -lgv 2> /dev/null)
@@ -76,11 +88,57 @@ _easypap_gpu_variants()
     #tmp=`awk '/__kernel/ {print $3}' < kernel/ocl/${k}.cl`
 
     for f in $tmp; do
-        if [[ $f =~ .*update_texture$ || $f =~ bench_kernel || $f =~ gather_outgoing_cells ]]; then
-            continue
+        if [[ $f =~ ^$1_ocl* ]]; then
+            gvariants="$gvariants ${f#$1_}"
         fi
-        gvariants="$gvariants ${f#$1_}"
     done
+}
+
+# result placed in gvariants
+_easypap_cuda_variants()
+{
+    local f p file tmp obj v
+
+    obj=
+
+    file=obj/cuda_$1.o
+    if [ -f $file ]; then
+        obj="$obj $file"
+    fi
+
+    if [[ -z $obj ]]; then
+        return
+    fi
+
+    tmp=`nm $obj | awk '/ +_?'"$1"'_cuda[^.]*$/ {print $3}'`
+
+    for f in $tmp; do
+        if [[ $f =~ ^$1_cuda* ]]; then
+            gvariants="$gvariants ${f#$1_}"
+        fi
+    done
+}
+
+# result placed in gvariants
+_easypap_gpu_variants()
+{
+    gvariants=
+
+    if (( $# == 0 )); then
+        set none
+    fi
+
+    _easypap_gpu_flavor
+    case $gpu_flavor in
+        OPENCL)
+            _easypap_opencl_variants $1
+            ;;
+        CUDA)
+            _easypap_cuda_variants $1
+            ;;
+        *)
+            ;;
+    esac
 }
 
 # result placed in draw_funcs

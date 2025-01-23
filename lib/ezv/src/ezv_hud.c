@@ -10,6 +10,7 @@
 #include "ezv_hud.h"
 #include "ezv_sdl_gl.h"
 #include "ezv_shader.h"
+#include "ezv_prefix.h"
 #include "stb_image.h"
 
 #define MAX_HUDS 8
@@ -56,15 +57,13 @@ static void load_texture_once (void)
     return; // texture already loaded
 
 #ifdef WHITE_BACKGROUND
-  sprintf (file, "%s/img/ascii-black.png", ezv_prefix ? ezv_prefix : ".");
+  sprintf (file, "%s/img/ascii-black.png", ezv_prefix);
 #else
-  sprintf (file, "%s/img/ascii.png", ezv_prefix ? ezv_prefix : ".");
+  sprintf (file, "%s/img/ascii.png", ezv_prefix);
 #endif
-  stbi_set_flip_vertically_on_load (true);
   texture_data = stbi_load (file, &texture_width, &texture_height, &nrChannels, 0);
   if (texture_data == NULL)
     exit_with_error ("Cannot open %s", file);
-  stbi_set_flip_vertically_on_load (false);
 
   HudInfo.digit_width = DIGIT_W / (float)texture_width;
   HudInfo.x_spacing   = DIGIT_W + 2.0f;
@@ -94,14 +93,10 @@ static void renderer_hud_init (ezv_ctx_t ctx)
 
   float vertices[] = {
       // 2D positions     // tex coord
-      0.0f,    0.0f,    0.0f,
-      1.0f, // top left
-      0.0f,    DIGIT_H, 0.0f,
-      0.0f, // bottom left
-      DIGIT_W, 0.0f,    HudInfo.digit_width,
-      1.0f, // top right
-      DIGIT_W, DIGIT_H, HudInfo.digit_width,
-      0.0f, // bottom right
+      0.0f,    0.0f,    0.0f,      0.0f, // top left
+      0.0f,    DIGIT_H, 0.0f,      1.0f, // bottom left
+      DIGIT_W, 0.0f,    HudInfo.digit_width,       0.0f, // top right
+      DIGIT_W, DIGIT_H, HudInfo.digit_width,       1.0f, // bottom right
   };
 
   // Warning: use clockwise orientation

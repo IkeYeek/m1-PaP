@@ -1,14 +1,11 @@
 
 #include "constants.h"
-#include "cpustat.h"
 #include "easypap.h"
 #include "gpu.h"
 #include "hooks.h"
-#include "trace_record.h"
 #ifdef ENABLE_SHA
 #include "hash.h"
 #endif
-#include "ezp_colors.h"
 #include "ezp_ctx.h"
 #include "ezv_event.h"
 
@@ -22,9 +19,6 @@
 #ifdef ENABLE_MPI
 #include <mpi.h>
 #endif
-
-#define MAX_FILENAME 1024
-#define MAX_LABEL 64
 
 int max_iter             = 0;
 unsigned refresh_rate    = 0;
@@ -44,7 +38,6 @@ char *easypap_mesh_file  = NULL;
 easypap_mode_t easypap_mode = EASYPAP_MODE_UNDEFINED;
 
 static char *output_file           = "./data/perf/data.csv";
-static char trace_label[MAX_LABEL] = {0};
 
 unsigned gpu_used                                              = 0;
 unsigned use_multiple_gpu                                      = 0;
@@ -186,37 +179,10 @@ static void output_perf_numbers (long time_in_us, unsigned nb_iter,
       f, "%s;%u;%u;%u;%u;%s;%s;%s;%u;%s;%s;%s;%s;%ld;%" PRId64 ";%" PRId64 "\n",
       s.nodename, DIM, TILE_W, TILE_H, easypap_requested_number_of_threads (),
       kernel_name, variant_name, tile_name, nb_iter, easypap_omp_schedule (),
-      easypap_omp_places (), trace_label, (draw_param ?: "none"), time_in_us,
+      easypap_omp_places (), easypap_trace_label, (draw_param ?: "none"), time_in_us,
       total_cycles, total_stalls);
 
   fclose (f);
-}
-
-static void set_default_trace_label (void)
-{
-  if (trace_label[0] == '\0') {
-    char *str = getenv ("OMP_SCHEDULE");
-
-    if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
-      if (str != NULL)
-        snprintf (trace_label, MAX_LABEL, "%s %s %s (%s) %d/%dx%d", kernel_name,
-                  variant_name, strcmp (tile_name, "none") ? tile_name : "",
-                  str, DIM, TILE_W, TILE_H);
-      else
-        snprintf (trace_label, MAX_LABEL, "%s %s %s %d/%dx%d", kernel_name,
-                  variant_name, strcmp (tile_name, "none") ? tile_name : "",
-                  DIM, TILE_W, TILE_H);
-    } else {
-      if (str != NULL)
-        snprintf (trace_label, MAX_LABEL, "%s %s %s (%s) %d/%d", kernel_name,
-                  variant_name, strcmp (tile_name, "none") ? tile_name : "",
-                  str, NB_CELLS, NB_PATCHES);
-      else
-        snprintf (trace_label, MAX_LABEL, "%s %s %s %d/%d", kernel_name,
-                  variant_name, strcmp (tile_name, "none") ? tile_name : "",
-                  NB_CELLS, NB_PATCHES);
-    }
-  }
 }
 
 static void usage (int val);
@@ -340,8 +306,6 @@ static void init_phases (void)
     picking_enabled = 0;
   }
 
-  ezp_colors_init ();
-
   // Create window, initialize rendering, preload image if appropriate
   if (do_display) {
     ezp_ctx_init ();
@@ -389,41 +353,8 @@ static void init_phases (void)
   } else
     PRINT_DEBUG ('i', "Init phase 2: [GPU init not required]\n");
 
-#ifdef ENABLE_MONITORING
-#ifdef ENABLE_TRACE
-  if (trace_may_be_used) {
-    char filename[MAX_FILENAME];
-
-    if (easypap_mpirun)
-      snprintf (filename, MAX_FILENAME, "%s/%s.%d%s", DEFAULT_EZV_TRACE_DIR,
-                DEFAULT_EZV_TRACE_BASE, easypap_mpi_rank (),
-                DEFAULT_EZV_TRACE_EXT);
-    else
-      strcpy (filename, DEFAULT_EASYVIEW_FILE);
-
-    set_default_trace_label ();
-
-    trace_record_init (filename, easypap_requested_number_of_threads (),
-                       easypap_number_of_gpus (), DIM, trace_label,
-                       trace_starting_iteration, do_cache);
-
-    if (easypap_mode == EASYPAP_MODE_3D_MESHES) {
-      trace_record_set_meshfile (easypap_mesh_file);
-
-      ezv_palette_name_t pal = mesh_data_get_palette ();
-      if (pal != EZV_PALETTE_UNDEFINED && pal != EZV_PALETTE_CUSTOM)
-        trace_record_set_palette (pal);
-    }
-  }
-#endif
-#endif
-
-#ifdef ENABLE_MONITORING
-  if (do_gmonitor) {
-    gmonitor_init ();
-    ezv_ctx_raise (ctx[0]);
-  }
-#endif
+  // Monitoring (either traces, or cpu footprints + perfmeters)
+  ezp_monitoring_init (easypap_requested_number_of_threads (), easypap_number_of_gpus ());
 
   // OpenCL context is initialized, so we can safely call kernel dependent
   // init() func which may allocate additional buffers.
@@ -435,10 +366,7 @@ static void init_phases (void)
   }
 
   // Make sure at leat one task id (0 = anonymous) is stored in the trace
-#ifdef ENABLE_TRACE
-  if (trace_may_be_used)
-    trace_record_commit_task_ids ();
-#endif
+  // TODO: it seems OK if it isn't
 
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES) {
     // Allocate memory for cur_img and next_img images
@@ -619,7 +547,7 @@ int main (int argc, char **argv)
                 update_refresh_rate (1);
                 break;
               case SDLK_h:
-                gmonitor_toggle_heat_mode ();
+                ezm_recorder_toggle_heat_mode (ezp_monitor);
                 break;
               case SDLK_i:
                 ezp_ctx_ithud_toggle ();
@@ -705,8 +633,7 @@ int main (int argc, char **argv)
     }
   } else {
     // Version non graphique (--no-display)
-    long temps;
-    struct timeval t1, t2;
+    uint64_t t_start, duration;
     int n;
 
     if (refresh_rate == 0) {
@@ -718,7 +645,7 @@ int main (int argc, char **argv)
         refresh_rate = INT_MAX;
     }
 
-    gettimeofday (&t1, NULL);
+    t_start = ezp_gettime ();
 
     while (!stable) {
       if (max_iter && iterations >= max_iter) {
@@ -761,28 +688,26 @@ int main (int argc, char **argv)
       }
     }
 
-    gettimeofday (&t2, NULL);
+    duration = ezp_gettime () - t_start;
 
     PRINT_MASTER ("Computation completed after %d iterations\n", iterations);
-
-    temps = TIME_DIFF (t1, t2);
 
     if (easypap_proc_is_master ()) {
 #ifdef ENABLE_PAPI
       if (do_cache) {
         int64_t perfcounters[EASYPAP_NB_COUNTERS];
         if (easypap_perfcounter_get_total_counters (perfcounters) == 0)
-          output_perf_numbers (temps, iterations,
+          output_perf_numbers (duration, iterations,
                                perfcounters[EASYPAP_TOTAL_CYCLES],
                                perfcounters[EASYPAP_TOTAL_STALLS]);
       } else {
-        output_perf_numbers (temps, iterations, -1, -1);
+        output_perf_numbers (duration, iterations, -1, -1);
       }
 #else
-      output_perf_numbers (temps, iterations, -1, -1);
+      output_perf_numbers (duration, iterations, -1, -1);
 #endif
     }
-    PRINT_MASTER ("%ld.%03ld \n", temps / 1000, temps % 1000);
+    PRINT_MASTER ("%" PRId64 ".%03" PRId64 "\n", duration / 1000, duration % 1000);
   }
 
 #ifdef ENABLE_SHA
@@ -826,17 +751,15 @@ int main (int argc, char **argv)
     }
   }
 
-#ifdef ENABLE_MONITORING
-#ifdef ENABLE_TRACE
-  if (trace_may_be_used)
-    trace_record_finalize ();
-#endif
-#endif
+  ezp_monitoring_cleanup ();
 
   if (the_finalize != NULL)
     the_finalize ();
 
-  img_data_free ();
+  if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
+    img_data_free ();
+  else
+    mesh_data_free ();
 
 #ifdef ENABLE_MPI
   if (easypap_mpirun)
@@ -1054,7 +977,7 @@ static void filter_args (int *argc, char *argv[])
         usage_error ("Error: parameter string is missing");
       (*argc)--;
       argv++;
-      snprintf (trace_label, MAX_LABEL, "%s", *argv);
+      snprintf (easypap_trace_label, MAX_LABEL, "%s", *argv);
     } else if (!strcmp (*argv, "--mpirun") || !strcmp (*argv, "-mpi")) {
 #ifndef ENABLE_MPI
       warning (*argv, "ENABLE_MPI", NULL);

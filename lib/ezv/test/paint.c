@@ -22,12 +22,6 @@ static float *data        = NULL;
 static float pencil_color = 0.05;
 static int painted        = 0;
 
-static inline unsigned *cell_neighbors (int cell)
-{
-  unsigned i = mesh.index_first_neighbor[cell];
-  return mesh.neighbors + i;
-}
-
 static void do_pick (void)
 {
   int p = ezv_perform_1D_picking (ctx, nb_ctx);
@@ -44,56 +38,11 @@ static void do_pick (void)
   }
 }
 
-static inline int get_event (SDL_Event *event, int blocking)
-{
-  return blocking ? SDL_WaitEvent (event) : SDL_PollEvent (event);
-}
-
-static unsigned skipped_events = 0;
-
-static int clever_get_event (SDL_Event *event, int blocking)
-{
-  int r;
-  static int prefetched = 0;
-  static SDL_Event pr_event; // prefetched event
-
-  if (prefetched) {
-    *event     = pr_event;
-    prefetched = 0;
-    return 1;
-  }
-
-  r = get_event (event, blocking);
-
-  if (r != 1)
-    return r;
-
-  // check if successive, similar events can be dropped
-  if (event->type == SDL_MOUSEMOTION) {
-
-    do {
-      int ret_code = get_event (&pr_event, 0);
-      if (ret_code == 1) {
-        if (pr_event.type == SDL_MOUSEMOTION) {
-          *event     = pr_event;
-          prefetched = 0;
-          skipped_events++;
-        } else {
-          prefetched = 1;
-        }
-      } else
-        return 1;
-    } while (prefetched == 0);
-  }
-
-  return 1;
-}
-
 static void process_events (void)
 {
   SDL_Event event;
 
-  int r = clever_get_event (&event, 1);
+  int r = ezv_get_event (&event, 1);
 
   if (r > 0) {
     int pick;
@@ -120,7 +69,7 @@ int main (int argc, char *argv[])
                            EZV_ENABLE_PICKING | EZV_ENABLE_HUD |
                                EZV_ENABLE_CLIPPING);
   hud    = ezv_hud_alloc (ctx[0]);
-  ezv_hud_toggle (ctx[0], hud);
+  ezv_hud_on (ctx[0], hud);
 
   // Attach mesh
   ezv_mesh3d_set_mesh (ctx[0], &mesh);

@@ -15,7 +15,7 @@ void mesh_mgpu_copy_host_to_device (int gpu, cl_mem dest_buffer, void *src_addr,
 {
   cl_int err =
       clEnqueueWriteBuffer (ocl_queue (gpu), dest_buffer, CL_TRUE,
-                            offset_in_bytes, bytes, src_addr, 0, NULL, NULL);
+                            offset_in_bytes, bytes, src_addr, 0, NULL, ezp_ocl_eventptr (EVENT_START_TRANSFER1, gpu));
   check (err, "Failed to write to device buffer");
 }
 
@@ -24,7 +24,7 @@ void mesh_mgpu_copy_device_to_host (int gpu, void *dest_addr, cl_mem src_buffer,
 {
   cl_int err =
       clEnqueueReadBuffer (ocl_queue (gpu), src_buffer, CL_TRUE,
-                           offset_in_bytes, bytes, dest_addr, 0, NULL, NULL);
+                           offset_in_bytes, bytes, dest_addr, 0, NULL, ezp_ocl_eventptr (EVENT_START_TRANSFER0, gpu));
   check (err, "Failed to read from device buffer");
 }
 
@@ -55,8 +55,9 @@ void mesh_mgpu_launch_cell_gathering_kernel (cl_kernel kernel, int gpu,
   check (err, "Failed to set kernel arguments");
 
   err = clEnqueueNDRangeKernel (ocl_queue (gpu), kernel, 1, NULL, &threads,
-                                &block, 0, NULL, NULL);
+                                &block, 0, NULL, ezp_ocl_eventptr (EVENT_START_KERNEL0, gpu));
   check (err, "Failed to execute kernel");
+  clFlush (ocl_queue (gpu));
 }
 
 cl_mem mesh_mgpu_cur_buffer (int gpu)

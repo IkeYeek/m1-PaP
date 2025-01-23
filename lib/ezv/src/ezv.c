@@ -7,23 +7,40 @@
 #include "error.h"
 #include "ezv_ctx.h"
 #include "ezv_hud.h"
+#include "ezv_prefix.h"
 #include "ezv_sdl_gl.h"
 #include "ezv_shader.h"
 #include "ezv_virtual.h"
 
 #include "ezv_img2d_object.h"
 #include "ezv_mesh3d_object.h"
+#include "ezv_mon_object.h"
 
 #include "mesh3d_renderer.h"
 
+static unsigned MAX_WINDOW_HEIGHT = 0;
+
 void ezv_init (const char *prefix)
 {
-  ezv_prefix = prefix;
+  static int done = 0;
 
-  if (!SDL_WasInit (SDL_INIT_VIDEO)) {
-    int r = SDL_Init (SDL_INIT_VIDEO);
-    if (r < 0)
-      exit_with_error ("Video initialization failed: %s", SDL_GetError ());
+  if (!done) {
+    strcpy (ezv_prefix, prefix ? prefix : ".");
+
+    if (!SDL_WasInit (SDL_INIT_VIDEO)) {
+      int r = SDL_Init (SDL_INIT_VIDEO);
+      if (r < 0)
+        exit_with_error ("Video initialization failed: %s", SDL_GetError ());
+    }
+
+    SDL_DisplayMode dm;
+
+    if (SDL_GetDesktopDisplayMode (0, &dm) != 0)
+      exit_with_error ("SDL_GetDesktopDisplayMode failed: %s", SDL_GetError ());
+
+    MAX_WINDOW_HEIGHT = dm.h - 128; // to account for headers, footers, etc.
+
+    done = 1;
   }
 }
 
@@ -42,6 +59,11 @@ void ezv_load_opengl (void)
 #endif
 }
 
+unsigned ezv_get_max_display_height (void)
+{
+  return MAX_WINDOW_HEIGHT;
+}
+
 ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
                           int y, int w, int h, int flags)
 {
@@ -56,13 +78,15 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
   ctx->cpu_colors = NULL;
   ezv_palette_init (&ctx->cpu_palette);
   ezv_palette_init (&ctx->data_palette);
-  ctx->hud_ctx          = NULL;
-  ctx->picking_enabled  = (flags & EZV_ENABLE_PICKING) ? 1 : 0;
-  ctx->hud_enabled      = (flags & EZV_ENABLE_HUD) ? 1 : 0;
-  ctx->clipping_enabled = ((flags & EZV_ENABLE_CLIPPING) && (ctx_type != EZV_CTX_TYPE_IMG2D)) ? 1 : 0;
-  ctx->clipping_active  = 0;
-  ctx->object           = NULL;
-  ctx->class            = NULL;
+  ctx->hud_ctx         = NULL;
+  ctx->picking_enabled = (flags & EZV_ENABLE_PICKING) ? 1 : 0;
+  ctx->hud_enabled     = (flags & EZV_ENABLE_HUD) ? 1 : 0;
+  ctx->clipping_enabled =
+      ((flags & EZV_ENABLE_CLIPPING) && (ctx_type != EZV_CTX_TYPE_IMG2D)) ? 1
+                                                                          : 0;
+  ctx->clipping_active = 0;
+  ctx->object          = NULL;
+  ctx->class           = NULL;
 
   SDL_GL_SetAttribute (SDL_GL_CONTEXT_PROFILE_MASK,
                        SDL_GL_CONTEXT_PROFILE_CORE);
@@ -70,8 +94,13 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
   SDL_GL_SetAttribute ((SDL_GLattr)SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG, 1);
 #endif
 
-  ctx->win = SDL_CreateWindow (win_title, x, y, w, h,
-                               SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+  uint32_t sdl_flags = SDL_WINDOW_OPENGL;
+  if (flags & EZV_HIDE_WINDOW)
+    sdl_flags |= SDL_WINDOW_HIDDEN;
+  else
+    sdl_flags |= SDL_WINDOW_SHOWN;
+
+  ctx->win = SDL_CreateWindow (win_title, x, y, w, h, sdl_flags);
   SDL_RaiseWindow (ctx->win);
 
   ctx->windowID = SDL_GetWindowID (ctx->win);
@@ -106,8 +135,10 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
   if (flags & EZV_ENABLE_VSYNC) {
     int r = SDL_GL_SetSwapInterval (1);
     if (r != 0)
-      fprintf (stderr, "WARNING: SDL_GL_SetSwapInterval is not supported by your OpenGL driver (%s)",
-                       (char *)glGetString (GL_RENDERER));
+      fprintf (stderr,
+               "WARNING: SDL_GL_SetSwapInterval is not supported by your "
+               "OpenGL driver (%s)",
+               (char *)glGetString (GL_RENDERER));
   }
 
   switch (ctx_type) {
@@ -121,6 +152,11 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
     ezv_mesh3d_object_init (ctx);
     break;
   }
+  case EZV_CTX_TYPE_MONITOR: {
+    // Initialize mon specific data
+    ezv_mon_object_init (ctx);
+    break;
+  }
   default:
     exit_with_error ("ctx_type %d not supported", ctx_type);
   }
@@ -132,9 +168,48 @@ ezv_ctx_t ezv_ctx_create (ezv_ctx_type_t ctx_type, const char *win_title, int x,
   return ctx;
 }
 
+ezv_ctx_type_t ezv_ctx_type (ezv_ctx_t ctx)
+{
+  return ctx->type;
+}
+
+char *ezv_ctx_typestr (ezv_ctx_t ctx)
+{
+  switch (ctx->type) {
+  case EZV_CTX_TYPE_IMG2D:
+    return "IMG2D";
+  case EZV_CTX_TYPE_MESH3D:
+    return "MESH3D";
+  case EZV_CTX_TYPE_MONITOR:
+    return "MONITOR";
+  default:
+    return "UNDEFINED";
+  }
+}
+
+unsigned ezv_ctx_width (ezv_ctx_t ctx)
+{
+  return ctx->winw;
+}
+
+unsigned ezv_ctx_height (ezv_ctx_t ctx)
+{
+  return ctx->winh;
+}
+
 void ezv_ctx_raise (ezv_ctx_t ctx)
 {
   SDL_RaiseWindow (ezv_sdl_window (ctx));
+}
+
+void ezv_ctx_show (ezv_ctx_t ctx)
+{
+  SDL_ShowWindow (ezv_sdl_window (ctx));
+}
+
+void ezv_ctx_hide (ezv_ctx_t ctx)
+{
+  SDL_HideWindow (ezv_sdl_window (ctx));
 }
 
 void ezv_switch_to_context (ezv_ctx_t ctx)
@@ -177,6 +252,7 @@ void ezv_set_cpu_color_1D (ezv_ctx_t ctx, unsigned offset, unsigned size,
     for (unsigned c = offset; c < offset + size; c++)
       ctx->cpu_colors[c] = color;
   } else {
+#if 0
     vec4 src = {(float)ezv_c2r (color), (float)ezv_c2g (color),
                 (float)ezv_c2b (color), 255.0};
     vec4 tmp;
@@ -192,6 +268,24 @@ void ezv_set_cpu_color_1D (ezv_ctx_t ctx, unsigned offset, unsigned size,
       ctx->cpu_colors[c] = ezv_rgba ((uint8_t)tmp[0], (uint8_t)tmp[1],
                                      (uint8_t)tmp[2], (u_int8_t)tmp[3]);
     }
+#else
+    unsigned int alpha     = ezv_c2a (color) + 1;
+    unsigned int inv_alpha = 256 - alpha + 1;
+    color |= ezv_alpha_mask ();
+    for (unsigned c = offset; c < offset + size; c++) {
+      uint32_t d = ctx->cpu_colors[c];
+      uint8_t r, g, b, a;
+      r = (unsigned char)((alpha * ezv_c2r (color) + inv_alpha * ezv_c2r (d)) >>
+                          8);
+      g = (unsigned char)((alpha * ezv_c2g (color) + inv_alpha * ezv_c2g (d)) >>
+                          8);
+      b = (unsigned char)((alpha * ezv_c2b (color) + inv_alpha * ezv_c2b (d)) >>
+                          8);
+      a = (unsigned char)((alpha * ezv_c2a (color) + inv_alpha * ezv_c2a (d)) >>
+                          8);
+      ctx->cpu_colors[c] = ezv_rgba (r, g, b, a);
+    }
+#endif
   }
 }
 
@@ -208,6 +302,7 @@ void ezv_set_cpu_color_2D (ezv_ctx_t ctx, unsigned x, unsigned width,
       for (unsigned j = x; j < x + width; j++)
         ctx->cpu_colors[i * pitch + j] = color;
   } else {
+#if 0
     vec4 src = {(float)ezv_c2r (color), (float)ezv_c2g (color),
                 (float)ezv_c2b (color), 255.0};
     vec4 tmp;
@@ -225,6 +320,29 @@ void ezv_set_cpu_color_2D (ezv_ctx_t ctx, unsigned x, unsigned width,
             ezv_rgba ((uint8_t)tmp[0], (uint8_t)tmp[1], (uint8_t)tmp[2],
                       (u_int8_t)tmp[3]);
       }
+#else
+    unsigned int alpha     = ezv_c2a (color) + 1;
+    unsigned int inv_alpha = 256 - alpha + 1;
+    color |= ezv_alpha_mask ();
+    for (unsigned i = y; i < y + height; i++)
+      for (unsigned j = x; j < x + width; j++) {
+        uint32_t d = ctx->cpu_colors[i * pitch + j];
+        uint8_t r, g, b, a;
+        r = (unsigned char)((alpha * ezv_c2r (color) +
+                             inv_alpha * ezv_c2r (d)) >>
+                            8);
+        g = (unsigned char)((alpha * ezv_c2g (color) +
+                             inv_alpha * ezv_c2g (d)) >>
+                            8);
+        b = (unsigned char)((alpha * ezv_c2b (color) +
+                             inv_alpha * ezv_c2b (d)) >>
+                            8);
+        a = (unsigned char)((alpha * ezv_c2a (color) +
+                             inv_alpha * ezv_c2a (d)) >>
+                            8);
+        ctx->cpu_colors[i * pitch + j] = ezv_rgba (r, g, b, a);
+      }
+#endif
   }
 }
 
@@ -260,14 +378,22 @@ void ezv_toggle_clipping (ezv_ctx_t ctx[], unsigned nb_ctx)
   ezv_move_zplane (ctx, nb_ctx, 0.0f);
 }
 
-char *ezv_ctx_type (ezv_ctx_t ctx)
+void ezv_helper_ctx_next_coord (ezv_ctx_t ctx[], unsigned ctx_no,
+                                unsigned *xwin, unsigned *ywin)
 {
-  switch (ctx->type) {
-    case EZV_CTX_TYPE_IMG2D:
-      return "IMG2D";
-    case EZV_CTX_TYPE_MESH3D:
-      return "MESH3D";
-    default:
-      return "UNDEFINED";
+  if (ctx_no == 0) {
+    *xwin = 0;
+    *ywin = 0;
+    return;
   }
+
+  // ctx_no > 0
+  SDL_Window *win = ezv_sdl_window (ctx[ctx_no - 1]);
+  int x = 0, y = 0, w = 0;
+
+  SDL_GetWindowPosition (win, &x, &y);
+  SDL_GetWindowSize (win, &w, NULL);
+
+  *xwin = x + w;
+  *ywin = y;
 }

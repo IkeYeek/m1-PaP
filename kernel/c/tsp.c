@@ -262,8 +262,10 @@ static void emplacement(int *x, int *y, int *largeur, int *hauteur, chemin_t che
 static void tsp_monitor (int etape, int lg, chemin_t chemin, int mask)
 {
   int x = 0, y = 0, largeur = DIM, hauteur = DIM;
+
   emplacement (&x, &y, &largeur, &hauteur, chemin, 1);
-  uint64_t clock = monitoring_start_tile (omp_get_thread_num ());
+
+  monitoring_start (omp_get_thread_num ());
   tsp_seq (etape, lg, chemin, mask);
-  monitoring_end_tile (clock, x, y, largeur, hauteur, omp_get_thread_num ());
+  monitoring_end_tile (x, y, largeur, hauteur, omp_get_thread_num ());
 }

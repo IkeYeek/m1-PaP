@@ -145,7 +145,7 @@ unsigned scrollup_compute_ocl_ouf (unsigned nb_iter)
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
+  monitoring_start (easypap_gpu_lane (0));
 
   for (unsigned it = 1; it <= nb_iter; it++) {
     unsigned color = ezv_rgb (255, 0, 0); // red
@@ -178,7 +178,7 @@ unsigned scrollup_compute_ocl_ouf (unsigned nb_iter)
 
   clFinish (ocl_queue (0));
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (0));
+  monitoring_end_tile (0, 0, DIM, DIM, easypap_gpu_lane (0));
 
   return 0;
 }

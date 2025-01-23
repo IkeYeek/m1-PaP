@@ -180,7 +180,7 @@ void img_data_refresh (unsigned iter)
   }
 
   // If computations were performed on CPU (that is, in the 'image' array), copy
-  // data into texture buffer Otherwise (GPU), data are already in place
+  // data into texture buffer. Otherwise (GPU), data are already in place
   if (!gpu_used || !easypap_gl_buffer_sharing)
     ezv_set_data_colors (ctx[0], image);
   else
@@ -198,7 +198,7 @@ void img_data_save_thumbnail (unsigned iteration)
 {
   char filename[1024];
 
-  sprintf (filename, "%s/thumb_%04d.png", DEFAULT_EZV_TRACE_DIR, iteration);
+  sprintf (filename, "data/traces/thumb_%04d.png", iteration);
 
   if (easypap_img_desc.width > THUMBNAILS_SIZE) {
     img2d_obj_store_resized (&easypap_img_desc, filename, image,
@@ -261,7 +261,14 @@ static unsigned val_to_rgba (float h, vec4 colors[], int size)
 {
   float scale = h * (float)(size - 1);
   int ind     = scale;
-  float frac  = scale - ind;
+  float frac;
+  
+  if (ind < size - 1)
+    frac = scale - ind;
+  else {
+    frac = 1.0;
+    ind--;
+  }
 
   vec4 theColor;
   glm_vec4_mix (colors[ind], colors[ind + 1], frac, theColor);

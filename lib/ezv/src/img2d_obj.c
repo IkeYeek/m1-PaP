@@ -71,3 +71,19 @@ void img2d_obj_store_resized (img2d_obj_t *img, char *filename, void *buffer,
 
   free (data);
 }
+
+void img2d_obj_load_resized (img2d_obj_t *img, char *filename, void *buffer)
+{
+  img2d_obj_t orig_img;
+
+  img2d_obj_init_from_file (&orig_img, filename);
+
+  unsigned char *tmp = malloc (img2d_obj_size (&orig_img));
+
+  img2d_obj_load (&orig_img, filename, tmp);
+
+  stbir_resize_uint8_srgb (
+      tmp, orig_img.width, orig_img.height, orig_img.width * orig_img.channels,
+      buffer, img->width, img->height, img->width * img->channels, STBIR_RGBA);
+  free (tmp);
+}

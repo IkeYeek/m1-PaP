@@ -27,7 +27,7 @@ static int tile_down_right_cpu (int x, int y, int w, int h, int cpu)
 {
   int change = 0;
 
-  uint64_t clock = monitoring_start_tile (cpu);
+  monitoring_start (cpu);
 
   for (int i = y; i < y + h; i++)
     for (int j = x; j < x + w; j++)
@@ -53,7 +53,7 @@ static int tile_down_right_cpu (int x, int y, int w, int h, int cpu)
         }
       }
 
-  monitoring_end_tile_id (clock, x, y, w, h, cpu, TASKID_DOWN_RIGHT);
+  monitoring_end_tile_id (x, y, w, h, cpu, TASKID_DOWN_RIGHT);
 
   return change;
 }
@@ -64,7 +64,7 @@ static int tile_up_left_cpu (int x, int y, int w, int h, int cpu)
 {
   int change = 0;
 
-  uint64_t clock = monitoring_start_tile (cpu);
+  monitoring_start (cpu);
 
   for (int i = y + h - 1; i >= y; i--)
     for (int j = x + w - 1; j >= x; j--)
@@ -90,7 +90,7 @@ static int tile_up_left_cpu (int x, int y, int w, int h, int cpu)
         }
       }
 
-  monitoring_end_tile_id (clock, x, y, w, h, cpu, TASKID_UP_LEFT);
+  monitoring_end_tile_id (x, y, w, h, cpu, TASKID_UP_LEFT);
 
   return change;
 }

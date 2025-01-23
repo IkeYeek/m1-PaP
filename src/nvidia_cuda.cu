@@ -261,6 +261,8 @@ EXTERN void cuda_init (int show_config, int silent)
 
     add_gpu (id_gpu);
   }
+
+  ezp_gpu_event_init ();
 }
 
 EXTERN unsigned cuda_compute_2dimg (unsigned nb_iter)
@@ -272,7 +274,7 @@ EXTERN unsigned cuda_compute_2dimg (unsigned nb_iter)
   ret = cudaSetDevice (cuda_device (0));
   check (ret, "cudaSetDevice");
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
+  monitoring_start (easypap_gpu_lane (0));
 
   for (int i = 0; i < nb_iter; i++) {
 
@@ -289,7 +291,7 @@ EXTERN unsigned cuda_compute_2dimg (unsigned nb_iter)
   ret = cudaStreamSynchronize (cuda_stream (0));
   check (ret, "cudaStreamSynchronize");
 
-  monitoring_end_tile (clock, 0, 0, DIM, DIM, easypap_gpu_lane (0));
+  monitoring_end_tile (0, 0, DIM, DIM, easypap_gpu_lane (0));
 
   return 0;
 }
@@ -303,7 +305,7 @@ EXTERN unsigned cuda_compute_3dmesh (unsigned nb_iter)
   ret = cudaSetDevice (cuda_device (0));
   check (ret, "cudaSetDevice");
 
-  uint64_t clock = monitoring_start_tile (easypap_gpu_lane (0));
+  monitoring_start (easypap_gpu_lane (0));
 
   for (int i = 0; i < nb_iter; i++) {
 
@@ -323,7 +325,7 @@ EXTERN unsigned cuda_compute_3dmesh (unsigned nb_iter)
   ret = cudaStreamSynchronize (cuda_stream (0));
   check (ret, "cudaStreamSynchronize");
 
-  monitoring_end_tile (clock, 0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
+  monitoring_end_patch (0, NB_CELLS, easypap_gpu_lane (0));
 
   return 0;
 }

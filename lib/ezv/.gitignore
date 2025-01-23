@@ -1,13 +1,1 @@
-mesh
-morton
-paint
-patch
-cpu
-store
-part
-diy
-image
-imagecpu
-imagedapu
-boolmat
 *.obj

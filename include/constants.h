@@ -7,6 +7,9 @@
 #define DEFAULT_GPU_TILE_SIZE 16
 #define DEFAULT_NB_PATCHES    2
 
+#define MAX_FILENAME 1024
+#define MAX_LABEL 64
+
 #define DEFAULT_KERNEL "none"
 #define DEFAULT_VARIANT "seq"
 #define DEFAULT_OCL_VARIANT "ocl"

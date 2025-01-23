@@ -141,7 +141,7 @@ void mesh_data_refresh (unsigned iter)
   }
 
   // If computations were performed on CPU (that is, in mesh_data), copy data
-  // into texture buffer Otherwise (GPU), data are already in place
+  // into texture buffer. Otherwise (GPU), data are already in place
   if (!gpu_used || !easypap_gl_buffer_sharing)
     ezv_set_data_colors (ctx[0], mesh_data);
   else
@@ -193,7 +193,7 @@ void mesh_data_save_thumbnail (unsigned iteration)
 {
   char filename[1024];
 
-  sprintf (filename, "%s/thumb_%04d.raw", DEFAULT_EZV_TRACE_DIR, iteration);
+  sprintf (filename, "data/traces/thumb_%04d.raw", iteration);
 
   mesh_data_dump_to_file (filename);
 }

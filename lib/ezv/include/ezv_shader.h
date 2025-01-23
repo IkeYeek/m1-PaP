@@ -3,8 +3,6 @@
 
 #include "ezv_sdl_gl.h"
 
-extern const char *ezv_prefix;
-
 GLuint ezv_shader_create (const char *vertex_shader,
                           const char *geometry_shader,
                           const char *fragment_shader);

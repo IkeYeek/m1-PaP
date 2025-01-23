@@ -4,14 +4,15 @@
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #define CL_TARGET_OPENCL_VERSION 120
 
-#include "error.h"
-#include "monitoring.h"
-
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
 #include <CL/opencl.h>
 #endif
+
+#include "error.h"
+#include "monitoring.h"
+#include "ezp_gpu_event.h"
 
 void ocl_init (int show_config, int silent);
 void ocl_build_program (int list_variants);
@@ -35,7 +36,6 @@ typedef struct
 {
   cl_command_queue q;
   cl_device_id device;
-  int64_t calibration_delta;
   cl_mem curb, nextb;
   cl_kernel kernel;
 } ocl_gpu_t;
@@ -52,14 +52,5 @@ extern cl_program program;
 #define ocl_next_buffer(gpu) ocl_gpu[gpu].nextb
 #define ocl_compute_kernel(gpu) ocl_gpu[gpu].kernel
 
-int64_t ocl_monitor (cl_event evt, int x, int y, int width, int height,
-                     task_type_t task_type, unsigned gpu_no);
-
-typedef struct
-{
-  int64_t start, end;
-} ocl_stamp_t;
-
-void ocl_link_stamp (cl_event evt, ocl_stamp_t *stamp);
 
 #endif
