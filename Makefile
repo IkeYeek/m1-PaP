@@ -22,8 +22,8 @@ ENABLE_OPENCL		= 1
 # Compilers
 CC				:= gcc
 CXX				:= g++
-#CC				:= clang-mp-18
-#CXX				:= clang++-mp-18
+#CC				:= clang-mp-19
+#CXX				:= clang++-mp-19
 
 # Optimization level
 CFLAGS 			:= -O3 -march=native
@@ -51,7 +51,7 @@ SOURCES			:= $(filter-out src/perfcounter.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_OPENCL), 1)
-SOURCES			:= $(filter-out src/ocl.c src/mesh_mgpu_ocl.c, $(SOURCES))
+SOURCES			:= $(filter-out src/ocl.c src/mesh_mgpu_ocl.c src/ezp_ocl_event.c, $(SOURCES))
 endif
 
 ifneq ($(ENABLE_SHA), 1)
@@ -109,9 +109,14 @@ MAKEFILES		:= Makefile
 ifeq ($(OS_NAME), DARWIN)
 #LDFLAGS			+= -Wl,-ld_classic
 else
+ifeq ($(CC), clang)
+CFLAGS			+= -pthread
+LDFLAGS			+= -Wl,--export-dynamic
+else
 CFLAGS			+= -pthread -rdynamic
 LDFLAGS			+= -export-dynamic
 LDLIBS			+= -ldl
+endif
 endif
 
 # Vectorization
@@ -190,6 +195,7 @@ endif
 # Compute Unified Device Architecture (CUDA)
 ifeq ($(ENABLE_CUDA), 1)
 CFLAGS			+= -DENABLE_CUDA
+CUDA_CFLAGS		+= -DENABLE_CUDA
 LDLIBS			+= -lcudart
 PACKAGES		+= cuda
 endif

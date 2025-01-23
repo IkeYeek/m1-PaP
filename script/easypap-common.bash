@@ -12,6 +12,6 @@ HASHDIR=${EASYPAPDIR}/data/hash
 DUMPDIR=${EASYPAPDIR}/data/dump
 
 SIMU=${EASYPAPDIR}/bin/easypap
-VIEW=${EASYPAPDIR}/traces/bin/easyview
+VIEW=${EASYPAPDIR}/lib/ezm/view/bin/easyview
 
 KERNEL_PREFIX=("" "mipp_" "cuda_")

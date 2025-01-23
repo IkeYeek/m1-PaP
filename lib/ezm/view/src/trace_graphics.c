@@ -138,6 +138,7 @@ extern char *trace_dir[]; // Defined in main.c
 
 static char easyview_img_dir[1024];
 static char easyview_font_dir[1024];
+static char easyview_ezv_dir[1024];
 
 struct
 {
@@ -167,9 +168,11 @@ static void find_shared_directories (void)
 {
   char *pi = stpcpy (easyview_img_dir, SDL_GetBasePath());
   char *pf = stpcpy (easyview_font_dir, easyview_img_dir);
+  char *pv = stpcpy (easyview_ezv_dir, easyview_img_dir);
 
   strcpy (pi, "../img/");
   strcpy (pf, "../fonts/");
+  strcpy (pv, "../../../ezv");
 }
 
 static SDL_Surface *load_img (const char *filename)
@@ -2218,7 +2221,7 @@ void trace_graphics_init (unsigned width, unsigned height)
 
   SDL_SetRenderDrawBlendMode (renderer, SDL_BLENDMODE_BLEND);
 
-  ezv_init ("./lib/ezv");
+  ezv_init (easyview_ezv_dir);
 
   if (easyview_mode == EASYVIEW_MODE_3D_MESHES) {
     mesh3d_obj_init (&mesh);

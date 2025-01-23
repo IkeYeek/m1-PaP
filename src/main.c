@@ -756,7 +756,10 @@ int main (int argc, char **argv)
   if (the_finalize != NULL)
     the_finalize ();
 
-  img_data_free ();
+  if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
+    img_data_free ();
+  else
+    mesh_data_free ();
 
 #ifdef ENABLE_MPI
   if (easypap_mpirun)

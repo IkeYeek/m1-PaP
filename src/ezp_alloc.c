@@ -35,6 +35,8 @@ void ezp_free (void *ptr, size_t size)
   } else
 #endif
   {
-    munmap (ptr, size);
+    if (munmap(ptr, size) == -1) {
+      exit_with_error("Cannot free memory: munmap failed");
+    }
   }
 }

@@ -20,7 +20,7 @@ DEPENDS		:= $(SOURCES:src/%.c=deps/%.d)
 MAKEFILES	:= Makefile
 
 CFLAGS		:= -O3 -march=native -Wall -Wno-unused-function -DGL_SILENCE_DEPRECATION #-Wno-deprecated-declarations
-CFLAGS		+= -I./include -I../include
+CFLAGS		+= -I./include -I../../../include
 LDLIBS		+= -lm
 
 PACKAGES	:= SDL2_image SDL2_ttf cglm
@@ -49,8 +49,8 @@ LDFLAGS		+= $(shell pkg-config --libs-only-L $(PACKAGES))
 LDLIBS		+= $(shell pkg-config --libs-only-l $(PACKAGES))
 
 # EZV lib
-EZV_DIR	:= ../lib/ezv
-EZV_LIB  := $(EZV_DIR)/lib/libezv.a
+EZV_DIR		:= ../../ezv
+EZV_LIB 	:= $(EZV_DIR)/lib/libezv.a
 LDFLAGS		+= -L$(EZV_DIR)/lib
 LDLIBS		+= -lezv -lscotch
 CFLAGS		+= -I$(EZV_DIR)/include
@@ -61,7 +61,7 @@ $(PROGRAM): $(OBJECTS) $(EZV_LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c
-	$(CC) -o $@ $(CFLAGS) -DTHIS_FILE=\"traces/$<\" -c $<
+	$(CC) -o $@ $(CFLAGS) -DTHIS_FILE=\"$(CURDIR)/$<\" -c $<
 
 
 .PHONY: depend

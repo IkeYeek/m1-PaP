@@ -84,7 +84,7 @@ fi
 # build easyview if needed
 if [[ ! -f ${VIEW} ]]; then
     echo "Building ${VIEW}"
-    make -C ${EASYPAPDIR}/traces
+    make -C ${EASYPAPDIR}/lib/ezm/view
 fi
 
 if [[ ${COMPARE} == "yes" ]]; then

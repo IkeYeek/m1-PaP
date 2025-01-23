@@ -261,6 +261,8 @@ EXTERN void cuda_init (int show_config, int silent)
 
     add_gpu (id_gpu);
   }
+
+  ezp_gpu_event_init ();
 }
 
 EXTERN unsigned cuda_compute_2dimg (unsigned nb_iter)

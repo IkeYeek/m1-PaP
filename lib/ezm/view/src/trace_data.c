@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 #include "error.h"
 #include "trace_data.h"
@@ -167,7 +169,7 @@ static void trace_data_display_all (trace_t *tr)
           if (t->iteration > it + 1)
             break;
 
-          printf ("Task: time [%llu-%llu], tile [%d, %d, %d, %d], iteration %d\n",
+          printf ("Task: time [%" PRIu64 "-%" PRIu64 "], tile [%d, %d, %d, %d], iteration %d\n",
                   task_start_time (tr, t), task_end_time (tr, t), t->x, t->y,
                   t->w, t->h, t->iteration);
         }

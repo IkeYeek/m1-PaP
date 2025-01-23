@@ -196,7 +196,7 @@ int main (int argc, char *argv[])
   // Profiling
   recorder = ezm_recorder_create (nb_openmp_threads (), 0);
   if (do_trace) {
-    ezm_recorder_attach_tracerec (recorder, "max.evt", "CC Labelling (OpenMP)");
+    ezm_recorder_attach_tracerec (recorder, "data/traces/max.evt", "CC Labelling (OpenMP)");
     ezm_recorder_store_mesh3d_filename (recorder, mesh_file);
   } else {
     ezm_set_cpu_palette (recorder, EZV_PALETTE_RAINBOW, 0);

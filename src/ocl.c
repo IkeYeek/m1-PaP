@@ -52,7 +52,6 @@ cl_program program; // compute program
 cl_context context;
 
 static cl_kernel update_kernel;
-static cl_kernel bench_kernel; // bench null kernel
 
 static cl_mem tex_buffer; // both for 2Dimg and 3Dmesh
 static cl_mem neighbor_soa_buffer;
@@ -439,62 +438,6 @@ static void ocl_list_variants (void)
   exit (EXIT_SUCCESS);
 }
 
-#define CALIBRATION_BURST 1
-#define CALIBRATION_ITER 64
-
-static void calibrate (void)
-{
-  size_t global[1] = {4096 * 64}; // global domain size for our calculation
-  size_t local[1]  = {16};        // local domain size for our calculation
-  cl_event events[CALIBRATION_BURST];
-  int64_t t;
-  cl_int err;
-
-  bench_kernel = clCreateKernel (program, "bench_kernel", &err);
-  check (err, "Failed to create bench kernel");
-
-  for (int g = 0; g < ocl_nb_gpus; g++) {
-    // Warmup
-    for (unsigned it = 0; it < 2; it++) {
-
-      err = clEnqueueNDRangeKernel (ocl_queue (g), bench_kernel, 1, NULL,
-                                    global, local, 0, NULL, NULL);
-      check (err, "Failed to execute bench kernel");
-    }
-    clFinish (ocl_queue (g));
-
-    for (int i = 0; i < CALIBRATION_ITER; i++) {
-      for (unsigned it = 0; it < CALIBRATION_BURST; it++)
-        err = clEnqueueNDRangeKernel (ocl_queue (g), bench_kernel, 1, NULL,
-                                      global, local, 0, NULL, &events[it]);
-
-      clFinish (ocl_queue (g));
-      t = ezp_gettime ();
-
-      cl_ulong end;
-
-      clGetEventProfilingInfo (events[CALIBRATION_BURST - 1],
-                               CL_PROFILING_COMMAND_END, sizeof (cl_ulong),
-                               &end, NULL);
-
-      // printf ("Calibration(gpu %d): getclock= %" PRId64 ", clGetEvent= %"
-      // PRId64
-      // "\n", g, t, end / 1000);
-
-      if (i == 0) {
-        ocl_gpu[g].calibration_delta = t - (end / 1000);
-      } else {
-        ocl_gpu[g].calibration_delta =
-            MAX (ocl_gpu[g].calibration_delta, t - (end / 1000));
-      }
-
-      for (unsigned i = 0; i < CALIBRATION_BURST; i++)
-        clReleaseEvent (events[i]);
-    }
-    // printf ("Calibration value(gpu %d) = %" PRId64 "\n", g,
-    // ocl_gpu[g].calibration_delta);
-  }
-}
 
 void ocl_build_program (int list_variants)
 {
@@ -651,8 +594,6 @@ void ocl_build_program (int list_variants)
       }
     }
   }
-
-  calibrate ();
 
   if (easypap_mode == EASYPAP_MODE_2D_IMAGES)
     printf ("Using %dx%d workitems grouped in %dx%d tiles\n", GPU_SIZE_X,
@@ -860,74 +801,6 @@ size_t ocl_get_max_workgroup_size (void)
   return max_workgroup_size;
 }
 
-static inline int64_t ocl_start_time (cl_event evt, unsigned gpu_no)
-{
-  cl_ulong t_start;
-
-  clGetEventProfilingInfo (evt, CL_PROFILING_COMMAND_START, sizeof (cl_ulong),
-                           &t_start, NULL);
-
-  return (t_start / 1000) + ocl_gpu[gpu_no].calibration_delta;
-}
-
-static inline int64_t ocl_end_time (cl_event evt, unsigned gpu_no)
-{
-  cl_ulong t_end;
-
-  clGetEventProfilingInfo (evt, CL_PROFILING_COMMAND_END, sizeof (cl_ulong),
-                           &t_end, NULL);
-
-  return (t_end / 1000) + ocl_gpu[gpu_no].calibration_delta;
-}
-
-int64_t ocl_monitor (cl_event evt, int x, int y, int width, int height,
-                     task_type_t task_type, unsigned gpu_no)
-{
-  int64_t start, end;
-  unsigned gpu_lane = easypap_gpu_lane (gpu_no);
-
-  start = ocl_start_time (evt, gpu_no);
-  end   = ocl_end_time (evt, gpu_no);
-
-  int64_t now = ezp_gettime ();
-  if (end > now)
-    PRINT_DEBUG ('c',
-                 "Warning: end of kernel (%s) ahead of current time by %" PRId64
-                 " µs\n",
-                 task_type == TASK_TYPE_COMPUTE ? "TASK_TYPE_COMPUTE"
-                                                : "TASK_TYPE_TRANSFER",
-                 end - now);
-
-  // PRINT_DEBUG ('o', "[%s] start: %" PRId64 ", end: %" PRId64 "\n", "kernel",
-  //              start, end);
-
-  if (height)
-    monitoring_gpu_tile (x, y, width, height, gpu_lane, start, end, task_type, 0);
-  else
-    monitoring_gpu_patch (x, width, gpu_lane, start, end, task_type, 0);
-
-  return end - start;
-}
-
-static void callback (cl_event event, cl_int event_command_status,
-                      void *user_data)
-{
-  ocl_stamp_t *stamp = (ocl_stamp_t *)user_data;
-
-  if (event_command_status == CL_COMPLETE) {
-    stamp->end = ezp_gettime ();
-    printf ("Event time stamp : %" PRId64 " to %" PRId64 "\n", stamp->start,
-            stamp->end);
-  }
-}
-
-void ocl_link_stamp (cl_event evt, ocl_stamp_t *stamp)
-{
-  cl_int err;
-
-  err = clSetEventCallback (evt, CL_COMPLETE, callback, stamp);
-  check (err, "Failed to set event callback");
-}
 
 const char *ocl_GetError (cl_int error)
 {

@@ -190,7 +190,7 @@ int main (int argc, char *argv[])
   // Profiling
   recorder = ezm_recorder_create (nb_openmp_threads (), 0);
   if (do_trace) {
-    ezm_recorder_attach_tracerec (recorder, "mandel.evt", "Mandelbrot OpenMP");
+    ezm_recorder_attach_tracerec (recorder, "data/traces/mandel.evt", "Mandelbrot OpenMP");
     ezm_recorder_store_img2d_dim (recorder, image_dim, image_dim);
   } else {
     ezm_set_cpu_palette (recorder, EZV_PALETTE_RAINBOW, 0);
