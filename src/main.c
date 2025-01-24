@@ -572,7 +572,7 @@ int main (int argc, char **argv)
             }
           }
 
-        } while ((do_pause || r > 0) && !quit);
+        } while ((do_pause || (r > 0 && !stable)) && !quit);
 
 #ifdef ENABLE_MPI
       if (easypap_mpirun)
