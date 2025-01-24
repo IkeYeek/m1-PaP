@@ -10,6 +10,7 @@ PREV_TRACEFILE=ezv_trace_previous.evt
 
 HASHDIR=${EASYPAPDIR}/data/hash
 DUMPDIR=${EASYPAPDIR}/data/dump
+PERFDIR=${EASYPAPDIR}/data/perf
 
 SIMU=${EASYPAPDIR}/bin/easypap
 VIEW=${EASYPAPDIR}/lib/ezm/view/bin/easyview

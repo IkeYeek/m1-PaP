@@ -166,9 +166,9 @@ static void output_perf_numbers (long time_in_us, unsigned nb_iter,
                      strerror (errno));
 
   if (ftell (f) == 0) {
-    fprintf (f, "%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s\n", "machine",
+    fprintf (f, "%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s\n", "machine",
              "size", "tilew", "tileh", "threads", "kernel", "variant", "tiling",
-             "iterations", "schedule", "places", "label", "arg", "time",
+             "iterations", "schedule", "places", "label", "arg", "config", "time",
              "total_cycles", "total_stalls");
   }
 
@@ -176,10 +176,10 @@ static void output_perf_numbers (long time_in_us, unsigned nb_iter,
     exit_with_error ("uname failed (%s)", strerror (errno));
 
   fprintf (
-      f, "%s;%u;%u;%u;%u;%s;%s;%s;%u;%s;%s;%s;%s;%ld;%" PRId64 ";%" PRId64 "\n",
+      f, "%s;%u;%u;%u;%u;%s;%s;%s;%u;%s;%s;%s;%s;%s;%ld;%" PRId64 ";%" PRId64 "\n",
       s.nodename, DIM, TILE_W, TILE_H, easypap_requested_number_of_threads (),
       kernel_name, variant_name, tile_name, nb_iter, easypap_omp_schedule (),
-      easypap_omp_places (), easypap_trace_label, (draw_param ?: "none"), time_in_us,
+      easypap_omp_places (), easypap_trace_label, (draw_param ?: "none"), (config_param ?: "none"), time_in_us,
       total_cycles, total_stalls);
 
   fclose (f);
@@ -572,7 +572,7 @@ int main (int argc, char **argv)
             }
           }
 
-        } while (do_pause && !quit);
+        } while ((do_pause || r > 0) && !quit);
 
 #ifdef ENABLE_MPI
       if (easypap_mpirun)
@@ -795,8 +795,10 @@ static void usage (int val)
       "\t-lb\t| --label <name>\t: assign name <label> to current run\n"
       "\t-lgv\t| --list-gpu-variants\t: list GPU variants\n"
       "\t-l\t| --load-image <file>\t: use PNG image <file>\n"
-      "\t-lm(s)\t| --load-mesh <file>\t: load 3D mesh from <file> (use -lms to "
-      "shuffle cells)\n"
+      "\t-lm\t| --load-mesh <file>\t: load 3D mesh from <file>\n"
+      "\t-lmsc\t\t\t\t: load mesh and shuffle cells\n"
+      "\t-lmsp\t\t\t\t: load mesh and shuffle partitions\n"
+      "\t-lms\t\t\t\t: load mesh and shuffle both cells and partitions\n"
       "\t-m \t| --monitoring\t\t: enable graphical thread monitoring\n"
       "\t-mg\t| --multi-gpu\t\t: use multiple GPUs if available\n"
       "\t-mpi\t| --mpirun <args>\t: pass <args> to the mpirun MPI process "
@@ -896,6 +898,13 @@ static void filter_args (int *argc, char *argv[])
 #else
       warning (*argv, "ENABLE_OPENCL", "ENABLE_CUDA");
 #endif
+    } else if (!strcmp (*argv, "--gpu-flavor") || !strcmp (*argv, "-gf")) {
+#if defined(ENABLE_CUDA)
+      printf ("cuda");
+#elif defined(ENABLE_OPENCL)
+      printf ("ocl");
+#endif
+      exit (0);
     } else if (!strcmp (*argv, "--first-touch") || !strcmp (*argv, "-ft")) {
       do_first_touch = 1;
     } else if (!strcmp (*argv, "--monitoring") || !strcmp (*argv, "-m")) {

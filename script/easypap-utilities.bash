@@ -62,18 +62,7 @@ _easypap_variants()
 # result places in gpu_flavor
 _easypap_gpu_flavor()
 {
-    gpu_enabled()
-    {
-        grep -q "^ENABLE_$1[[:space:]]*=[[:space:]]1$" ${EASYPAPDIR}/Makefile
-    }
-
-    gpu_flavor=
-    for f in OPENCL CUDA; do
-        if gpu_enabled $f ; then
-            gpu_flavor=$f
-            break
-        fi
-    done
+    gpu_flavor=$(./run --gpu-flavor)
 }
 
 # result placed in gvariants
@@ -130,10 +119,10 @@ _easypap_gpu_variants()
 
     _easypap_gpu_flavor
     case $gpu_flavor in
-        OPENCL)
+        ocl)
             _easypap_opencl_variants $1
             ;;
-        CUDA)
+        cuda)
             _easypap_cuda_variants $1
             ;;
         *)
