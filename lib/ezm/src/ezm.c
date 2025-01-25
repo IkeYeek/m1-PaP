@@ -518,15 +518,18 @@ void ezm_helper_add_footprint (ezm_recorder_t rec, ezv_ctx_t ctx[],
 
   c = ezv_ctx_create (ezv_ctx_type (ctx[0]), "Footprint", x, y, w, h,
                       EZV_HIDE_WINDOW);
+
   switch (ezv_ctx_type (ctx[0])) {
-  case EZV_CTX_TYPE_IMG2D:
+  case EZV_CTX_TYPE_IMG2D: {
     img2d_obj_t *img = ezv_img2d_img (ctx[0]);
     ezv_img2d_set_img (c, img);
     break;
-  case EZV_CTX_TYPE_MESH3D:
+  }
+  case EZV_CTX_TYPE_MESH3D: {
     mesh3d_obj_t *mesh = ezv_mesh3d_mesh (ctx[0]);
     ezv_mesh3d_set_mesh (c, mesh);
     break;
+  }
   default:
     exit_with_error ("ezm_helper_add_footprint: unsupported context type (%s)",
                      ezv_ctx_typestr (ctx[0]));
