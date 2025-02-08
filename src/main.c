@@ -340,6 +340,9 @@ static void init_phases (void)
       mesh_data_set_default_palette_if_none_defined ();
     else
       img_data_set_default_palette_if_none_defined ();
+
+    if (picking_enabled)
+      ezv_set_data_brightness (ctx[0], 0.95f);
   }
 
   if (the_tile_check != NULL)
