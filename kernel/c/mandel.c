@@ -3,7 +3,6 @@
 
 #include <omp.h>
 
-
 #define MAX_ITERATIONS 4096
 #define ZOOM_SPEED -0.01
 
@@ -15,20 +14,37 @@ static float bottomY = .648;
 static float xstep;
 static float ystep;
 
-static unsigned compute_one_pixel (int i, int j);
-static void zoom (void);
+static unsigned *restrict _table = NULL;
+
+static inline unsigned *table_ptr (int y, int x)
+{
+  return _table + y * DIM + x;
+}
+
+#define cur_table(y, x) (*table_ptr ((y), (x)))
 
 void mandel_init ()
 {
   xstep = (rightX - leftX) / DIM;
   ystep = (topY - bottomY) / DIM;
+
+  if (_table == NULL)
+    _table = ezp_alloc (DIM * DIM * sizeof (unsigned));
 }
+
+void mandel_finalize (void)
+{
+  ezp_free (_table, DIM * DIM * sizeof (unsigned));
+}
+
+static unsigned compute_one_pixel (int i, int j);
+static void zoom (void);
 
 int mandel_do_tile_default (int x, int y, int width, int height)
 {
   for (int i = y; i < y + height; i++)
     for (int j = x; j < x + width; j++)
-      cur_img (i, j) = compute_one_pixel (i, j);
+      cur_table (i, j) = compute_one_pixel (i, j);
 
   return 0;
 }
@@ -48,7 +64,6 @@ unsigned mandel_compute_seq (unsigned nb_iter)
 
   return 0;
 }
-
 
 ///////////////////////////// Tiled sequential version (tiled)
 // Suggested cmdline:
@@ -136,6 +151,35 @@ static unsigned compute_one_pixel (int i, int j)
     zi = twoxy + ci;
   }
 
-  return iteration_to_color (iter);
+  return iter;
 }
 
+void mandel_refresh_img (void)
+{
+  for (int i = 0; i < DIM; i++)
+    for (int j = 0; j < DIM; j++)
+      cur_img (i, j) = iteration_to_color (cur_table (i, j));
+}
+
+// Debug
+
+// Debug facilities
+static int debug_hud = -1;
+
+void mandel_config (char *param)
+{
+  if (picking_enabled) {
+    debug_hud = ezv_hud_alloc (ctx[0]);
+    ezv_hud_on (ctx[0], debug_hud);
+  }
+}
+
+void mandel_debug (int x, int y)
+{
+  if (x == -1 || y == -1)
+    ezv_hud_off (ctx[0], debug_hud);
+  else {
+    ezv_hud_on (ctx[0], debug_hud);
+    ezv_hud_set (ctx[0], debug_hud, "#iter: %d", cur_table (y, x));
+  }
+}
