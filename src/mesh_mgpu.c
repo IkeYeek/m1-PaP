@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "mesh_mgpu.h"
 #include "debug.h"
 #include "error.h"

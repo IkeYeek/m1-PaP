@@ -57,9 +57,9 @@ static void load_texture_once (void)
     return; // texture already loaded
 
 #ifdef WHITE_BACKGROUND
-  sprintf (file, "%s/img/ascii-black.png", ezv_prefix);
+  sprintf (file, "%s/share/img/ascii-black.png", ezv_prefix);
 #else
-  sprintf (file, "%s/img/ascii.png", ezv_prefix);
+  sprintf (file, "%s/share/img/ascii.png", ezv_prefix);
 #endif
   texture_data = stbi_load (file, &texture_width, &texture_height, &nrChannels, 0);
   if (texture_data == NULL)

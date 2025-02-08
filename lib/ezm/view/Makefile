@@ -55,13 +55,15 @@ LDFLAGS		+= -L$(EZV_DIR)/lib
 LDLIBS		+= -lezv -lscotch
 CFLAGS		+= -I$(EZV_DIR)/include
 
+# Compile rules
+
 $(OBJECTS): $(MAKEFILES)
 
 $(PROGRAM): $(OBJECTS) $(EZV_LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(OBJECTS): obj/%.o: src/%.c
-	$(CC) -o $@ $(CFLAGS) -DTHIS_FILE=\"$(CURDIR)/$<\" -c $<
+	$(CC) -o $@ $(CFLAGS) -c $<
 
 
 .PHONY: depend

@@ -34,9 +34,13 @@ layout (std140) uniform Clipping
 };
 
 uniform isamplerBuffer TriangleInfo;
+uniform isamplerBuffer RGBAColors;
 uniform samplerBuffer Values;
 
 uniform int paletteSize;
+uniform float dataBrightness;
+
+in vec3 origPos[];
 
 flat out vec4 theColor;
 noperspective out vec3 dist;
@@ -44,9 +48,9 @@ flat out vec3 frontier;
 
 void main ()
 {    
-    int info, ind;
+    int info, ind, col;
     float val;
-    vec4 colA, colB;
+    vec4 colA, colB, cpuColor, dataColor;
 
     if (clipping_active > 0) {
         float s = 0.0;
@@ -64,6 +68,11 @@ void main ()
 
     frontier = vec3 ((info & FRONTIER0), (info & FRONTIER1), (info & FRONTIER2));
 
+    // CPU Colors
+    col = texelFetch (RGBAColors, ind).r;
+    cpuColor = unpackUnorm4x8 (uint(col));
+
+    // Data colors
     val = clamp (texelFetch (Values, ind).r, 0.0, 1.0);
 
     // Do the interpolation
@@ -74,7 +83,20 @@ void main ()
     colA = colors[ind];
     colB = colors[ind + 1];
 
-    theColor = mix (colA, colB, frac);
+    dataColor = mix (colA, colB, frac);
+    // reduce luminance of data
+    dataColor = vec4 (dataColor.xyz * dataBrightness, dataColor.w);
+
+    // Blending
+    theColor = mix (dataColor, vec4 (cpuColor.xyz, 1.0), cpuColor.w);
+
+    // Lighting
+    vec3 edge_1 = origPos[1] - origPos[0];
+    vec3 edge_2 = origPos[2] - origPos[0];
+    vec3 faceNormal = normalize (cross (edge_1, edge_2));
+    vec3 lightDir = normalize (vec3 (1.0, 1.0, 1.0));
+    float diff = abs (dot (faceNormal, lightDir));
+    theColor = vec4 (mix (0.4, 1.0, diff) * theColor.xyz, theColor.w);
 
     // Compute barycentric distances
     vec2 display = vec2 (width, height);

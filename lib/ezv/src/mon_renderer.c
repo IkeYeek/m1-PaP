@@ -41,6 +41,7 @@ static struct
   mat4 ortho;
   mat4 vp_unclipped;
   mat4 mvp_unclipped;
+  mat4 mv;
 } Matrices;
 
 static struct
@@ -173,7 +174,7 @@ static void load_ascii_surface (void)
   int texture_width  = -1;
   int texture_height = -1;
 
-  sprintf (file, "%s/img/ascii.png", ezv_prefix);
+  sprintf (file, "%s/share/img/ascii.png", ezv_prefix);
 
   ascii_data = (uint32_t *)stbi_load (file, &texture_width, &texture_height,
                                       &nrChannels, 0);

@@ -26,7 +26,7 @@ static char *file_load (const char *file)
   size_t r;
 
   char filename[1024];
-  sprintf (filename, "%s/shaders/%s", ezv_prefix, file);
+  sprintf (filename, "%s/share/shaders/%s", ezv_prefix, file);
 
   s = file_size (filename);
   b = malloc (s + 1);
@@ -60,7 +60,6 @@ static void compile_shader (unsigned int shader)
     glGetShaderiv (shader, GL_INFO_LOG_LENGTH, &length);
     log = malloc (length);
     glGetShaderInfoLog (shader, length, &success, log);
-    check (success, "Failed to retrieve shader compiler log");
     exit_with_error ("Shader Compilation Error: %s\n", log);
   }
 }
@@ -78,7 +77,6 @@ static void link_program (unsigned int shader_program)
     glGetProgramiv (shader_program, GL_INFO_LOG_LENGTH, &length);
     log = malloc (length);
     glGetProgramInfoLog (shader_program, length, &success, log);
-    check (success, "Failed to retrieve shader compiler log");
     exit_with_error ("Shader Linking Error: %s\n", log);
   }
 }
@@ -130,7 +128,8 @@ void ezv_shader_get_uniform_loc (GLuint program, const char *name,
                                  GLuint *location)
 {
   GLuint loc = glGetUniformLocation (program, name);
-  check (loc != GL_INVALID_INDEX, "glGetUniformLocation for %s", name);
+  if (loc == GL_INVALID_INDEX)
+    exit_with_error ("Warning: glGetUniformLocation for %s\n", name);
   *location = loc;
 }
 
@@ -138,7 +137,8 @@ void ezv_shader_bind_uniform_buf (GLuint program, const char *name,
                                   GLuint blockbinding)
 {
   GLuint index = glGetUniformBlockIndex (program, name);
-  check (index != GL_INVALID_INDEX, "glGetUniformBlockIndex for %s", name);
+  if (index == GL_INVALID_INDEX)
+    exit_with_error ("glGetUniformBlockIndex for %s", name);
 
   // Link Binding indices to binding points
   glUniformBlockBinding (program, index, blockbinding);

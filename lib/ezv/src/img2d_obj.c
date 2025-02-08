@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "error.h"
 #include "img2d_obj.h"

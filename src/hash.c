@@ -2,6 +2,8 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h>
+
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 

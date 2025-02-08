@@ -63,6 +63,7 @@ static struct
   mat4 ortho;
   mat4 vp_unclipped;
   mat4 mvp_unclipped;
+  mat4 mv;
 } Matrices;
 
 static struct
@@ -148,8 +149,9 @@ static void mesh3d_renderer_mvp_init (ezv_ctx_t ctx)
                      FARZ, projection);
     glm_mat4_copy (projection, unclipped_proj);
 
-    glm_mat4_mul (projection, view, Matrices.vp_unclipped);
-    glm_mat4_mul (Matrices.vp_unclipped, model, Matrices.mvp);
+    glm_mat4_mul (view, model, Matrices.mv);
+    glm_mat4_mul (projection, Matrices.mv, Matrices.mvp);
+
     glm_mat4_copy (Matrices.mvp, Matrices.mvp_unclipped);
 
     glm_ortho (0.0f, (float)ctx->winw, (float)ctx->winh, 0.0f, -2.0f, 2.0f,
@@ -197,7 +199,7 @@ static void mesh3d_renderer_mvp_init (ezv_ctx_t ctx)
 void mesh3d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
                                  float dy, float dz)
 {
-  mat4 model, view, tmp;
+  mat4 model, view;
 
   rotate_x += dx;
   rotate_y += dy;
@@ -220,8 +222,8 @@ void mesh3d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
                          : NEARZ,
                      FARZ, projection);
 
-  glm_mat4_mul (projection, view, tmp);
-  glm_mat4_mul (tmp, model, Matrices.mvp);
+  glm_mat4_mul (view, model, Matrices.mv);
+  glm_mat4_mul (projection, Matrices.mv, Matrices.mvp);
 
   glm_mat4_mul (unclipped_proj, view, Matrices.vp_unclipped);
   glm_mat4_mul (Matrices.vp_unclipped, model, Matrices.mvp_unclipped);
@@ -366,12 +368,12 @@ void mesh3d_renderer_init (ezv_ctx_t ctx)
   ezv_mesh3d_set_renderer (ctx, renctx);
 
   // compile shaders and build program
-  renctx->cpu_shader  = ezv_shader_create ("mesh3d/generic.vs", "mesh3d/cpu.gs",
+  renctx->cpu_shader  = ezv_shader_create ("mesh3d/generic-light.vs", "mesh3d/cpu-light.gs",
                                            "mesh3d/generic.fs");
   renctx->data_shader = ezv_shader_create (
-      "mesh3d/generic.vs", "mesh3d/data.gs", "mesh3d/generic.fs");
+      "mesh3d/generic-light.vs", "mesh3d/data-light.gs", "mesh3d/generic.fs");
   renctx->dapu_shader = ezv_shader_create (
-      "mesh3d/generic.vs", "mesh3d/cpu_data.gs", "mesh3d/generic.fs");
+      "mesh3d/generic-light.vs", "mesh3d/cpu_data-light.gs", "mesh3d/generic.fs");
   renctx->picking_shader = ezv_shader_create (
       "mesh3d/generic.vs", "mesh3d/generic.gs", "mesh3d/picking.fs");
   renctx->clipping_shader =

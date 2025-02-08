@@ -62,10 +62,10 @@ lib: $(LIB)
 
 exec: $(PROGRAMS)
 
+# Compile rules
+
 $(OBJECTS) $(POBJECTS): $(MAKEFILES)
 
-
-# Règle pour compiler les programmes
 $(PROGRAMS): bin/%: obj/%.o $(LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 

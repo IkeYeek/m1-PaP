@@ -79,8 +79,8 @@ exec: $(PROGRAMS)
 
 $(OBJECTS) $(POBJECTS): $(MAKEFILES)
 
+# Compile rules
 
-# Règle pour compiler les programmes
 $(PROGRAMS): bin/%: obj/%.o $(LIB) $(EZV_LIB)
 	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 

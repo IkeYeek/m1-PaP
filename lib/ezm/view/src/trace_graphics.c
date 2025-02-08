@@ -170,8 +170,8 @@ static void find_shared_directories (void)
   char *pf = stpcpy (easyview_font_dir, easyview_img_dir);
   char *pv = stpcpy (easyview_ezv_dir, easyview_img_dir);
 
-  strcpy (pi, "../img/");
-  strcpy (pf, "../fonts/");
+  strcpy (pi, "../share/img/");
+  strcpy (pf, "../share/fonts/");
   strcpy (pv, "../../../ezv");
 }
 

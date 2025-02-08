@@ -52,6 +52,7 @@ static struct
   mat4 ortho;
   mat4 vp_unclipped;
   mat4 mvp_unclipped;
+  mat4 mv;
 } Matrices;
 
 static struct
@@ -60,7 +61,7 @@ static struct
   vec4 cut_color;
 } CustomColors;
 
-static mat4 projection, unclipped_proj;
+static mat4 projection;
 
 // Normalization operations translate and rescale the object to fit into a
 // normalized rectangle centered in (0,0)
@@ -120,11 +121,9 @@ static void img2d_renderer_mvp_init (ezv_ctx_t ctx)
     }
 
     glm_ortho (-sc_x, sc_x, sc_y, -sc_y, NEARZ, FARZ, projection);
-    glm_mat4_copy (projection, unclipped_proj);
 
-    glm_mat4_mul (projection, view, Matrices.vp_unclipped);
-    glm_mat4_mul (Matrices.vp_unclipped, model, Matrices.mvp);
-    glm_mat4_copy (Matrices.mvp, Matrices.mvp_unclipped);
+    glm_mat4_mul (view, model, Matrices.mv);
+    glm_mat4_mul (projection, Matrices.mv, Matrices.mvp);
 
     glm_ortho (0.0f, (float)ctx->winw, (float)ctx->winh, 0.0f, -2.0f, 2.0f,
                Matrices.ortho);
@@ -152,7 +151,7 @@ static void img2d_renderer_mvp_init (ezv_ctx_t ctx)
 void img2d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
                                 float dy, float dz)
 {
-  mat4 model, view, tmp;
+  mat4 model, view;
 
   offset_x += dx;
   offset_y += dy;
@@ -168,11 +167,8 @@ void img2d_renderer_mvp_update (ezv_ctx_t ctx[], unsigned nb_ctx, float dx,
 
   glm_mat4_identity (view);
 
-  glm_mat4_mul (projection, view, tmp);
-  glm_mat4_mul (tmp, model, Matrices.mvp);
-
-  glm_mat4_mul (unclipped_proj, view, Matrices.vp_unclipped);
-  glm_mat4_mul (Matrices.vp_unclipped, model, Matrices.mvp_unclipped);
+  glm_mat4_mul (view, model, Matrices.mv);
+  glm_mat4_mul (projection, Matrices.mv, Matrices.mvp);
 
   for (int c = 0; c < nb_ctx; c++) {
     if (ctx[c]->type == EZV_CTX_TYPE_IMG2D) {

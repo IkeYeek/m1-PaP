@@ -9,12 +9,13 @@ layout (std140) uniform Matrices
     mat4 ortho;
     mat4 vp_unclipped;
     mat4 mvp_unclipped;
+    mat4 mv;
 };
 
-noperspective out vec2 coord;
+out vec2 TexCoord;
 
 void main()
 {
-    gl_Position = mvp * vec4 (pos, 0.0, 1.0);
-    coord = pos + vec2 (1.0, 1.0);
+    gl_Position = ortho * vec4 (pos, -1.0, 1.0);
+    TexCoord = texCoord;
 }

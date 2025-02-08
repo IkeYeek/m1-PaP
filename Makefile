@@ -22,8 +22,8 @@ ENABLE_OPENCL		= 1
 # Compilers
 CC				:= gcc
 CXX				:= g++
-#CC				:= clang-mp-19
-#CXX				:= clang++-mp-19
+
+IS_CLANG = $(shell $(CC) --version 2>/dev/null | head -n 1 | grep -c "clang")
 
 # Optimization level
 CFLAGS 			:= -O3 -march=native
@@ -34,8 +34,8 @@ CFLAGS			+= -Wall -Wno-unused-function
 
 ####################################
 
-CFLAGS			+= -I./include -I./traces/include
-CUDA_CFLAGS		+= -I./include -I./traces/include
+CFLAGS			+= -I./include
+CUDA_CFLAGS		+= -I./include
 LDLIBS			+= -lm
 
 CXXFLAGS		:= -std=c++11
@@ -109,7 +109,7 @@ MAKEFILES		:= Makefile
 ifeq ($(OS_NAME), DARWIN)
 #LDFLAGS			+= -Wl,-ld_classic
 else
-ifeq ($(CC), clang)
+ifeq ($(IS_CLANG), 1)
 CFLAGS			+= -pthread
 LDFLAGS			+= -Wl,--export-dynamic
 else
@@ -246,7 +246,7 @@ LD				:= $(CC)
 endif
 
 
-########## Compute rules ###########
+# Compile rules
 
 $(ALL_OBJECTS): $(MAKEFILES)
 
