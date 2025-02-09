@@ -1,8 +1,8 @@
 
 #include "easypap.h"
 
-#include <omp.h>
 #include <fcntl.h>
+#include <omp.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -17,7 +17,7 @@ void skin3d_config (char *param)
   int palette = EZV_PALETTE_RAINBOW;
 
   if (param != NULL) {
-    int n = atoi(param);
+    int n = atoi (param);
     if (n >= EZV_PALETTE_LINEAR && n <= EZV_PALETTE_RAINBOW)
       palette = n;
   }
@@ -78,9 +78,10 @@ static void draw_coord (int coord)
   for (int c = 0; c < NB_CELLS; c++) {
     bbox_t box;
     mesh3d_obj_get_bbox_of_cell (&easypap_mesh_desc, c, &box);
-    float f      = (box.min[coord] + box.max[coord]) / 2.0f;
-    cur_data (c) = (f - easypap_mesh_desc.bbox.min[coord]) /
-                   (easypap_mesh_desc.bbox.max[coord] - easypap_mesh_desc.bbox.min[coord]);
+    float f = (box.min[coord] + box.max[coord]) / 2.0f;
+    cur_data (c) =
+        (f - easypap_mesh_desc.bbox.min[coord]) /
+        (easypap_mesh_desc.bbox.max[coord] - easypap_mesh_desc.bbox.min[coord]);
   }
 }
 
@@ -99,22 +100,44 @@ void skin3d_draw_z (void)
   draw_coord (2);
 }
 
+static void draw_uniform (float value)
+{
+  for (int c = 0; c < NB_CELLS; c++)
+    cur_data (c) = value;
+}
+
+void skin3d_draw_uni (void)
+{
+  draw_uniform (0.65f);
+}
+
 void skin3d_draw (char *param)
 {
-  if (param && strstr (param, ".raw") != NULL && (access (param, R_OK) != -1)) {
-    // The parameter is a filename, so we guess it's a raw dump file
-    int fd = open (param, O_RDONLY);
-    if (fd == -1)
-      exit_with_error ("Cannot open %s (%s)", param, strerror (errno));
+  if (param) {
+    if (strstr (param, ".raw") != NULL && (access (param, R_OK) != -1)) {
+      // The parameter is a filename, so we guess it's a raw dump file
+      int fd = open (param, O_RDONLY);
+      if (fd == -1)
+        exit_with_error ("Cannot open %s (%s)", param, strerror (errno));
 
-    int n = read (fd, mesh_data, NB_CELLS * sizeof (float));
-    if (n < NB_CELLS * sizeof (float))
-      exit_with_error ("Could not read enough data from raw file");
+      int n = read (fd, mesh_data, NB_CELLS * sizeof (float));
+      if (n < NB_CELLS * sizeof (float))
+        exit_with_error ("Could not read enough data from raw file");
 
-    close (fd);
-    return;
+      close (fd);
+      return;
+    } else {
+      // Check if the parameter is a float
+      int len;
+      float value;
+      int ret = sscanf (param, "%f %n", &value, &len);
+      if (ret == 1 && !param[len]) {
+        // The parameter is a float, so we use it as a value for all cells
+        draw_uniform (value);
+        return;
+      }
+    }
   }
-
   // Call function ${kernel}_draw_${param}, or default function (second
   // parameter) if symbol not found
   hooks_draw_helper (param, skin3d_draw_cells);
