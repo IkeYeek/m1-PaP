@@ -62,9 +62,10 @@ void main ()
     // Lighting
     vec3 edge_1 = origPos[1] - origPos[0];
     vec3 edge_2 = origPos[2] - origPos[0];
-    vec3 faceNormal = normalize (cross (edge_1, edge_2));
+    vec3 faceNormal = normalize (cross (edge_2, edge_1));
     vec3 lightDir = normalize (vec3 (1.0, 1.0, 1.0));
-    float diff = abs (dot (faceNormal, lightDir));
+    //float diff = abs (dot (faceNormal, lightDir));
+    float diff = max (dot (faceNormal, lightDir), 0.0);
     theColor = vec4 (mix (0.4, 1.0, diff) * theColor.xyz, theColor.w);
 
     // Compute barycentric distances
