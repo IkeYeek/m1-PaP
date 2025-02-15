@@ -216,7 +216,7 @@ static void output_perf_numbers (long time_in_us, unsigned nb_iter,
 	  fprintf (f, ";%g", freq[i]);
 	else
 	  fprintf (f, ";");
-    fprintf (f, ";");
+    fprintf (f, "\n");
     }
   fclose (f);
 }
