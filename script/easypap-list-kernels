@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+_script_dir=$(dirname $BASH_SOURCE)
+EASYPAPDIR=${EASYPAPDIR:-$(realpath ${_script_dir}/..)}
+. ${_script_dir}/easypap-utilities.bash
+unset _script_dir
+
+_easypap_kernels
+
+if [ ! -z "$kernels" ]; then
+    echo $kernels
+fi
+
+exit 0

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+_script_dir=$(dirname $BASH_SOURCE)
+EASYPAPDIR=${EASYPAPDIR:-$(realpath ${_script_dir}/..)}
+. ${_script_dir}/easypap-utilities.bash
+unset _script_dir
+
+if [ $# != 1 ]; then
+    echo "Usage: $0 <kernel>"
+    exit 1
+fi
+
+_easypap_gpu_variants "$1"
+
+if [ ! -z "$gvariants" ]; then
+    echo $gvariants
+fi
+
+exit 0

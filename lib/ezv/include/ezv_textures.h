@@ -1,0 +1,11 @@
+#ifndef EZV_TEXTURES_H
+#define EZV_TEXTURES_H
+
+
+#define EVZ_HUD_TEXTURE_NUM   1
+#define EZV_INFO_TEXTURE_NUM  2
+#define EZV_CPU_TEXTURE_NUM   3
+#define EZV_DATA_TEXTURE_NUM  4
+
+
+#endif

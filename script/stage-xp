@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+_script_dir=$(dirname $BASH_SOURCE)
+EASYPAPDIR=${EASYPAPDIR:-$(realpath ${_script_dir}/..)}
+. ${_script_dir}/easypap-common.bash
+unset _script_dir
+
+usage()
+{
+    echo "Usage: $PROGNAME [ option ] dirname"
+    echo "option can be:" 
+    echo "  -h | --help: display help"
+    echo "  -n         : dry run"
+
+    exit $1
+}
+
+shall_we_continue()
+{
+    read -r -p "$1. Are you sure? [Y/n] " response
+    response=${response,,} # tolower
+    if [[ $response =~ ^(y|yes)$ ]] || [[ -z $response ]]; then
+        return
+    fi
+    echo "Operation aborted" >&2
+    exit 1
+}
+
+PROGNAME=$0
+
+dryrun=0
+
+while [[ $# -ge 1 ]]; do
+    case $1 in
+        -h|--help)
+            usage 0
+            ;;
+        -n)
+            dryrun=1
+            ;;
+        *)
+            break
+            ;;
+    esac
+    shift
+done
+
+[[ $# == 1 ]] || usage 1
+
+if [[ $dryrun = 1 ]]; then
+    cmd=echo
+else
+    cmd=''
+fi
+
+DEST="${TRACEDIR}/$1"
+
+if [[ -d $DEST ]]; then
+    shall_we_continue "Directory $DEST will be erased"
+    $cmd rm -f ${DEST}/*.png ${DEST}/*.raw ${DEST}/*.evt
+else
+    $cmd mkdir -p ${DEST}
+fi
+
+files=()
+traces=( ${TRACEDIR}/*.evt )
+if [[ -f ${traces[0]} ]]; then
+    files=( ${traces[@]} )
+fi
+
+png=( ${TRACEDIR}/*.png )
+if [[ -f ${png[0]} ]]; then
+    files=( ${files[@]} ${png[@]} )
+fi
+
+raw=( ${TRACEDIR}/*.raw )
+if [[ -f ${raw[0]} ]]; then
+    files=( ${files[@]} ${raw[@]} )
+fi
+
+if [[ ${#files[@]} > 0 ]]; then
+
+    echo "Staging ${#files[@]} files into ${DEST}"
+
+    $cmd mv ${files[@]} ${DEST}
+
+else
+    echo "No file found in ${TRACEDIR}/"
+    exit 1
+fi
+
+exit 0
