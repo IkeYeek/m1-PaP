@@ -13,7 +13,6 @@ easyspap_options["--variant"] = [
     "omp_cache",
 ]
 easyspap_options["--tile-size"] = [8, 16, 32, 64]
-easyspap_options["--counters"] = [""]
 easyspap_options["-of"] = ["rotation90.csv"]
 
 omp_icv = {}  # OpenMP Internal Control Variables
