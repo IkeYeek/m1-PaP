@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+for dir in lib/ezv lib/ezm lib/ezm/view . ; do
+    make -C $dir "$@" || exit 1
+done
+
+exit 0

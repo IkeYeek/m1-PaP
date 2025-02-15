@@ -1,0 +1,12 @@
+Copyright (c) 2019 University of Bordeaux & Inria
+
+SPDX-License-Identifier: BSD-3-Clause
+--------------------------------------------------
+
+If you are a CS teacher interested in using EasyPAP for your practice sessions,
+please contact us (see AUTHORS file) and we will grant you access to the full 
+featured EasyPAP repository which contains suggested AVX/MIPP, Pthread/OpenMP,
+OpenCL/CUDA and MPI implementations for many kernels. 
+
+You are obviously welcome to extend this database with new kernels or additional 
+features!

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+_script_dir=$(dirname $BASH_SOURCE)
+EASYPAPDIR=${EASYPAPDIR:-$(realpath ${_script_dir}/..)}
+. ${_script_dir}/easypap-common.bash
+unset _script_dir
+
+rm ${TRACEDIR}/*.png ${TRACEDIR}/*.raw ${TRACEDIR}/*.evt 2>/dev/null
+rm ${HASHDIR}/*.sha256 2>/dev/null
+rm ${DUMPDIR}/*.png ${DUMPDIR}/*.raw 2>/dev/null
+rm ${PERFDIR}/*.csv 2>/dev/null
+
+exit 0

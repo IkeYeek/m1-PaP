@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+
+ARCH=`uname -s`
+
+_main_dir=$(dirname $BASH_SOURCE)
+EASYPAPDIR=${EASYPAPDIR:-${_main_dir}}
+. ${_main_dir}/script/easypap-common.bash
+unset _main_dir
+
+TRACE=no
+THUMBS=no
+DEBUG=no
+
+for ((i = 1; i <= $#; i++ )); do
+    case ${!i} in
+        -t|--trace|-ti|--trace-iter)
+            TRACE=yes
+            ;;
+        -tn|--thumbs)
+            THUMBS=yes
+            ;;
+        -lk|--list-kernels)
+            shift
+            exec ${EASYPAPDIR}/script/easypap-list-kernels "$@"
+            ;;
+        -lv|--list-variants)
+            shift
+            exec ${EASYPAPDIR}/script/easypap-list-variants "$@"
+            ;;
+        -mpi|--mpirun)
+            if ((i == $#)); then
+                echo "Error: option --mpi must be followed by a string"
+                ${SIMU} --help
+                exit 1
+            fi
+            j=$((i + 1))
+            MPIRUNARGS="${!j}"
+            ;;
+        --gdb|--lldb)
+            DEBUG=${!i#--}
+            ;;
+        *)
+            ;;
+    esac
+done
+
+# build easypap if needed
+if [[ ! -f ${SIMU} ]]; then
+    make -j
+fi
+
+# if thumbnails generation is requested, clean the old files
+if [[ $THUMBS == "yes" ]]; then
+    rm ${TRACEDIR}/*.png 2>/dev/null
+fi
+
+# if trace generation is requested, we back up the previous trace file
+if [[ $TRACE = "yes" ]]; then
+    if [[ -f ${TRACEDIR}/${CUR_TRACEFILE} ]] ; then
+        mv ${TRACEDIR}/${CUR_TRACEFILE} ${TRACEDIR}/${PREV_TRACEFILE}
+    fi
+fi
+
+# if no thread binding is specified, use OMP_PLACES=cores on Linux systems
+# if [[ -z $OMP_PLACES ]]; then
+#     if [[ $ARCH == "Linux" ]]; then
+#         export OMP_PLACES="cores"
+#     else # MacOS
+#         # OMP_PLACES is not supported by libgomp yet
+#         if ! otool -L ${SIMU} | grep -q libgomp; then
+#             export OMP_PLACES="cores"
+#         fi
+#     fi
+# fi
+
+# Run under debugger 
+if [[ $DEBUG = "lldb" ]]; then
+    exec lldb ${SIMU} -- "$@"
+elif [[ $DEBUG = "gdb" ]]; then
+    exec gdb --args ${SIMU} "$@"
+fi
+
+# check if program should be launched by mpirun
+if [[ -n $MPIRUNARGS ]]; then
+    vars=(OMP_NUM_THREADS OMP_SCHEDULE OMP_PLACES)
+    MPIENV=""
+    if mpirun --version | grep -q 'Open MPI'; then
+        envopt="-x"
+    else
+        envopt="-envlist"
+    fi
+    for v in ${vars[@]}; do
+        if [[ -n ${!v} ]]; then
+            MPIENV="${MPIENV} $envopt $v"
+        fi
+    done
+    mpirun ${MPIENV} ${MPIRUNARGS} ${SIMU} "$@"
+else
+    exec ${SIMU} "$@"
+fi
