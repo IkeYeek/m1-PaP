@@ -39,8 +39,42 @@ def openfile(path="./data/perf/data.csv", sepa=";"):
         sys.exit(1)
 
 
-# Donne tous les champs de df qui ne sont pas list�s
-
+def suffixe_commun(chaines):
+    if not chaines:
+        return ""
+      
+    suffixe_commun = chaines[0]
+    
+    for chaine in chaines[1:]:
+        # Trouver le plus long suffixe commun avec la chaîne actuelle
+        i = 0
+        while i < min(len(suffixe_commun), len(chaine)) and suffixe_commun[-(i+1)] == chaine[-(i+1)]:
+            i += 1
+        suffixe_commun = suffixe_commun[-i:] if i > 0 else ""
+        
+        # Si le suffixe commun devient vide, on peut arrêter
+        if not suffixe_commun:
+            break
+    
+    return suffixe_commun
+def suffixe_commun(chaines):
+    if not chaines:
+        return ""
+      
+    suffixe_commun = chaines[0]
+    
+    for chaine in chaines[1:]:
+        # Trouver le plus long suffixe commun avec la chaîne actuelle
+        i = 0
+        while i < min(len(suffixe_commun), len(chaine)) and suffixe_commun[-(i+1)] == chaine[-(i+1)]:
+            i += 1
+        suffixe_commun = suffixe_commun[-i:] if i > 0 else ""
+        
+        # Si le suffixe commun devient vide, on peut arrêter
+        if not suffixe_commun:
+            break
+    
+    return suffixe_commun
 
 def complementaryCols(listeAttr, df):
     return [i for i in list(df.columns) if i not in listeAttr]
@@ -144,10 +178,13 @@ def computeSpeedUpAttr(df, args):  # Automatise la creation du speedup
         refDF = df[df.variant.isin(args.RefTimeVariants) & df.threads == 1].reset_index(
             drop=True
         )
+        refDF = refDF[refDF.threads == 1].reset_index(drop=True) # bug ???
     elif args.RefTimeVariants == []:
         refDF = df[df.tiling.isin(args.RefTimeTiling) & df.threads == 1].reset_index(
             drop=True
         )
+        refDF = refDF[refDF.threads == 1].reset_index(drop=True) # bug pandas 2.2.2 ???
+        verbose("refi", refDF)
     else:
         refDF = df[
             df.variant.isin(args.RefTimeVariants)
@@ -195,28 +232,32 @@ def heatFacet(*args, **kwargs):
     plt.yticks(rotation=0)
 
 
-axes = {}
+axes = []
+labax = []
 
 
 def twin_lineplot(x, y, **kwargs):
+    global axes, labax
     ax = plt.gca()
     mini = kwargs.pop("mini")
     maxi = kwargs.pop("maxi")
     if "label" in kwargs.keys():
         kwargs.pop("label")
-    # if ax.xaxis not in axes.keys(): # utilité du test ???
-    axes[ax.axis] = ax.twinx()
-    axes[ax.axis].set(ylim=(mini, maxi))
+    twinax =  ax.twinx()
+    axes = axes + [twinax]
+    labax = labax + [y.name] 
 
     if args.y2scale == "log2":
-        axes[ax.axis].set_yscale("log", base=2)
-    elif args.y2scale != "linear":
-        axes[ax.axis].set_yscale(args.y2scale)
+        twinax.set_yscale("log", base=2)
+    elif args.y2scale != None:
+        twinax.set_yscale(args.y2scale)
 
-    sns.lineplot(x=x, y=y, ax=axes[ax.axis], label="_nolegend_", **kwargs)
-    axes[ax.axis].set_ylabel(y.name)
-    axes[ax.axis].grid(visible=None)
-    axes[ax.axis].tick_params(axis="y", labelsize=8)
+    twinax.set(ylim=(mini, maxi))
+    sns.lineplot(x=x, y=y, ax=twinax, label="_nolegend_", **kwargs)
+
+    twinax.set_ylabel(y.name)
+    twinax.grid(visible=None)
+    twinax.tick_params(axis="y", labelsize=8)
 
 
 def add_legend_and_labels(g, args, linestyle_code):
@@ -227,26 +268,21 @@ def add_legend_and_labels(g, args, linestyle_code):
     )  #
     g.add_legend()
     
-    version37 = version.parse("3.7.0")
-    cur_version = version.parse(matplotlib.__version__)
-    if cur_version >= version37:
-        l = g._legend.legend_handles 
-    else:
-        l = g._legend.legendHandles
+   # version37 = version.parse("3.7.0")
+   # cur_version = version.parse(matplotlib.__version__)
+   # if cur_version >= version37:
+   #     l = g._legend.legend_handles 
+   # else:
+   #     l = g._legend.legendHandles
     for ax in g.axes.flat:
         if ax.texts:
             txt = ax.texts[0]
-            ax.text(
-                txt.get_unitless_position()[0] + 0.1,
-                txt.get_unitless_position()[1],
-                txt.get_text(),
-                transform=ax.transAxes,
-                va="center",
-                fontsize="medium",
-                rotation=-90,
-            )
-            ax.texts[0].remove()
-
+            txt.set_rotation(-90)  # Applique la rotation
+            #txt.set_va("center")  # Ajuste l'alignement vertical si nécessaire
+            txt.set_fontsize("medium") 
+             # Récupérer la position actuelle du texte
+            current_pos = txt.get_position()
+            txt.set_position((current_pos[0] + args.adjustRowLabel, current_pos[1]))  # Appliquer la nouvelle position
 
 linestyle_code = [
     (0, ()),  # solid
@@ -304,8 +340,12 @@ def single_entry_2_scales_lineplots(args, df, g):
             marker=Line2D.filled_markers[1],
         )
     delta = (df[args.y2].max().max() - df[args.y2].min().min()) / 20
-    mini = df[args.y2].min().min() - delta
-    maxi = df[args.y2].max().max() + delta
+    if args.y2scale not in ["log","log2"]:
+        mini = df[args.y2].min().min() - delta
+        maxi = df[args.y2].max().max() + delta
+    else :
+        mini = df[args.y2].min().min() * 0.9
+        maxi = df[args.y2].max().max() * 1.1
 
     for i in range(len(args.y2)):
         g.map(
@@ -386,7 +426,6 @@ def multiple_entries_lineplots(args, df, g):
     sns.move_legend(g, "center right")
     return g
 
-
 def easyPlotDataFrame(df, args):
     with sns.plotting_context("paper", font_scale=args.fontScale):
         return pc_easyPlotDataFrame(df, args)
@@ -444,7 +483,7 @@ def pc_easyPlotDataFrame(df, args):
             legend_out=True,
         )
         verbose("FacetGrit kwargs", kwargs)
-
+#        fig = plt.figure(constrained_layout=True) # why ?
         g = sns.FacetGrid(df, hue=legend, **kwargs)
         g = g.map_dataframe(heatFacet, args.x, args.heaty, args.y[0])
 
@@ -479,6 +518,7 @@ def pc_easyPlotDataFrame(df, args):
     else:
         print(title)
 
+
     for ax in g.axes.flat:
         if args.yscale == "log2":
             ax.set_yscale("log", base=2)
@@ -489,13 +529,28 @@ def pc_easyPlotDataFrame(df, args):
         elif args.xscale != None:
             ax.set_xscale(args.xscale)
 
+    # Récupérer les dimensions de la grille
+    n_rows, n_cols = g.axes.shape
+    label_commun = suffixe_commun(labax)
+
+    # Parcourir tous les twin axes de la grille
+    for i, ax in enumerate(axes):
+    # Obtenir les indices (ligne et colonne)
+        row_idx, col_idx = divmod(i, n_cols)
+    
+    # Supprimer les étiquettes internes
+        if col_idx != n_cols - 1:  # Pas la dernière colonne
+            ax.set_yticklabels([])  # Supprime les ticks
+            ax.set_ylabel(None)     # Supprime l'étiquette
+        else :
+             ax.set_ylabel(label_commun,rotation=-90, ha="center", va="center",labelpad=6)
+
     if args.plottype == "heatmap":
         g.tight_layout(rect=[0, 0.03, 1, args.adjustTop])
-    elif nbLegendEntries == 1 and args.y2 != []:
-        g.tight_layout(rect=[0, 0.03, min(0.6 + (args.aspect * 0.07), 0.95), 1])
-    else:
-        g.tight_layout()
-
+    elif args.adjustRight != 1.0 :
+        g.tight_layout(rect=[0, 0, args.adjustRight, args.adjustTop])
+    else :
+         g.tight_layout()
     if args.unknown_args != []:
         print("Warning unused arguments :", args.unknown_args, file=sys.stderr)
     return g
@@ -667,6 +722,8 @@ Catplot's arguments [https://seaborn.pydata.org/generated/seaborn.catplot.html]:
         ("-m", "--machine"),
         ("-sc", "--schedule"),
         ("-lb", "--label"),
+        ("-cmp", "--compiler"),
+        ("-cfg", "--config"),
         ("--arg",),
         ("--places",),
     ]
@@ -691,6 +748,23 @@ Catplot's arguments [https://seaborn.pydata.org/generated/seaborn.catplot.html]:
         type=float,
         help="to adjust the space for the suptitle",
         default=1,
+    )
+
+
+    presentation.add_argument(
+        "--adjustRight",
+        action="store",
+        type=float,
+        help="to adjust the space for the legend (eg. .9)",
+        default=1.0,
+    )
+
+    presentation.add_argument(
+        "--adjustRowLabel",
+        action="store",
+        type=float,
+        help="to adjust the space for facetGrid row label when y2 is used (eg. 0.12)",
+        default=0.0,
     )
 
     presentation.add_argument(
@@ -815,6 +889,8 @@ def getDataFrame(args):
     args.all_y = args.y + args.y2
 
     filters = {
+        "compiler" : args.compiler,
+        "config" : args.config,
         "label": args.label,
         "schedule": args.schedule,
         "places": args.places,
