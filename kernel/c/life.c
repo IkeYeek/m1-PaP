@@ -292,11 +292,29 @@ void life_draw_guns (void)
   at_the_four_corners ("data/rle/gun.rle", 1);
 }
 
+static unsigned long seed = 123456789;
+
+// Deterministic function to generate pseudo-random configurations
+// independently of the call context
+static unsigned long pseudo_random ()
+{
+  unsigned long a = 1664525;
+  unsigned long c = 1013904223;
+  unsigned long m = 4294967296;
+
+  seed = (a * seed + c) % m;
+  seed ^= (seed >> 21);
+  seed ^= (seed << 35);
+  seed ^= (seed >> 4);
+  seed *= 2685821657736338717ULL;
+  return seed;
+}
+
 void life_draw_random (void)
 {
   for (int i = 1; i < DIM - 1; i++)
     for (int j = 1; j < DIM - 1; j++)
-      if (random () & 1)
+      if (pseudo_random () & 1)
         set_cell (i, j);
 }
 
@@ -313,40 +331,43 @@ void life_draw_diehard (void)
                   RLE_ORIENTATION_NORMAL);
 }
 
-static void dump(int size, int x, int y)
+static void dump (int size, int x, int y)
 {
   for (int i = 0; i < size; i++)
     for (int j = 0; j < size; j++)
-      if (get_cell(i, j))
-        set_cell(i + x, j + y);
+      if (get_cell (i, j))
+        set_cell (i + x, j + y);
 }
 
-static void moult_rle(int size, int p, char *filepath)
+static void moult_rle (int size, int p, char *filepath)
 {
-  life_rle_parse(filepath, size / 2, size / 2, RLE_ORIENTATION_NORMAL);
 
-  for (int x = 0; x < DIM - size; x += size)
-    for (int y = 0; y < DIM - size; y += size)
-      if (random() % p == 0 || (x == 0 && y == 0))
-        dump(size, x, y);
+  int positions = (DIM) / (size + 1);
+
+  life_rle_parse (filepath, size / 2, size / 2, RLE_ORIENTATION_NORMAL);
+  for (int k = 0; k < p; k++) {
+    int px = pseudo_random () % positions;
+    int py = pseudo_random () % positions;
+    dump (size, px * size, py * size);
+  }
 }
 
-// ./run -k life -a moultdiehard130 -s 512
-void life_draw_moultdiehard130(void)
+// ./run  -k life -a moultdiehard130  -v omp -ts 32 -m -s 512
+void life_draw_moultdiehard130 (void)
 {
-  moult_rle(16, 2, "data/rle/diehard.rle");
+  moult_rle (16, 128, "data/rle/diehard.rle");
 }
 
-// ./run -k life -a moultdiehard2474 -s 1024
-void life_draw_moultdiehard1398(void)
+// ./run  -k life -a moultdiehard2474  -v omp -ts 32 -m -s 1024
+void life_draw_moultdiehard1398 (void)
 {
-  moult_rle(52, 4, "data/rle/diehard1398.rle");
+  moult_rle (52, 96, "data/rle/diehard1398.rle");
 }
 
-// ./run -k life -a moultdiehard2474 -s 2048
-void life_draw_moultdiehard2474(void)
+// ./run  -k life -a moultdiehard2474  -v omp -ts 32 -m -s 2048
+void life_draw_moultdiehard2474 (void)
 {
-  moult_rle(104, 2, "data/rle/diehard2474.rle");
+  moult_rle (104, 32, "data/rle/diehard2474.rle");
 }
 
 //////////// debug ////////////
@@ -354,6 +375,7 @@ static int debug_hud = -1;
 
 void life_config (char *param)
 {
+  seed += param ? atoi (param) : 0; // config pseudo_random 
   if (picking_enabled) {
     debug_hud = ezv_hud_alloc (ctx[0]);
     ezv_hud_on (ctx[0], debug_hud);
