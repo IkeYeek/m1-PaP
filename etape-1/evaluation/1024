@@ -1,1 +1,1 @@
-OMP_NUM_THREADS=1 OMP_SCHEDULE=static ./run -k life -s 1024  -i 600 -a moultdiehard2474 -v omptask
+OMP_NUM_THREADS=1 OMP_SCHEDULE=static ./run -k life -s 1024  -i 600 -a moultdiehard2474 -v omptask chaine-a-supprimer

@@ -1,1 +1,1 @@
-OMP_NUM_THREADS=1 OMP_SCHEDULE=static ./run -k life -s 2048 -a moultdiehard1398 -i 1000
+OMP_NUM_THREADS=1 OMP_SCHEDULE=static ./run -k life -s 2048 -a moultdiehard1398 -i 1000  chaine-a-supprimer
