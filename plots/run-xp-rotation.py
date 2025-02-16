@@ -8,12 +8,8 @@ import os
 
 easyspap_options = {}
 easyspap_options["--kernel"] = ["rotation90"]
-easyspap_options["--variant"] = [
-    "omp_tiled",
-    "omp_cache",
-]
+easyspap_options["--variant"] = ["omp","omp_tiled"]
 easyspap_options["--tile-size"] = [8, 16, 32, 64]
-easyspap_options["--counters"] = [""]
 easyspap_options["-of"] = ["rotation90.csv"]
 
 omp_icv = {}  # OpenMP Internal Control Variables
@@ -27,4 +23,4 @@ for size in [512, 1024, 2048, 4096]:
 
 
 print("Recommended plot:")
-print("./plots/easyplot.py --plot catplot -y time -if rotation90.csv  -x variant  -- col=size")
+print("./plots/easyplot.py --plot catplot -y time -if rotation90.csv  -x variant --noSort -- col=size")
