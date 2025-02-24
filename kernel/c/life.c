@@ -80,20 +80,17 @@ int life_do_tile_default (int x, int y, int width, int height)
         for (int yloc = i - 1; yloc < i + 2; yloc++)
           for (int xloc = j - 1; xloc < j + 2; xloc++)
             if (xloc != j || yloc != i)
-              n += cur_table(yloc, xloc);
+              n += cur_table (yloc, xloc);
 
-        if (me == 1 && n != 2 && n != 3)
-        {
-          me = 0;
+        if (me == 1 && n != 2 && n != 3) {
+          me     = 0;
           change = 1;
-        }
-        else if (me == 0 && n == 3)
-        {
-          me = 1;
+        } else if (me == 0 && n == 3) {
+          me     = 1;
           change = 1;
         }
 
-        next_table(i, j) = me;
+        next_table (i, j) = me;
       }
 
   return change;
@@ -116,7 +113,6 @@ unsigned life_compute_seq (unsigned nb_iter)
   return 0;
 }
 
-
 ///////////////////////////// Tiled sequential version (tiled)
 //
 unsigned life_compute_tiled (unsigned nb_iter)
@@ -124,7 +120,7 @@ unsigned life_compute_tiled (unsigned nb_iter)
   unsigned res = 0;
 
   for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
+    unsigned change = do_tile(0, 0, DIM, DIM);
 
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
@@ -132,15 +128,48 @@ unsigned life_compute_tiled (unsigned nb_iter)
 
     swap_tables ();
 
-    if (!change) { // we stop if all cells are stable
-      res = it;
-      break;
-    }
   }
 
   return res;
 }
 
+///////////////////////////// ompfor  version
+unsigned life_compute_ompfor (unsigned nb_iter)
+{
+  unsigned res = 0;
+  #pragma omp parallel
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+    #pragma omp for
+    for (int y = 0; y < DIM; y += TILE_H)
+      for (int x = 0; x < DIM; x += TILE_W)
+        change |= life_do_tile_default (x, y, TILE_W, TILE_H);
+    #pragma omp single
+    swap_tables ();
+
+  }
+
+  return res;
+}
+
+
+
+unsigned  life_compute_omptaskloop(unsigned nb_iter)
+{
+  int tuile[TILE_H][TILE_W + 1] __attribute__ ((unused));
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+
+#pragma omp master
+    for (int y = 0; y < DIM; y += TILE_H)
+      for (int x = 0; x < DIM; x += TILE_W)
+        #pragma omp task firstprivate(i,j) depend(out: tuile[i][j]) depend(in: tuile[i-1][j], tuile[i][j-1])
+        change |= life_do_tile_default (x, y, TILE_W, TILE_H);
+
+    swap_tables ();
+  }
+  return 0;
+}
 ///////////////////////////// Initial configs
 
 void life_draw_guns (void);
@@ -292,8 +321,6 @@ void life_draw_guns (void)
   at_the_four_corners ("data/rle/gun.rle", 1);
 }
 
-
-
 static unsigned long seed = 123456789;
 
 // Deterministic function to generate pseudo-random configurations
@@ -324,13 +351,13 @@ void life_draw_random (void)
 void life_draw_clown (void)
 {
   life_rle_parse ("data/rle/clown-seed.rle", DIM / 2, DIM / 2,
-                   RLE_ORIENTATION_NORMAL);
+                  RLE_ORIENTATION_NORMAL);
 }
 
 void life_draw_diehard (void)
 {
   life_rle_parse ("data/rle/diehard.rle", DIM / 2, DIM / 2,
-                   RLE_ORIENTATION_NORMAL);
+                  RLE_ORIENTATION_NORMAL);
 }
 
 static void dump (int size, int x, int y)
@@ -379,7 +406,6 @@ unsigned life_compute_none (unsigned nb_iter)
   return 1;
 }
 
-
 //////////// debug ////////////
 static int debug_hud = -1;
 
@@ -400,5 +426,3 @@ void life_debug (int x, int y)
     ezv_hud_set (ctx[0], debug_hud, cur_table (y, x) ? "Alive" : "Dead");
   }
 }
-
-
