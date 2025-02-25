@@ -69,7 +69,6 @@ static inline void swap_tables (void)
 int life_do_tile_default (int x, int y, int width, int height)
 {
   int change = 0;
-
   for (int i = y; i < y + height; i++)
     for (int j = x; j < x + width; j++)
       if (j > 0 && j < DIM - 1 && i > 0 && i < DIM - 1) {
@@ -95,7 +94,6 @@ int life_do_tile_default (int x, int y, int width, int height)
 
         next_table(i, j) = me;
       }
-
   return change;
 }
 
@@ -130,6 +128,32 @@ unsigned life_compute_tiled (unsigned nb_iter)
       for (int x = 0; x < DIM; x += TILE_W)
         change |= do_tile (x, y, TILE_W, TILE_H);
 
+    swap_tables ();
+
+    if (!change) { // we stop if all cells are stable
+      res = it;
+      break;
+    }
+  }
+
+  return res;
+}
+
+unsigned life_compute_ompfor (unsigned nb_iter)
+{
+  unsigned res = 0;
+
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+
+#pragma omp parallel for schedule(dynamic) collapse(2)
+    for (int y = 0; y < DIM; y += TILE_H)
+      for (int x = 0; x < DIM; x += TILE_W) {
+        #pragma omp atomic
+        change |= life_do_tile_default (x, y, TILE_W, TILE_H);
+      }
+
+#pragma omp single
     swap_tables ();
 
     if (!change) { // we stop if all cells are stable
