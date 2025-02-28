@@ -20,10 +20,10 @@ ENABLE_OPENCL		= 1
 ###### Customization Section #######
 
 # Compilers
-#CC				:= gcc
-#CXX				:= g++
-CC 				:= clang-19
-CXX  			:= clang++-19
+CC				:= gcc
+CXX			:= g++
+#CC 				:= clang-19
+#CXX  			:= clang++-19
 
 IS_CLANG = $(shell $(CC) --version 2>/dev/null | head -n 1 | grep -c "clang")
 
