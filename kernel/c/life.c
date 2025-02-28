@@ -137,29 +137,39 @@ unsigned life_compute_tiled (unsigned nb_iter)
 
 ///////////////////////////// ompfor  version
 //./run -k life -v ompfor -ts 64 -a moultdiehard130 -m
-unsigned life_compute_ompfor (unsigned nb_iter)
+unsigned life_compute_omp_tiled (unsigned nb_iter)
 {
   unsigned res = 0;
+
   #pragma omp parallel
   {
-      for (unsigned it = 1; it <= nb_iter; it++) {
-      #pragma omp for collapse(2)
+      unsigned local_change = 0;
+
+    for (unsigned it = 1; it <= nb_iter; it++) {
+      local_change = do_tile(0, 0, DIM, DIM);
+
+      #pragma omp for collapse(2) schedule(runtime) nowait
       for (int y = 0; y < DIM; y += TILE_H)
         for (int x = 0; x < DIM; x += TILE_W)
-        do_tile(x, y, TILE_W, TILE_H);
-      #pragma omp single
-      swap_tables ();
+          local_change |= do_tile(x, y, TILE_W, TILE_H); // Combine changes from all tiles
 
+      #pragma omp single
+      {
+        if (!local_change) { // If no changes, stop early
+          res = it;
+          it = nb_iter + 1; // Ensure all threads exit loop
+        }
+        swap_tables();
+      }
     }
   }
- 
 
   return res;
 }
 
 
 
-unsigned  life_compute_omptaskloop(unsigned nb_iter)
+unsigned  life_compute_omp_taskloop(unsigned nb_iter)
 {
   int tuile[TILE_H][TILE_W + 1] __attribute__ ((unused));
   for (unsigned it = 1; it <= nb_iter; it++) {
