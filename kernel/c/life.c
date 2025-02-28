@@ -69,7 +69,6 @@ static inline void swap_tables (void)
 int life_do_tile_default (int x, int y, int width, int height)
 {
   int change = 0;
-
   for (int i = y; i < y + height; i++)
     for (int j = x; j < x + width; j++)
       if (j > 0 && j < DIM - 1 && i > 0 && i < DIM - 1) {
@@ -94,6 +93,7 @@ int life_do_tile_default (int x, int y, int width, int height)
       }
 
   return change;
+
 }
 
 ///////////////////////////// Sequential version (seq)
@@ -120,20 +120,23 @@ unsigned life_compute_tiled (unsigned nb_iter)
   unsigned res = 0;
 
   for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = do_tile(0, 0, DIM, DIM);
+    unsigned change = do_tile (0, 0, DIM, DIM);
 
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
         change |= do_tile (x, y, TILE_W, TILE_H);
 
+    if(!change)
+      return it;
+    
     swap_tables ();
-
   }
 
   return res;
 }
 
 ///////////////////////////// ompfor  version
+//./run -k life -v ompfor -ts 64 -a moultdiehard130 -m
 unsigned life_compute_ompfor (unsigned nb_iter)
 {
   unsigned res = 0;
@@ -143,7 +146,7 @@ unsigned life_compute_ompfor (unsigned nb_iter)
     #pragma omp for
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
-        change |= life_do_tile_default (x, y, TILE_W, TILE_H);
+        change |= life_do_tile_default(x, y, TILE_W, TILE_H);
     #pragma omp single
     swap_tables ();
 
@@ -163,13 +166,14 @@ unsigned  life_compute_omptaskloop(unsigned nb_iter)
 #pragma omp master
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
-        #pragma omp task firstprivate(i,j) depend(out: tuile[i][j]) depend(in: tuile[i-1][j], tuile[i][j-1])
+        #pragma omp task firstprivate(x,y) depend(out: tuile[x][y]) depend(in: tuile[x-1][y], tuile[x][y-1])
         change |= life_do_tile_default (x, y, TILE_W, TILE_H);
 
     swap_tables ();
   }
   return 0;
 }
+
 ///////////////////////////// Initial configs
 
 void life_draw_guns (void);
