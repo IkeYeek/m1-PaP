@@ -141,16 +141,18 @@ unsigned life_compute_ompfor (unsigned nb_iter)
 {
   unsigned res = 0;
   #pragma omp parallel
-  for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
-    #pragma omp for
-    for (int y = 0; y < DIM; y += TILE_H)
-      for (int x = 0; x < DIM; x += TILE_W)
-        change |= life_do_tile_default(x, y, TILE_W, TILE_H);
-    #pragma omp single
-    swap_tables ();
+  {
+      for (unsigned it = 1; it <= nb_iter; it++) {
+      #pragma omp for collapse(2)
+      for (int y = 0; y < DIM; y += TILE_H)
+        for (int x = 0; x < DIM; x += TILE_W)
+        do_tile(x, y, TILE_W, TILE_H);
+      #pragma omp single
+      swap_tables ();
 
+    }
   }
+ 
 
   return res;
 }
@@ -161,13 +163,12 @@ unsigned  life_compute_omptaskloop(unsigned nb_iter)
 {
   int tuile[TILE_H][TILE_W + 1] __attribute__ ((unused));
   for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
 
 #pragma omp master
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W)
         #pragma omp task firstprivate(x,y) depend(out: tuile[x][y]) depend(in: tuile[x-1][y], tuile[x][y-1])
-        change |= life_do_tile_default (x, y, TILE_W, TILE_H);
+        do_tile (x, y, TILE_W, TILE_H);
 
     swap_tables ();
   }

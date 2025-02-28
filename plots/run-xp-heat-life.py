@@ -8,16 +8,16 @@ from expTools import *
 easypapOptions = {
     "-k": ["life"],
     "-i": [5],
-    "-v": ["ompfor", "omp_tiled", "omp_task", "omp_workshare"],
-    "-s": [256, 512, 1024, 2048],
-    "-th": [2**i for i in range(0, 10)] + [64, 128, 192, 256],
-    "-tw": [2**i for i in range(0, 10)] + [64, 128, 192, 256],
+    "-v": ["ompfor", "omp_tiled"],
+    "-s": [256, 512, 1024, 2048, 8192],
+    "-th": [2**i for i in range(0, 10)],
+    "-tw": [2**i for i in range(0, 10)],
     "-of": ["heat-life.csv"],
 }
 
 # OMP Internal Control Variables
 ompICV = {
-    "OMP_SCHEDULE": ["dynamic", "static,1", "static", "guided", "auto"],
+    "OMP_SCHEDULE": ["dynamic", "static"],
     "OMP_NUM_THREADS": [os.cpu_count() // 2, os.cpu_count()],
     "OMP_PLACES": ["cores"],
     "OMP_PROC_BIND": ["close", "spread", "master"],
