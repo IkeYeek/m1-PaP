@@ -148,15 +148,13 @@ unsigned life_compute_ompfor (unsigned nb_iter)
   for (unsigned it = 1; it <= nb_iter; it++) {
     unsigned change = 0;
 
-#pragma omp parallel for collapse(2)
+#pragma omp parallel for schedule(runtime) collapse(2) reduction(|:change)
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W) {
-        #pragma omp atomic
         // change |= life_do_tile_default (x, y, TILE_W, TILE_H);
         change |= do_tile(x, y, TILE_W, TILE_H);
       }
 
-#pragma omp single
     swap_tables ();
 
     if (!change) { // we stop if all cells are stable
@@ -175,23 +173,27 @@ unsigned life_compute_omptaskloop (unsigned nb_iter)
 {
   unsigned res = 0;
 
-  #pragma omp parallel master
-  #pragma omp nowait
-  for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
+  #pragma omp parallel
+  #pragma omp single
+  {
 
-    for (int y = 0; y < DIM; y += TILE_H)
-      for (int x = 0; x < DIM; x += TILE_W) {
-        #pragma omp task shared(change)
-        change |= do_tile (x, y, TILE_W, TILE_H);
+    for (unsigned it = 1; it <= nb_iter; it++) {
+      unsigned change = 0;
+
+      #pragma omp taskgroup
+      {
+        #pragma omp taskloop collapse(2) reduction(|: change)
+        for (int y = 0; y < DIM; y += TILE_H)
+          for (int x = 0; x < DIM; x += TILE_W) {
+            change |= do_tile (x, y, TILE_W, TILE_H);
+          }
       }
+      swap_tables ();
 
-    swap_tables ();
-
-    #pragma omp taskwait
-    if (!change) { // we stop if all cells are stable
-      res = it;
-      break;
+      if (!change) { // we stop if all cells are stable
+        res = it;
+        break;
+      }
     }
   }
 
