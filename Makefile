@@ -26,7 +26,7 @@ CXX				:= g++
 IS_CLANG = $(shell $(CC) --version 2>/dev/null | head -n 1 | grep -c "clang")
 
 # Optimization level
-CFLAGS 			:= -O3 -march=native
+CFLAGS 			:= -O3 -march=native -funroll-loops
 CUDA_CFLAGS		:= -O3
 
 # Warnings

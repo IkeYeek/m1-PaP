@@ -12,7 +12,8 @@
 
 typedef unsigned cell_t;
 
-static cell_t *_table = NULL, *_alternate_table = NULL;
+static cell_t * restrict _table = NULL;
+static cell_t * restrict _alternate_table = NULL;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
