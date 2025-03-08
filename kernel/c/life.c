@@ -12,7 +12,8 @@
 
 typedef unsigned cell_t;
 
-static cell_t *_table = NULL, *_alternate_table = NULL;
+static cell_t * restrict _table = NULL;
+static cell_t * restrict _alternate_table = NULL;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
@@ -91,7 +92,6 @@ int life_do_tile_default (int x, int y, int width, int height)
 
         next_table (i, j) = me;
       }
-
   return change;
 
 }
@@ -167,22 +167,64 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
-
-
-unsigned  life_compute_omp_taskloop(unsigned nb_iter)
+///////////////////////////// Tiled ompfor version
+//
+unsigned life_compute_ompfor (unsigned nb_iter)
 {
-  int tuile[TILE_H][TILE_W + 1] __attribute__ ((unused));
-  for (unsigned it = 1; it <= nb_iter; it++) {
+  unsigned res = 0;
 
-#pragma omp master
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+
+#pragma omp parallel for schedule(runtime) collapse(2) reduction(|:change)
     for (int y = 0; y < DIM; y += TILE_H)
-      for (int x = 0; x < DIM; x += TILE_W)
-        #pragma omp task firstprivate(x,y) depend(out: tuile[x][y]) depend(in: tuile[x-1][y], tuile[x][y-1])
-        do_tile (x, y, TILE_W, TILE_H);
+      for (int x = 0; x < DIM; x += TILE_W) {
+        change |= do_tile(x, y, TILE_W, TILE_H);
+      }
 
     swap_tables ();
+
+    if (!change) { // we stop if all cells are stable
+      res = it;
+      break;
+    }
   }
-  return 0;
+
+  return res;
+}
+
+///////////////////////////// Tiled taskloop version
+//
+
+unsigned life_compute_omptaskloop (unsigned nb_iter)
+{
+  unsigned res = 0;
+
+  #pragma omp parallel
+  #pragma omp single
+  {
+
+    for (unsigned it = 1; it <= nb_iter; it++) {
+      unsigned change = 0;
+
+      #pragma omp taskgroup
+      {
+        #pragma omp taskloop collapse(2) reduction(|: change)
+        for (int y = 0; y < DIM; y += TILE_H)
+          for (int x = 0; x < DIM; x += TILE_W) {
+            change |= do_tile (x, y, TILE_W, TILE_H);
+          }
+      }
+      swap_tables ();
+
+      if (!change) { // we stop if all cells are stable
+        res = it;
+        break;
+      }
+    }
+  }
+
+  return res;
 }
 
 ///////////////////////////// Initial configs
