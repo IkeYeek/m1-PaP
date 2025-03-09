@@ -1,1 +1,1 @@
-OMP_NUM_THREADS=1 OMP_SCHEDULE=static ./run -k life -s 8192 -i 10 -a random  chaine-a-supprimer
+OMP_NUM_THREADS=1 OMP_SCHEDULE=static ./run -k life -s 8192 -i 10 -a random  
