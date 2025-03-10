@@ -12,8 +12,8 @@
 
 typedef unsigned cell_t;
 
-static cell_t * restrict _table = NULL;
-static cell_t * restrict _alternate_table = NULL;
+static cell_t *restrict _table           = NULL;
+static cell_t *restrict _alternate_table = NULL;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
@@ -93,7 +93,40 @@ int life_do_tile_default (int x, int y, int width, int height)
         next_table (i, j) = me;
       }
   return change;
+}
 
+///////////////////////////// Do tile optimized
+
+int life_do_tile_opt (int x, int y, int width, int height)
+{
+  int change  = 0;
+  int x_start = (x == 0) ? 1 : x;
+  int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start = (y == 0) ? 1 : y;
+  int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
+
+  for (int i = y_start; i < y_end; i++) {
+    for (int j = x_start; j < x_end; j++) {
+      unsigned me = cur_table (i, j);
+
+      unsigned n = cur_table (i - 1, j - 1) + cur_table (i - 1, j) +
+                   cur_table (i - 1, j + 1) + cur_table (i, j - 1) +
+                   cur_table (i, j + 1) + cur_table (i + 1, j - 1) +
+                   cur_table (i + 1, j) + cur_table (i + 1, j + 1);
+
+      unsigned new_me;
+      if (me == 1)
+        new_me = (n == 2 || n == 3) ? 1 : 0;
+      else
+        new_me = (n == 3) ? 1 : 0;
+
+      change |= (me != new_me);
+
+      next_table (i, j) = new_me;
+    }
+  }
+
+  return change;
 }
 
 ///////////////////////////// Sequential version (seq)
@@ -126,9 +159,9 @@ unsigned life_compute_tiled (unsigned nb_iter)
       for (int x = 0; x < DIM; x += TILE_W)
         change |= do_tile (x, y, TILE_W, TILE_H);
 
-    if(!change)
+    if (!change)
       return it;
-    
+
     swap_tables ();
   }
 
@@ -141,25 +174,26 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
 {
   unsigned res = 0;
 
-  #pragma omp parallel
+#pragma omp parallel
   {
-      unsigned local_change = 0;
+    unsigned local_change = 0;
 
     for (unsigned it = 1; it <= nb_iter; it++) {
-      local_change = do_tile(0, 0, DIM, DIM);
+      local_change = do_tile (0, 0, DIM, DIM);
 
-      #pragma omp for collapse(2) schedule(runtime) nowait
+#pragma omp for collapse(2) schedule(runtime) nowait
       for (int y = 0; y < DIM; y += TILE_H)
         for (int x = 0; x < DIM; x += TILE_W)
-          local_change |= do_tile(x, y, TILE_W, TILE_H); // Combine changes from all tiles
+          local_change |=
+              do_tile (x, y, TILE_W, TILE_H); // Combine changes from all tiles
 
-      #pragma omp single
+#pragma omp single
       {
         if (!local_change) { // If no changes, stop early
           res = it;
-          it = nb_iter + 1; // Ensure all threads exit loop
+          it  = nb_iter + 1; // Ensure all threads exit loop
         }
-        swap_tables();
+        swap_tables ();
       }
     }
   }
@@ -176,10 +210,10 @@ unsigned life_compute_ompfor (unsigned nb_iter)
   for (unsigned it = 1; it <= nb_iter; it++) {
     unsigned change = 0;
 
-#pragma omp parallel for schedule(runtime) collapse(2) reduction(|:change)
+#pragma omp parallel for schedule(runtime) collapse(2) reduction(| : change)
     for (int y = 0; y < DIM; y += TILE_H)
       for (int x = 0; x < DIM; x += TILE_W) {
-        change |= do_tile(x, y, TILE_W, TILE_H);
+        change |= do_tile (x, y, TILE_W, TILE_H);
       }
 
     swap_tables ();
@@ -200,16 +234,16 @@ unsigned life_compute_omptaskloop (unsigned nb_iter)
 {
   unsigned res = 0;
 
-  #pragma omp parallel
-  #pragma omp single
+#pragma omp parallel
+#pragma omp single
   {
 
     for (unsigned it = 1; it <= nb_iter; it++) {
       unsigned change = 0;
 
-      #pragma omp taskgroup
+#pragma omp taskgroup
       {
-        #pragma omp taskloop collapse(2) reduction(|: change)
+#pragma omp taskloop collapse(2) reduction(| : change)
         for (int y = 0; y < DIM; y += TILE_H)
           for (int x = 0; x < DIM; x += TILE_W) {
             change |= do_tile (x, y, TILE_W, TILE_H);
