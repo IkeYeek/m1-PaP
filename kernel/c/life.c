@@ -317,6 +317,17 @@ unsigned life_compute_omptaskloop (unsigned nb_iter)
 }
 
 
+///////////////////////////// First touch allocations
+void life_ft(void)
+{
+  #pragma omp parallel for schedule(runtime) collapse(2)
+  for (int y = 0; y < DIM; y += TILE_H)
+    for (int x = 0; x < DIM; x += TILE_W) {
+      next_table (x, y) = cur_table (x, y) = 0;
+    }
+  }      
+
+
 ///////////////////////////// Initial configs
 
 void life_draw_guns (void);
