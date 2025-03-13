@@ -7,40 +7,32 @@ from expTools import *
 easypapOptions = {
     "-k": ["life"],
     "-i": [5],
-    "-v": ["omp_tiled"],
-    "-s": [512],
-    "-ts": [8, 16, 32],
-    "--label": ["square"],
-    "-of": ["life.csv"],
+    "-v": ["omptaskloop"],
+    "-s": [4096],
+    "-tw": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
+    "-th": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
+    "-of": ["life-heat.csv"],
+    "-wt": ["opt"]
 }
 
 # OMP Internal Control Variable
 ompICV = {
-    "OMP_SCHEDULE": ["static", "static,1", "dynamic"],
-    "OMP_NUM_THREADS": [1] + list(range(4, os.cpu_count() + 1, 4)),
+    "OMP_SCHEDULE": ["dynamic",],
+    "OMP_PLACES": ["threads",],
+    "OMP_NUM_THREADS": [20]
 }
 
 nbruns = 1
 # Lancement des experiences
 execute("./run ", ompICV, easypapOptions, nbruns, verbose=False, easyPath=".")
 
-del easypapOptions["-ts"]
-easypapOptions["--label"] = ["line"]
-easypapOptions["-th"] = [1]
-easypapOptions["-tw"] = [64, 256, 512]
-
-execute("./run ", ompICV, easypapOptions, nbruns, verbose=True, easyPath=".")
-
-# Lancement de la version seq avec le nombre de thread impose a 1
-
-easypapOptions = {
-    "-k": ["life"],
-    "-i": [5],
-    "-v": ["seq"],
-    "-s": [512],
-    "-of": ["life.csv"],
+ompICV = {
+    "OMP_NUM_THREADS": [1]
 }
-ompICV = {"OMP_NUM_THREADS": [1]}
+
+del easypapOptions["-tw"]
+del easypapOptions["-th"]
+easypapOptions["-v"] = ["seq"]
 execute("./run ", ompICV, easypapOptions, nbruns, verbose=False, easyPath=".")
 
 

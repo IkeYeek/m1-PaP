@@ -1,1 +1,1 @@
-OMP_NUM_THREADS=24 OMP_SCHEDULE=static,8 OMP_PLACES=cores ./run -k life -v ompfor -ts 32 -s 512 -a moultdiehard2474 
+OMP_NUM_THREADS=26 OMP_SCHEDULE=static,8 OMP_PLACES=cores ./run -k life -v ompfor -ts 32 -s 512 -a moultdiehard2474 
