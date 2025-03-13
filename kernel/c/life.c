@@ -10,20 +10,30 @@
 
 #define LIFE_COLOR (ezv_rgb (255, 255, 0))
 
-typedef unsigned cell_t;
+typedef char cell_t;
 
 static cell_t *restrict _table           = NULL;
 static cell_t *restrict _alternate_table = NULL;
+
+static cell_t *restrict _line_changes = NULL;
+static cell_t *restrict _alternate_line_changes = NULL;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
   return i + y * DIM + x;
 }
 
+static inline cell_t *line_cell (cell_t *restrict i, int y)
+{
+  return i + y;
+}
+
 // This kernel does not directly work on cur_img/next_img.
 // Instead, we use 2D arrays of boolean values, not colors
 #define cur_table(y, x) (*table_cell (_table, (y), (x)))
 #define next_table(y, x) (*table_cell (_alternate_table, (y), (x)))
+#define curr_line_changes(y) (*line_cell (_line_changes, (y)))
+#define next_line_changes(y) (*line_cell (_alternate_line_changes, (y)))
 
 void life_init (void)
 {
@@ -39,15 +49,26 @@ void life_init (void)
 
     _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+    const unsigned size_line_changes = (DIM / TILE_H + 1) * sizeof (cell_t);
+    _line_changes = mmap (NULL, size_line_changes, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _alternate_line_changes = mmap (NULL, size_line_changes, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    memset(_line_changes, 1, size_line_changes);
+    memset(_alternate_line_changes, 1, size_line_changes);
+
   }
 }
 
 void life_finalize (void)
 {
   const unsigned size = DIM * DIM * sizeof (cell_t);
-
+  const unsigned size_line_changes = (DIM / TILE_H + 1) * sizeof (cell_t);
   munmap (_table, size);
   munmap (_alternate_table, size);
+  munmap (_line_changes, size_line_changes);
+  munmap (_alternate_line_changes, size_line_changes);
 }
 
 // This function is called whenever the graphical window needs to be refreshed
@@ -61,9 +82,13 @@ void life_refresh_img (void)
 static inline void swap_tables (void)
 {
   cell_t *tmp = _table;
+  cell_t *tmp2 = _line_changes;
 
   _table           = _alternate_table;
   _alternate_table = tmp;
+
+  _line_changes = _alternate_line_changes;
+  _alternate_line_changes = tmp2;
 }
 
 ///////////////////////////// Default tiling
@@ -97,30 +122,27 @@ int life_do_tile_default (int x, int y, int width, int height)
 
 ///////////////////////////// Do tile optimized
 
-int life_do_tile_opt (int x, int y, int width, int height)
+int life_do_tile_opt (const int x, const int y, const int width, const int height)
 {
-  int change  = 0;
+  register char change  = 0;
+  // precomputing start and end indexes of tile's both width and height
   int x_start = (x == 0) ? 1 : x;
   int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
   int y_start = (y == 0) ? 1 : y;
   int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
 
   for (int i = y_start; i < y_end; i++) {
+    #pragma omp simd
     for (int j = x_start; j < x_end; j++) {
-      unsigned me = cur_table (i, j);
+      const char me = cur_table (i, j);
 
-      unsigned n = cur_table (i - 1, j - 1) + cur_table (i - 1, j) +
-                   cur_table (i - 1, j + 1) + cur_table (i, j - 1) +
-                   cur_table (i, j + 1) + cur_table (i + 1, j - 1) +
-                   cur_table (i + 1, j) + cur_table (i + 1, j + 1);
-
-      unsigned new_me;
-      if (me == 1)
-        new_me = (n == 2 || n == 3) ? 1 : 0;
-      else
-        new_me = (n == 3) ? 1 : 0;
-
-      change |= (me != new_me);
+      // savagely unrolled loop
+      const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1) 
+        + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1) 
+        + cur_table(i+1, j) + cur_table(i+1, j+1);
+      // while we are at it, let's apply some simple branchless programming logic
+      const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
+      change |= (me ^ new_me);
 
       next_table (i, j) = new_me;
     }
@@ -201,6 +223,39 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
+unsigned life_compute_lazy_not_that_great(unsigned nb_iter)
+{
+  unsigned res = 0;
+
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    unsigned change = do_tile(0, 0, DIM, TILE_H);
+    next_line_changes(0) = change;
+    if (change) next_line_changes(1) |= 1;
+
+    for (int y = TILE_H; y < DIM-TILE_H; y += TILE_H) {
+      if (it == 1 || curr_line_changes(y)) {
+        change |= do_tile (0, y, DIM, TILE_H);
+        next_line_changes(y) = change;
+        if (change) {
+          next_line_changes(y-1) |= 1;
+          next_line_changes(y+1) |= 1;
+        }
+      }
+    }
+
+    change |= do_tile(0, DIM-TILE_H, DIM, TILE_H);
+    next_line_changes(DIM / TILE_H - 1) = change;
+    if (change) next_line_changes(DIM / TILE_H - 1) = 1;
+
+    if (!change)
+      return it;
+
+    swap_tables ();
+  }
+
+  return res;
+}
+
 ///////////////////////////// Tiled ompfor version
 //
 unsigned life_compute_ompfor (unsigned nb_iter)
@@ -243,7 +298,7 @@ unsigned life_compute_omptaskloop (unsigned nb_iter)
 
 #pragma omp taskgroup
       {
-#pragma omp taskloop collapse(2) reduction(| : change)
+#pragma omp taskloop collapse(2) reduction(| : change) grainsize(4)
         for (int y = 0; y < DIM; y += TILE_H)
           for (int x = 0; x < DIM; x += TILE_W) {
             change |= do_tile (x, y, TILE_W, TILE_H);
@@ -260,6 +315,7 @@ unsigned life_compute_omptaskloop (unsigned nb_iter)
 
   return res;
 }
+
 
 ///////////////////////////// Initial configs
 
