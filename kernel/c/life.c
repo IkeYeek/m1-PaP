@@ -15,34 +15,34 @@ typedef char cell_t;
 static cell_t *restrict _table           = NULL;
 static cell_t *restrict _alternate_table = NULL;
 
-static cell_t *restrict _line_changes = NULL;
-static cell_t *restrict _alternate_line_changes = NULL;
+static cell_t *restrict _dirty_tiles     = NULL;
+static cell_t *restrict _dirty_tiles_alt = NULL;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
+  PRINT_DEBUG('u', "queried %dx%d from %p\n", x, y, i);
   return i + y * DIM + x;
 }
 
-static inline cell_t *line_cell (cell_t *restrict i, int y)
-{
-  return i + y;
-}
 
 // This kernel does not directly work on cur_img/next_img.
 // Instead, we use 2D arrays of boolean values, not colors
 #define cur_table(y, x) (*table_cell (_table, (y), (x)))
 #define next_table(y, x) (*table_cell (_alternate_table, (y), (x)))
-#define curr_line_changes(y) (*line_cell (_line_changes, (y)))
-#define next_line_changes(y) (*line_cell (_alternate_line_changes, (y)))
+
+// using a bordered array in order to be able to do out of bound writes seemlessly.
+// must be faster than doing boundary checks
+#define cur_dirty(y, x) (*table_cell (_dirty_tiles, (y+1), (x+1)))
+#define next_dirty(y, x) (*table_cell (_dirty_tiles_alt, (y+1), (x+1)))
 
 void life_init (void)
 {
   // life_init may be (indirectly) called several times so we check if data were
   // already allocated
   if (_table == NULL) {
-    const unsigned size = DIM * DIM * sizeof (cell_t);
+    unsigned size = DIM * DIM * sizeof (cell_t);
 
-    PRINT_DEBUG ('u', "Memory footprint = 2 x %d bytes\n", size);
+    PRINT_DEBUG ('u', "Memory footprint = 2 x %d ", size);
 
     _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -50,25 +50,28 @@ void life_init (void)
     _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    const unsigned size_line_changes = (DIM / TILE_H + 1) * sizeof (cell_t);
-    _line_changes = mmap (NULL, size_line_changes, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    _alternate_line_changes = mmap (NULL, size_line_changes, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    memset(_line_changes, 1, size_line_changes);
-    memset(_alternate_line_changes, 1, size_line_changes);
+    size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
 
+    PRINT_DEBUG('u', " + 2x %d bytes\n", size);
+    PRINT_DEBUG('u', "allocating dirty array of size %ux%u. working with tiles of %ux%u in DIM %u\n", DIM/TILE_W+2, DIM/TILE_H+2, TILE_W, TILE_H, DIM);
+
+    _dirty_tiles = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _dirty_tiles_alt = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   }
 }
 
 void life_finalize (void)
 {
-  const unsigned size = DIM * DIM * sizeof (cell_t);
-  const unsigned size_line_changes = (DIM / TILE_H + 1) * sizeof (cell_t);
+  unsigned size = DIM * DIM * sizeof (cell_t);
   munmap (_table, size);
   munmap (_alternate_table, size);
-  munmap (_line_changes, size_line_changes);
-  munmap (_alternate_line_changes, size_line_changes);
+
+  size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
+
+  munmap(_dirty_tiles, size);
+  munmap(_dirty_tiles_alt, size);
 }
 
 // This function is called whenever the graphical window needs to be refreshed
@@ -82,13 +85,21 @@ void life_refresh_img (void)
 static inline void swap_tables (void)
 {
   cell_t *tmp = _table;
-  cell_t *tmp2 = _line_changes;
+
+  _table           = _alternate_table;
+  _alternate_table = tmp;
+}
+
+static inline void swap_tables_w_dirty (void)
+{
+  cell_t *tmp = _table;
+  cell_t *tmp2 = _dirty_tiles;
 
   _table           = _alternate_table;
   _alternate_table = tmp;
 
-  _line_changes = _alternate_line_changes;
-  _alternate_line_changes = tmp2;
+  _dirty_tiles = _dirty_tiles_alt;
+  _dirty_tiles_alt = tmp2;
 }
 
 ///////////////////////////// Default tiling
@@ -223,37 +234,35 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
-unsigned life_compute_lazy_not_that_great(unsigned nb_iter)
-{
+unsigned life_compute_lazy(unsigned nb_iter) {
   unsigned res = 0;
 
-  for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = do_tile(0, 0, DIM, TILE_H);
-    next_line_changes(0) = change;
-    if (change) next_line_changes(1) |= 1;
-
-    for (int y = TILE_H; y < DIM-TILE_H; y += TILE_H) {
-      if (it == 1 || curr_line_changes(y)) {
-        change |= do_tile (0, y, DIM, TILE_H);
-        next_line_changes(y) = change;
-        if (change) {
-          next_line_changes(y-1) |= 1;
-          next_line_changes(y+1) |= 1;
+  for (int it = 1; it < nb_iter; it++) {
+    unsigned change = 0;
+    for (int y = 0; y < DIM; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        if (it == 1 || cur_dirty(y, x)) {
+          change |= do_tile(x, y, TILE_W, TILE_H);
+          next_dirty(y, x) = change;
+          if (change) {
+            next_dirty(y-1, x-1) = 1;
+            next_dirty(y-1, x)   = 1;
+            next_dirty(y-1, x+1) = 1;
+            next_dirty(y, x-1)   = 1;
+            next_dirty(y, x+1)   = 1;
+            next_dirty(y+1, x-1) = 1;
+            next_dirty(y+1, x)   = 1;
+            next_dirty(y+1, x+1) = 1;
+          }
         }
       }
     }
-
-    change |= do_tile(0, DIM-TILE_H, DIM, TILE_H);
-    next_line_changes(DIM / TILE_H - 1) = change;
-    if (change) next_line_changes(DIM / TILE_H - 1) = 1;
-
-    if (!change)
-      return it;
-
-    swap_tables ();
+    if(!change) return it;
+    swap_tables_w_dirty ();
   }
 
   return res;
+
 }
 
 ///////////////////////////// Tiled ompfor version
