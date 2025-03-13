@@ -20,8 +20,12 @@ static cell_t *restrict _dirty_tiles_alt = NULL;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
-  PRINT_DEBUG('u', "queried %dx%d from %p\n", x, y, i);
   return i + y * DIM + x;
+}
+
+static inline cell_t *dirty_cell (cell_t *restrict i, int y, int x)
+{
+  return i + (y+1) * (DIM/TILE_H) + (x+1);
 }
 
 
@@ -32,8 +36,8 @@ static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 
 // using a bordered array in order to be able to do out of bound writes seemlessly.
 // must be faster than doing boundary checks
-#define cur_dirty(y, x) (*table_cell (_dirty_tiles, (y+1), (x+1)))
-#define next_dirty(y, x) (*table_cell (_dirty_tiles_alt, (y+1), (x+1)))
+#define cur_dirty(y, x) (*dirty_cell (_dirty_tiles, (y), (x)))
+#define next_dirty(y, x) (*dirty_cell (_dirty_tiles_alt, (y), (x)))
 
 void life_init (void)
 {
@@ -148,8 +152,8 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
       const char me = cur_table (i, j);
 
       // savagely unrolled loop
-      const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1) 
-        + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1) 
+      const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
+        + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
         + cur_table(i+1, j) + cur_table(i+1, j+1);
       // while we are at it, let's apply some simple branchless programming logic
       const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
@@ -240,19 +244,21 @@ unsigned life_compute_lazy(unsigned nb_iter) {
   for (int it = 1; it < nb_iter; it++) {
     unsigned change = 0;
     for (int y = 0; y < DIM; y += TILE_H) {
+      unsigned tile_y = y / TILE_H;
       for (int x = 0; x < DIM; x += TILE_W) {
-        if (it == 1 || cur_dirty(y, x)) {
+        unsigned tile_x = x / TILE_W;
+        if (it == 1 || cur_dirty(tile_y, tile_x)) {
           change |= do_tile(x, y, TILE_W, TILE_H);
-          next_dirty(y, x) = change;
+          next_dirty(tile_y, tile_x) = change;
           if (change) {
-            next_dirty(y-1, x-1) = 1;
-            next_dirty(y-1, x)   = 1;
-            next_dirty(y-1, x+1) = 1;
-            next_dirty(y, x-1)   = 1;
-            next_dirty(y, x+1)   = 1;
-            next_dirty(y+1, x-1) = 1;
-            next_dirty(y+1, x)   = 1;
-            next_dirty(y+1, x+1) = 1;
+            next_dirty(tile_y-1, tile_x-1) = 1;
+            next_dirty(tile_y-1, tile_x)   = 1;
+            next_dirty(tile_y-1, tile_x+1) = 1;
+            next_dirty(tile_y, tile_x-1)   = 1;
+            next_dirty(tile_y, tile_x+1)   = 1;
+            next_dirty(tile_y+1, tile_x-1) = 1;
+            next_dirty(tile_y+1, tile_x)   = 1;
+            next_dirty(tile_y+1, tile_x+1) = 1;
           }
         }
       }
