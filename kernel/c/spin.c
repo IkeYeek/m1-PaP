@@ -136,6 +136,9 @@ static void rotate (void)
 }
 
 
+///////////////////////////////////////////////////////////////////////////
+// Copy and paste at the end of spin.c
+
 // Intrinsics functions
 #ifdef ENABLE_VECTO
 #include <immintrin.h>
@@ -282,4 +285,4 @@ int spin_do_tile_avx (int x, int y, int width, int height)
 
 #endif
 #endif
-
+///////////////////////////////////////////////////////////////////////////
