@@ -25,7 +25,7 @@ static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 
 static inline cell_t *dirty_cell (cell_t *restrict i, int y, int x)
 {
-  return i + (y+1) * (DIM/TILE_H) + (x+1);
+  return i + (y+1) * (DIM/TILE_W) + (x+1);
 }
 
 
@@ -57,7 +57,6 @@ void life_init (void)
     size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
 
     PRINT_DEBUG('u', " + 2x %d bytes\n", size);
-    PRINT_DEBUG('u', "allocating dirty array of size %ux%u. working with tiles of %ux%u in DIM %u\n", DIM/TILE_W+2, DIM/TILE_H+2, TILE_W, TILE_H, DIM);
 
     _dirty_tiles = mmap (NULL, size, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -136,7 +135,6 @@ int life_do_tile_default (int x, int y, int width, int height)
 }
 
 ///////////////////////////// Do tile optimized
-
 int life_do_tile_opt (const int x, const int y, const int width, const int height)
 {
   register char change  = 0;
@@ -147,14 +145,22 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
   int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
 
   for (int i = y_start; i < y_end; i++) {
-    #pragma omp simd
     for (int j = x_start; j < x_end; j++) {
       const char me = cur_table (i, j);
 
-      // savagely unrolled loop
-      const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
-        + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
-        + cur_table(i+1, j) + cur_table(i+1, j+1);
+      // uint32_t top = *(uint32_t*)(cur_table(i-1, j-1)) & 0x00FFFFFF;
+      // uint32_t mid = *(uint32_t*)(cur_table(i,   j-1)) & 0x00FFFFFF;
+      // uint32_t bot = *(uint32_t*)(cur_table(i+1, j-1)) & 0x00FFFFFF;
+
+      // uint32_t neighborhood = (top << 16) | (mid << 8) | bot;
+
+      // //neighborhood &= ~(1 << 8);
+
+      // int n = __builtin_popcount(neighborhood); yet for now its way slower
+
+       const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
+               + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
+         + cur_table(i+1, j) + cur_table(i+1, j+1);
       // while we are at it, let's apply some simple branchless programming logic
       const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
       change |= (me ^ new_me);
@@ -238,10 +244,44 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
+unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
+  unsigned res = 0;
+
+  for (int it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+#pragma omp parallel for schedule(runtime) collapse(2) reduction(| : change)
+    for (int y = 0; y < DIM; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        unsigned tile_y = y / TILE_H;
+        unsigned tile_x = x / TILE_W;
+        if (it == 1 || cur_dirty(tile_y, tile_x)) {
+          change |= do_tile(x, y, TILE_W, TILE_H);
+          next_dirty(tile_y, tile_x) = change;
+          if (change) {
+            next_dirty(tile_y-1, tile_x-1) = 1;
+            next_dirty(tile_y-1, tile_x)   = 1;
+            next_dirty(tile_y-1, tile_x+1) = 1;
+            next_dirty(tile_y, tile_x-1)   = 1;
+            next_dirty(tile_y, tile_x+1)   = 1;
+            next_dirty(tile_y+1, tile_x-1) = 1;
+            next_dirty(tile_y+1, tile_x)   = 1;
+            next_dirty(tile_y+1, tile_x+1) = 1;
+          }
+        }
+      }
+    }
+    if(!change) return it;
+    swap_tables_w_dirty ();
+  }
+
+  return res;
+
+}
+
 unsigned life_compute_lazy(unsigned nb_iter) {
   unsigned res = 0;
 
-  for (int it = 1; it < nb_iter; it++) {
+  for (int it = 1; it <= nb_iter; it++) {
     unsigned change = 0;
     for (int y = 0; y < DIM; y += TILE_H) {
       unsigned tile_y = y / TILE_H;
