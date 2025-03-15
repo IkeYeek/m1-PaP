@@ -37,4 +37,4 @@ execute("./run ", ompICV, easypapOptions, nbruns, verbose=False, easyPath=".")
 
 
 print("Recommended plot:")
-print(" plots/easyplot.py -if mandel.csv -v omp_tiled -- col=schedule row=label")
+print(" plots/easyplot.py -if life-heat.csv -v omp_tiled -- col=schedule row=label")
