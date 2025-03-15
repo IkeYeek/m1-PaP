@@ -1,4 +1,3 @@
-
 #include "easypap.h"
 #include "rle_lexer.h"
 
@@ -103,8 +102,10 @@ static inline void swap_tables_w_dirty(void) {
   _table = _alternate_table;
   _alternate_table = tmp;
 
+  unsigned   size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
   _dirty_tiles = _dirty_tiles_alt;
   _dirty_tiles_alt = tmp2;
+  memset(_dirty_tiles_alt, 0, size);
 }
 
 ///////////////////////////// Default tiling
