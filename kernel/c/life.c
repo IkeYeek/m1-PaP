@@ -10,7 +10,7 @@
 
 #define LIFE_COLOR (ezv_rgb (255, 255, 0))
 
-typedef char cell_t;
+typedef bool cell_t;
 
 static cell_t *restrict _table           = NULL;
 static cell_t *restrict _alternate_table = NULL;
@@ -62,6 +62,8 @@ void life_init (void)
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     _dirty_tiles_alt = mmap (NULL, size, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+    memset(_dirty_tiles, 1, size);
   }
 }
 
@@ -156,7 +158,7 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
 
       // //neighborhood &= ~(1 << 8);
 
-      // int n = __builtin_popcount(neighborhood); yet for now its way slower
+      // int n = __builtin_popcount(neighborhood); // yet for now its way slower
 
        const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
                + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
@@ -164,7 +166,6 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
       // while we are at it, let's apply some simple branchless programming logic
       const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
       change |= (me ^ new_me);
-
       next_table (i, j) = new_me;
     }
   }
@@ -286,29 +287,34 @@ unsigned life_compute_lazy(unsigned nb_iter) {
     for (int y = 0; y < DIM; y += TILE_H) {
       unsigned tile_y = y / TILE_H;
       for (int x = 0; x < DIM; x += TILE_W) {
+        unsigned local_change = 0;
         unsigned tile_x = x / TILE_W;
-        if (it == 1 || cur_dirty(tile_y, tile_x)) {
-          change |= do_tile(x, y, TILE_W, TILE_H);
-          next_dirty(tile_y, tile_x) = change;
-          if (change) {
+        if (cur_dirty(tile_y, tile_x)) {
+          local_change = do_tile(x, y, TILE_W, TILE_H);
+          change |= local_change;
+          
+          
+          if (local_change) {
             next_dirty(tile_y-1, tile_x-1) = 1;
             next_dirty(tile_y-1, tile_x)   = 1;
             next_dirty(tile_y-1, tile_x+1) = 1;
             next_dirty(tile_y, tile_x-1)   = 1;
+            next_dirty(tile_y, tile_x)     = 1; 
             next_dirty(tile_y, tile_x+1)   = 1;
             next_dirty(tile_y+1, tile_x-1) = 1;
             next_dirty(tile_y+1, tile_x)   = 1;
             next_dirty(tile_y+1, tile_x+1) = 1;
+          } else {
+            cur_dirty(tile_y, tile_x) = 0;
           }
         }
       }
     }
     if(!change) return it;
-    swap_tables_w_dirty ();
+    swap_tables_w_dirty();
   }
 
   return res;
-
 }
 
 ///////////////////////////// Tiled ompfor version
