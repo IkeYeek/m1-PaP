@@ -246,6 +246,47 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
+unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
+  unsigned res = 0;
+
+  for (int it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+    #pragma omp parallel for reduction(|: change)
+    for (int y = 0; y < DIM; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        unsigned local_change = 0;
+        unsigned tile_y = y / TILE_H;
+        unsigned tile_x = x / TILE_W;
+        if (cur_dirty(tile_y, tile_x)) {
+          local_change = do_tile(x, y, TILE_W, TILE_H);
+          change |= local_change;
+
+          if (local_change) {
+            next_dirty(tile_y-1, tile_x-1) = 2;
+            next_dirty(tile_y-1, tile_x)   = 2;
+            next_dirty(tile_y-1, tile_x+1) = 2;
+            next_dirty(tile_y, tile_x-1)   = 2;
+            next_dirty(tile_y, tile_x)     = 1;
+            next_dirty(tile_y, tile_x+1)   = 2;
+            next_dirty(tile_y+1, tile_x-1) = 2;
+            next_dirty(tile_y+1, tile_x)   = 2;
+            next_dirty(tile_y+1, tile_x+1) = 2;
+          } else {
+            if (next_dirty(tile_y, tile_x) != 2) {
+              cur_dirty(tile_y, tile_x) = 0;
+              next_dirty(tile_y, tile_x) = 0;
+            }
+          }
+        }
+      }
+    }
+    if(!change) return it;
+    swap_tables_w_dirty();
+  }
+
+  return res;
+}
+
 unsigned life_compute_lazy(unsigned nb_iter) {
   unsigned res = 0;
 
