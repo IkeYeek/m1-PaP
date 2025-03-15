@@ -10,7 +10,7 @@
 
 #define LIFE_COLOR (ezv_rgb (255, 255, 0))
 
-typedef bool cell_t;
+typedef char cell_t;
 
 static cell_t *restrict _table           = NULL;
 static cell_t *restrict _alternate_table = NULL;
@@ -64,7 +64,7 @@ void life_init (void)
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     memset(_dirty_tiles, 1, size);
-    memset(_dirty_tiles_alt, 0, size);
+    memset(_dirty_tiles_alt, 1, size);
   }
 }
 
@@ -96,12 +96,11 @@ static inline void swap_tables (void)
   _alternate_table = tmp;
 }
 
-static inline void swap_tables_w_dirty (void)
-{
+static inline void swap_tables_w_dirty(void) {
   cell_t *tmp = _table;
   cell_t *tmp2 = _dirty_tiles;
 
-  _table           = _alternate_table;
+  _table = _alternate_table;
   _alternate_table = tmp;
 
   _dirty_tiles = _dirty_tiles_alt;
@@ -246,44 +245,6 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
-unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
-  unsigned res = 0;
-  unsigned tile_x, tile_y;
-  for (int it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
-#pragma omp parallel for schedule(runtime) collapse(2) reduction(|: change) private(tile_x, tile_y)
-    for (int y = 0; y < DIM; y += TILE_H) {
-      for (int x = 0; x < DIM; x += TILE_W) {
-        tile_y = y / TILE_H;
-        unsigned local_change = 0;
-        tile_x = x / TILE_W;
-        if (cur_dirty(tile_y, tile_x)) {
-          local_change = do_tile(x, y, TILE_W, TILE_H);
-          change |= local_change;
-
-          if (local_change) {
-            next_dirty(tile_y-1, tile_x-1) = 1;
-            next_dirty(tile_y-1, tile_x)   = 1;
-            next_dirty(tile_y-1, tile_x+1) = 1;
-            next_dirty(tile_y, tile_x-1)   = 1;
-            next_dirty(tile_y, tile_x)     = 1; 
-            next_dirty(tile_y, tile_x+1)   = 1;
-            next_dirty(tile_y+1, tile_x-1) = 1;
-            next_dirty(tile_y+1, tile_x)   = 1;
-            next_dirty(tile_y+1, tile_x+1) = 1;
-          } else {
-            cur_dirty(tile_y, tile_x) = 0;
-          }
-        }
-      }
-    }
-    if(!change) return it;
-    swap_tables_w_dirty();
-  }
-
-  return res;
-}
-
 unsigned life_compute_lazy(unsigned nb_iter) {
   unsigned res = 0;
 
@@ -299,17 +260,20 @@ unsigned life_compute_lazy(unsigned nb_iter) {
           change |= local_change;
 
           if (local_change) {
-            next_dirty(tile_y-1, tile_x-1) = 1;
-            next_dirty(tile_y-1, tile_x)   = 1;
-            next_dirty(tile_y-1, tile_x+1) = 1;
-            next_dirty(tile_y, tile_x-1)   = 1;
-            next_dirty(tile_y, tile_x)     = 1; 
-            next_dirty(tile_y, tile_x+1)   = 1;
-            next_dirty(tile_y+1, tile_x-1) = 1;
-            next_dirty(tile_y+1, tile_x)   = 1;
-            next_dirty(tile_y+1, tile_x+1) = 1;
+            next_dirty(tile_y-1, tile_x-1) = 2;
+            next_dirty(tile_y-1, tile_x)   = 2;
+            next_dirty(tile_y-1, tile_x+1) = 2;
+            next_dirty(tile_y, tile_x-1)   = 2;
+            next_dirty(tile_y, tile_x)     = 1;
+            next_dirty(tile_y, tile_x+1)   = 2;
+            next_dirty(tile_y+1, tile_x-1) = 2;
+            next_dirty(tile_y+1, tile_x)   = 2;
+            next_dirty(tile_y+1, tile_x+1) = 2;
           } else {
-            cur_dirty(tile_y, tile_x) = 0;
+            if (next_dirty(tile_y, tile_x) != 2) {
+              cur_dirty(tile_y, tile_x) = 0;
+              next_dirty(tile_y, tile_x) = 0;
+            }
           }
         }
       }
@@ -320,7 +284,6 @@ unsigned life_compute_lazy(unsigned nb_iter) {
 
   return res;
 }
-
 ///////////////////////////// Tiled ompfor version
 //
 unsigned life_compute_ompfor (unsigned nb_iter)
