@@ -2,6 +2,7 @@
 #include "rle_lexer.h"
 
 #include <omp.h>
+#include <numa.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -13,7 +14,6 @@ typedef char cell_t;
 
 static cell_t *restrict _table           = NULL;
 static cell_t *restrict _alternate_table = NULL;
-
 static cell_t *restrict _dirty_tiles     = NULL;
 static cell_t *restrict _dirty_tiles_alt = NULL;
 
@@ -53,6 +53,7 @@ void life_init (void)
     _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
+    // adding 1 ghost cell on each side in order to allow oob writes by 1. those well never be read anyway
     size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
 
     PRINT_DEBUG('u', " + 2x %d bytes\n", size);
@@ -62,6 +63,7 @@ void life_init (void)
     _dirty_tiles_alt = mmap (NULL, size, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
+    // setting both arrays to 1 so we force at least 1 full board evaluation
     memset(_dirty_tiles, 1, size);
     memset(_dirty_tiles_alt, 1, size);
   }
@@ -140,7 +142,7 @@ int life_do_tile_default (int x, int y, int width, int height)
 ///////////////////////////// Do tile optimized
 int life_do_tile_opt (const int x, const int y, const int width, const int height)
 {
-  register char change  = 0;
+  char change  = 0;
   // precomputing start and end indexes of tile's both width and height
   int x_start = (x == 0) ? 1 : x;
   int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
@@ -151,6 +153,7 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
     for (int j = x_start; j < x_end; j++) {
       const char me = cur_table (i, j);
 
+      // pretty sure this could run faster but it doesn't for now. keeping it for later
       // uint32_t top = *(uint32_t*)(cur_table(i-1, j-1)) & 0x00FFFFFF;
       // uint32_t mid = *(uint32_t*)(cur_table(i,   j-1)) & 0x00FFFFFF;
       // uint32_t bot = *(uint32_t*)(cur_table(i+1, j-1)) & 0x00FFFFFF;
@@ -159,12 +162,13 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
 
       // //neighborhood &= ~(1 << 8);
 
-      // int n = __builtin_popcount(neighborhood); // yet for now its way slower
+      // int n = __builtin_popcount(neighborhood);
 
-       const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
-               + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
-         + cur_table(i+1, j) + cur_table(i+1, j+1);
-      // while we are at it, let's apply some simple branchless programming logic
+      // we unrolled the loop and check it in lines
+      const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
+        + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
+        + cur_table(i+1, j) + cur_table(i+1, j+1);
+      // while we are at it, we apply some simple branchless programming logic
       const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
       change |= (me ^ new_me);
       next_table (i, j) = new_me;
@@ -251,35 +255,39 @@ unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
 
   for (int it = 1; it <= nb_iter; it++) {
     unsigned change = 0;
-    #pragma omp parallel for reduction(|: change)
+    #pragma omp parallel for reduction(|: change) collapse(2) schedule(runtime)
     for (int y = 0; y < DIM; y += TILE_H) {
       for (int x = 0; x < DIM; x += TILE_W) {
         unsigned local_change = 0;
         unsigned tile_y = y / TILE_H;
         unsigned tile_x = x / TILE_W;
+        // checking if we should recompute this tile or not
         if (cur_dirty(tile_y, tile_x)) {
+          // we need to keep track of per-tile changes
           local_change = do_tile(x, y, TILE_W, TILE_H);
           change |= local_change;
 
           if (local_change) {
+            // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
             next_dirty(tile_y-1, tile_x-1) = 2;
             next_dirty(tile_y-1, tile_x)   = 2;
             next_dirty(tile_y-1, tile_x+1) = 2;
             next_dirty(tile_y, tile_x-1)   = 2;
-            next_dirty(tile_y, tile_x)     = 1;
+            next_dirty(tile_y, tile_x)     = 1;  // except for the one of the iteration
             next_dirty(tile_y, tile_x+1)   = 2;
             next_dirty(tile_y+1, tile_x-1) = 2;
             next_dirty(tile_y+1, tile_x)   = 2;
             next_dirty(tile_y+1, tile_x+1) = 2;
           } else {
-            if (next_dirty(tile_y, tile_x) != 2) {
-              cur_dirty(tile_y, tile_x) = 0;
+            if (next_dirty(tile_y, tile_x) != 2) {  // checking if needs to be recomputed for a neighbor
               next_dirty(tile_y, tile_x) = 0;
+              cur_dirty(tile_y, tile_x) = 0;
             }
           }
         }
       }
     }
+
     if(!change) return it;
     swap_tables_w_dirty();
   }
@@ -296,25 +304,29 @@ unsigned life_compute_lazy(unsigned nb_iter) {
       unsigned tile_y = y / TILE_H;
       for (int x = 0; x < DIM; x += TILE_W) {
         unsigned local_change = 0;
+        unsigned tile_y = y / TILE_H;
         unsigned tile_x = x / TILE_W;
+        // checking if we should recompute this tile or not
         if (cur_dirty(tile_y, tile_x)) {
+          // we need to keep track of per-tile changes
           local_change = do_tile(x, y, TILE_W, TILE_H);
           change |= local_change;
 
           if (local_change) {
+            // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
             next_dirty(tile_y-1, tile_x-1) = 2;
             next_dirty(tile_y-1, tile_x)   = 2;
             next_dirty(tile_y-1, tile_x+1) = 2;
             next_dirty(tile_y, tile_x-1)   = 2;
-            next_dirty(tile_y, tile_x)     = 1;
+            next_dirty(tile_y, tile_x)     = 1;  // except for the one of the iteration
             next_dirty(tile_y, tile_x+1)   = 2;
             next_dirty(tile_y+1, tile_x-1) = 2;
             next_dirty(tile_y+1, tile_x)   = 2;
             next_dirty(tile_y+1, tile_x+1) = 2;
           } else {
-            if (next_dirty(tile_y, tile_x) != 2) {
-              cur_dirty(tile_y, tile_x) = 0;
+            if (next_dirty(tile_y, tile_x) != 2) {  // checking if needs to be recomputed for a neighbor
               next_dirty(tile_y, tile_x) = 0;
+              cur_dirty(tile_y, tile_x) = 0;
             }
           }
         }
@@ -393,9 +405,12 @@ void life_ft(void)
   #pragma omp parallel for schedule(runtime) collapse(2)
   for (int y = 0; y < DIM; y += TILE_H)
     for (int x = 0; x < DIM; x += TILE_W) {
-      next_table (x, y) = cur_table (x, y) = 0;
+      unsigned tile_y = y / TILE_H;
+      unsigned tile_x = x / TILE_W;
+      next_table (y, x) = cur_table (y, x) = 0;
+      next_dirty(tile_y, tile_x) = cur_dirty(tile_y, tile_x) = 1;
     }
-  }      
+}
 
 
 ///////////////////////////// Initial configs
