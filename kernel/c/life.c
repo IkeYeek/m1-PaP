@@ -17,7 +17,7 @@ static cell_t *restrict __attribute__((aligned(64))) _alternate_table = NULL;
 static cell_t *restrict __attribute__((aligned(64))) _dirty_tiles     = NULL;
 static cell_t *restrict __attribute__((aligned(64))) _dirty_tiles_alt = NULL;
 
-static unsigned DIM_PER_TILE_W;
+static unsigned __attribute__((aligned(64))) DIM_PER_TILE_W;
 
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
