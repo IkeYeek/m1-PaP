@@ -104,10 +104,10 @@ static inline void swap_tables_w_dirty(void) {
   _table = _alternate_table;
   _alternate_table = tmp;
 
-  unsigned   size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
-  _dirty_tiles = _dirty_tiles_alt;
-  _dirty_tiles_alt = tmp2;
-  memset(_dirty_tiles_alt, 0, size);
+  // unsigned   size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
+  // _dirty_tiles = _dirty_tiles_alt;
+  // _dirty_tiles_alt = tmp2;
+  // memset(_dirty_tiles_alt, 0, size);
 }
 
 ///////////////////////////// Default tiling
@@ -262,24 +262,80 @@ unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
         unsigned tile_y = y / TILE_H;
         unsigned tile_x = x / TILE_W;
         // checking if we should recompute this tile or not
-        if (cur_dirty(tile_y, tile_x)) {
+        if (cur_dirty(tile_y, tile_x) || next_dirty(tile_y, tile_x)) {
           // we need to keep track of per-tile changes
           local_change = do_tile(x, y, TILE_W, TILE_H);
           change |= local_change;
 
+
           if (local_change) {
             // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
-            next_dirty(tile_y-1, tile_x-1) = 2;
-            next_dirty(tile_y-1, tile_x)   = 2;
-            next_dirty(tile_y-1, tile_x+1) = 2;
-            next_dirty(tile_y, tile_x-1)   = 2;
-            next_dirty(tile_y, tile_x)     = 1;  // except for the one of the iteration
-            next_dirty(tile_y, tile_x+1)   = 2;
-            next_dirty(tile_y+1, tile_x-1) = 2;
-            next_dirty(tile_y+1, tile_x)   = 2;
-            next_dirty(tile_y+1, tile_x+1) = 2;
+            #pragma omp atomic write
+            next_dirty(tile_y-1, tile_x-1) = 1;
+            #pragma omp atomic write
+            next_dirty(tile_y-1, tile_x)   = 1;
+            #pragma omp atomic write
+            next_dirty(tile_y-1, tile_x+1) = 1;
+            #pragma omp atomic write
+            next_dirty(tile_y, tile_x-1)   = 1;
+            cur_dirty(tile_y, tile_x)      = 1;  // except for the one of the iteration
+            #pragma omp atomic write
+            next_dirty(tile_y, tile_x+1)   = 1;
+            #pragma omp atomic write
+            next_dirty(tile_y+1, tile_x-1) = 1;
+            #pragma omp atomic write
+            next_dirty(tile_y+1, tile_x)   = 1;
+            #pragma omp atomic write
+            next_dirty(tile_y+1, tile_x+1) = 1;
           } else {
-            if (next_dirty(tile_y, tile_x) != 2) {  // checking if needs to be recomputed for a neighbor
+            if (!next_dirty(tile_y, tile_x)) {  // checking if needs to be recomputed for a neighbor
+            #pragma omp atomic write
+              next_dirty(tile_y, tile_x) = 0;
+              cur_dirty(tile_y, tile_x) = 0;
+            }
+          }
+        }
+      }
+    }
+
+    if(!change) return it;
+    swap_tables_w_dirty();
+  }
+
+  return res;
+}
+
+unsigned life_compute_lazy_danger(unsigned nb_iter) {
+  unsigned res = 0;
+
+  for (int it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+    #pragma omp parallel for reduction(|: change) collapse(2) schedule(runtime)
+    for (int y = 0; y < DIM; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        unsigned local_change = 0;
+        unsigned tile_y = y / TILE_H;
+        unsigned tile_x = x / TILE_W;
+        // checking if we should recompute this tile or not
+        if (cur_dirty(tile_y, tile_x) || next_dirty(tile_y, tile_x)) {
+          // we need to keep track of per-tile changes
+          local_change = do_tile(x, y, TILE_W, TILE_H);
+          change |= local_change;
+
+
+          if (local_change) {
+            // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
+            next_dirty(tile_y-1, tile_x-1) = 1;
+            next_dirty(tile_y-1, tile_x)   = 1;
+            next_dirty(tile_y-1, tile_x+1) = 1;
+            next_dirty(tile_y, tile_x-1)   = 1;
+            cur_dirty(tile_y, tile_x)      = 1;  // except for the one of the iteration
+            next_dirty(tile_y, tile_x+1)   = 1;
+            next_dirty(tile_y+1, tile_x-1) = 1;
+            next_dirty(tile_y+1, tile_x)   = 1;
+            next_dirty(tile_y+1, tile_x+1) = 1;
+          } else {
+            if (!next_dirty(tile_y, tile_x)) {  // checking if needs to be recomputed for a neighbor
               next_dirty(tile_y, tile_x) = 0;
               cur_dirty(tile_y, tile_x) = 0;
             }
