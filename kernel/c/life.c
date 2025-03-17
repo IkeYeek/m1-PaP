@@ -12,10 +12,13 @@
 
 typedef char cell_t;
 
-static cell_t *restrict _table           = NULL;
-static cell_t *restrict _alternate_table = NULL;
-static cell_t *restrict _dirty_tiles     = NULL;
-static cell_t *restrict _dirty_tiles_alt = NULL;
+static cell_t *restrict __attribute__((aligned(64))) _table = NULL;
+static cell_t *restrict __attribute__((aligned(64))) _alternate_table = NULL;
+static cell_t *restrict __attribute__((aligned(64))) _dirty_tiles     = NULL;
+static cell_t *restrict __attribute__((aligned(64))) _dirty_tiles_alt = NULL;
+
+static unsigned DIM_PER_TILE_W;
+
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
@@ -24,7 +27,7 @@ static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 
 static inline cell_t *dirty_cell (cell_t *restrict i, int y, int x)
 {
-  return i + (y+1) * (DIM/TILE_W) + (x+1);
+  return i + (y+1) * DIM_PER_TILE_W + (x+1);
 }
 
 
@@ -44,6 +47,7 @@ void life_init (void)
   // already allocated
   if (_table == NULL) {
     unsigned size = DIM * DIM * sizeof (cell_t);
+    DIM_PER_TILE_W = (DIM/TILE_W);
 
     PRINT_DEBUG ('u', "Memory footprint = 2 x %d ", size);
 
@@ -269,17 +273,17 @@ unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
 
           if (local_change) {
             // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
-            next_dirty(tile_y-1, tile_x-1) = 2;
-            next_dirty(tile_y-1, tile_x)   = 2;
-            next_dirty(tile_y-1, tile_x+1) = 2;
-            next_dirty(tile_y, tile_x-1)   = 2;
+            next_dirty(tile_y-1, tile_x-1) = 1;
+            next_dirty(tile_y-1, tile_x)   = 1;
+            next_dirty(tile_y-1, tile_x+1) = 1;
+            next_dirty(tile_y, tile_x-1)   = 1;
             next_dirty(tile_y, tile_x)     = 1;  // except for the one of the iteration
-            next_dirty(tile_y, tile_x+1)   = 2;
-            next_dirty(tile_y+1, tile_x-1) = 2;
-            next_dirty(tile_y+1, tile_x)   = 2;
-            next_dirty(tile_y+1, tile_x+1) = 2;
+            next_dirty(tile_y, tile_x+1)   = 1;
+            next_dirty(tile_y+1, tile_x-1) = 1;
+            next_dirty(tile_y+1, tile_x)   = 1;
+            next_dirty(tile_y+1, tile_x+1) = 1;
           } else {
-            if (next_dirty(tile_y, tile_x) != 2) {  // checking if needs to be recomputed for a neighbor
+            if (!next_dirty(tile_y, tile_x)) {  // checking if needs to be recomputed for a neighbor
               cur_dirty(tile_y, tile_x) = 0;
             }
           }
