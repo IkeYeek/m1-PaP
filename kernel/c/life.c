@@ -99,7 +99,7 @@ static inline void swap_tables (void)
 
 static inline void swap_tables_w_dirty(void) {
   cell_t *tmp = _table;
-  cell_t *tmp2 = _dirty_tiles;
+  //cell_t *tmp2 = _dirty_tiles;
 
   _table = _alternate_table;
   _alternate_table = tmp;
@@ -357,7 +357,6 @@ unsigned life_compute_lazy(unsigned nb_iter) {
   for (int it = 1; it <= nb_iter; it++) {
     unsigned change = 0;
     for (int y = 0; y < DIM; y += TILE_H) {
-      unsigned tile_y = y / TILE_H;
       for (int x = 0; x < DIM; x += TILE_W) {
         unsigned local_change = 0;
         unsigned tile_y = y / TILE_H;
