@@ -1,9 +1,11 @@
 #include "easypap.h"
 #include "rle_lexer.h"
 
-#include <omp.h>
+#include <immintrin.h>
 #include <numa.h>
+#include <omp.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -12,32 +14,30 @@
 
 typedef char cell_t;
 
-static cell_t *restrict __attribute__((aligned(64))) _table = NULL;
-static cell_t *restrict __attribute__((aligned(64))) _alternate_table = NULL;
-static cell_t *restrict __attribute__((aligned(64))) _dirty_tiles     = NULL;
-static cell_t *restrict __attribute__((aligned(64))) _dirty_tiles_alt = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _table           = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _alternate_table = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _dirty_tiles     = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _dirty_tiles_alt = NULL;
 
-static unsigned __attribute__((aligned(64))) DIM_PER_TILE_W;
-
+static unsigned __attribute__ ((aligned (64))) DIM_PER_TILE_W;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
-  return i + y * DIM + x;
+  return i + (y + 1) * DIM + (x + 1);
 }
 
 static inline cell_t *dirty_cell (cell_t *restrict i, int y, int x)
 {
-  return i + (y+1) * DIM_PER_TILE_W + (x+1);
+  return i + (y + 1) * DIM_PER_TILE_W + (x + 1);
 }
-
 
 // This kernel does not directly work on cur_img/next_img.
 // Instead, we use 2D arrays of boolean values, not colors
 #define cur_table(y, x) (*table_cell (_table, (y), (x)))
 #define next_table(y, x) (*table_cell (_alternate_table, (y), (x)))
 
-// using a bordered array in order to be able to do out of bound writes seemlessly.
-// must be faster than doing boundary checks
+// using a bordered array in order to be able to do out of bound writes
+// seemlessly. must be faster than doing boundary checks
 #define cur_dirty(y, x) (*dirty_cell (_dirty_tiles, (y), (x)))
 #define next_dirty(y, x) (*dirty_cell (_dirty_tiles_alt, (y), (x)))
 
@@ -46,43 +46,47 @@ void life_init (void)
   // life_init may be (indirectly) called several times so we check if data were
   // already allocated
   if (_table == NULL) {
-    unsigned size = DIM * DIM * sizeof (cell_t);
-    DIM_PER_TILE_W = (DIM/TILE_W);
+    unsigned size  = (DIM + 2) * (DIM + 2) * sizeof (cell_t);
+    DIM_PER_TILE_W = (DIM / TILE_W);
 
     PRINT_DEBUG ('u', "Memory footprint = 2 x %d ", size);
 
-    _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+    //                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _table = aligned_alloc (32, size);
+    memset (_table, 0, size);
 
-    _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+    // _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+    //                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _alternate_table = aligned_alloc (32, size);
+    memset (_alternate_table, 0, size);
+    // adding 1 ghost cell on each side in order to allow oob writes by 1. those
+    // well never be read anyway
+    size = (DIM / TILE_W + 2) * (DIM / TILE_H + 2) * sizeof (cell_t);
+
+    PRINT_DEBUG ('u', " + 2x %d bytes\n", size);
+
+    _dirty_tiles     = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _dirty_tiles_alt = mmap (NULL, size, PROT_READ | PROT_WRITE,
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    // adding 1 ghost cell on each side in order to allow oob writes by 1. those well never be read anyway
-    size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
-
-    PRINT_DEBUG('u', " + 2x %d bytes\n", size);
-
-    _dirty_tiles = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    _dirty_tiles_alt = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
     // setting both arrays to 1 so we force at least 1 full board evaluation
-    memset(_dirty_tiles, 1, size);
-    memset(_dirty_tiles_alt, 1, size);
+    memset (_dirty_tiles, 1, size);
+    memset (_dirty_tiles_alt, 1, size);
   }
 }
 
 void life_finalize (void)
 {
-  unsigned size = DIM * DIM * sizeof (cell_t);
+  unsigned size = (DIM + 2) * (DIM + 2) * sizeof (cell_t);
   munmap (_table, size);
   munmap (_alternate_table, size);
 
-  size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
+  size = (DIM / TILE_W + 2) * (DIM / TILE_H + 2) * sizeof (cell_t);
 
-  munmap(_dirty_tiles, size);
-  munmap(_dirty_tiles_alt, size);
+  munmap (_dirty_tiles, size);
+  munmap (_dirty_tiles_alt, size);
 }
 
 // This function is called whenever the graphical window needs to be refreshed
@@ -101,17 +105,18 @@ static inline void swap_tables (void)
   _alternate_table = tmp;
 }
 
-static inline void swap_tables_w_dirty(void) {
-  cell_t *tmp = _table;
+static inline void swap_tables_w_dirty (void)
+{
+  cell_t *tmp  = _table;
   cell_t *tmp2 = _dirty_tiles;
 
-  _table = _alternate_table;
+  _table           = _alternate_table;
   _alternate_table = tmp;
 
-  unsigned   size = (DIM/TILE_W + 2) * (DIM/TILE_H + 2) * sizeof(cell_t);
-  _dirty_tiles = _dirty_tiles_alt;
+  unsigned size    = (DIM / TILE_W + 2) * (DIM / TILE_H + 2) * sizeof (cell_t);
+  _dirty_tiles     = _dirty_tiles_alt;
   _dirty_tiles_alt = tmp2;
-  memset(_dirty_tiles_alt, 0, size);
+  memset (_dirty_tiles_alt, 0, size);
 }
 
 ///////////////////////////// Default tiling
@@ -143,10 +148,82 @@ int life_do_tile_default (int x, int y, int width, int height)
   return change;
 }
 
-///////////////////////////// Do tile optimized
-int life_do_tile_opt (const int x, const int y, const int width, const int height)
+__m256i shift_bytes_left (__m256i a)
 {
-  char change  = 0;
+  __m256i zero = _mm256_setzero_si256 ();
+  return _mm256_alignr_epi8 (a, zero, 15); // 16-1=15
+}
+
+// Shift bytes right (toward lower indices)
+__m256i shift_bytes_right (__m256i a)
+{
+  __m256i zero = _mm256_setzero_si256 ();
+  return _mm256_alignr_epi8 (zero, a, 1);
+}
+
+int life_do_tile_avx2 (const int x, const int y, const int width,
+                       const int height)
+{
+  char change = 0;
+  // precomputing start and end indexes of tile's both width and height
+  int x_start = (x == 0) ? 1 : x;
+  int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start = (y == 0) ? 1 : y;
+  int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
+
+  for (int i = y_start; i < y_end; i++) {
+    for (int j = x_start; j < x_end; j += 30) {
+      // first we load three lines, our target line (v2) and the one above and
+      // below. as we use tables that are larger by one, we don't really care
+      // about oob writes, we will just need to mask out at the end.
+      __m256i v1 = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i - 1, j - 1));
+      __m256i v2 =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j - 1));
+      __m256i v3 = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i + 1, j - 1));
+
+      // we start by accumulating vertical neighbors.
+      // now an entry of the vector represent the number of alive cells on the
+      // three lines at this index.
+      __m256i lines_sum = _mm256_add_epi8 (v1, v2);
+      lines_sum         = _mm256_add_epi8 (lines_sum, v3);
+
+      // now we will add left and right alive cell count by adding lines with
+      // lines shifted respectively left and right
+      __m256i lines_sum_left_shift  = shift_bytes_left (lines_sum);
+      __m256i lines_sum_right_shift = shift_bytes_right (lines_sum);
+      lines_sum = _mm256_add_epi8 (lines_sum, lines_sum_left_shift);
+      lines_sum = _mm256_add_epi8 (lines_sum, lines_sum_right_shift);
+
+      // then we need to compute a mask to remove from the count the value of
+      // the cell we are working on to do so we create a mask of alive cells in
+      // v2 so we know on which vector entries we need to substract 1
+      __m256i neighbor_count = _mm256_sub_epi8 (lines_sum, v2);
+
+      __attribute__ ((aligned (32))) char temp[32];
+      _mm256_store_si256 ((__m256i *)temp, neighbor_count);
+      for (int k = 1; k < 31; k++) {
+        int n             = temp[k];
+        int me            = cur_table (i, j - 1 + k);
+        const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
+        change |= (me ^ new_me);
+        next_table (i, j - 1 + k) = new_me;
+        printf ("%d", n);
+      }
+    }
+    printf ("\n");
+  }
+  printf ("\n");
+
+  return change;
+}
+
+///////////////////////////// Do tile optimized
+int life_do_tile_opt (const int x, const int y, const int width,
+                      const int height)
+{
+  char change = 0;
   // precomputing start and end indexes of tile's both width and height
   int x_start = (x == 0) ? 1 : x;
   int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
@@ -157,10 +234,11 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
     for (int j = x_start; j < x_end; j++) {
       const char me = cur_table (i, j);
 
-      // pretty sure this could run faster but it doesn't for now. keeping it for later
-      // uint32_t top = *(uint32_t*)(cur_table(i-1, j-1)) & 0x00FFFFFF;
-      // uint32_t mid = *(uint32_t*)(cur_table(i,   j-1)) & 0x00FFFFFF;
-      // uint32_t bot = *(uint32_t*)(cur_table(i+1, j-1)) & 0x00FFFFFF;
+      // pretty sure this could run faster but it doesn't for now. keeping it
+      // for later uint32_t top = *(uint32_t*)(cur_table(i-1, j-1)) &
+      // 0x00FFFFFF; uint32_t mid = *(uint32_t*)(cur_table(i,   j-1)) &
+      // 0x00FFFFFF; uint32_t bot = *(uint32_t*)(cur_table(i+1, j-1)) &
+      // 0x00FFFFFF;
 
       // uint32_t neighborhood = (top << 16) | (mid << 8) | bot;
 
@@ -169,16 +247,19 @@ int life_do_tile_opt (const int x, const int y, const int width, const int heigh
       // int n = __builtin_popcount(neighborhood);
 
       // we unrolled the loop and check it in lines
-      const char n = cur_table(i-1, j-1) + cur_table(i-1, j) + cur_table(i-1, j+1)
-        + cur_table(i, j-1) + cur_table(i, j+1) + cur_table(i+1, j-1)
-        + cur_table(i+1, j) + cur_table(i+1, j+1);
+      const char n = cur_table (i - 1, j - 1) + cur_table (i - 1, j) +
+                     cur_table (i - 1, j + 1) + cur_table (i, j - 1) +
+                     cur_table (i, j + 1) + cur_table (i + 1, j - 1) +
+                     cur_table (i + 1, j) + cur_table (i + 1, j + 1);
       // while we are at it, we apply some simple branchless programming logic
       const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
       change |= (me ^ new_me);
       next_table (i, j) = new_me;
+      printf ("%d", n);
     }
+    printf ("\n");
   }
-
+  printf ("\n");
   return change;
 }
 
@@ -254,51 +335,57 @@ unsigned life_compute_omp_tiled (unsigned nb_iter)
   return res;
 }
 
-unsigned life_compute_lazy_ompfor(unsigned nb_iter) {
+unsigned life_compute_lazy_ompfor (unsigned nb_iter)
+{
   unsigned res = 0;
 
   for (int it = 1; it <= nb_iter; it++) {
     unsigned change = 0;
-    #pragma omp parallel for reduction(|: change) collapse(2) schedule(runtime)
+#pragma omp parallel for reduction(| : change) collapse(2) schedule(runtime)
     for (int y = 0; y < DIM; y += TILE_H) {
       for (int x = 0; x < DIM; x += TILE_W) {
         unsigned local_change = 0;
-        unsigned tile_y = y / TILE_H;
-        unsigned tile_x = x / TILE_W;
+        unsigned tile_y       = y / TILE_H;
+        unsigned tile_x       = x / TILE_W;
         // checking if we should recompute this tile or not
-        if (cur_dirty(tile_y, tile_x) || next_dirty(tile_y, tile_x)) {
+        if (cur_dirty (tile_y, tile_x) || next_dirty (tile_y, tile_x)) {
           // we need to keep track of per-tile changes
-          local_change = do_tile(x, y, TILE_W, TILE_H);
+          local_change = do_tile (x, y, TILE_W, TILE_H);
           change |= local_change;
 
           if (local_change) {
-            // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
-            next_dirty(tile_y-1, tile_x-1) = 1;
-            next_dirty(tile_y-1, tile_x)   = 1;
-            next_dirty(tile_y-1, tile_x+1) = 1;
-            next_dirty(tile_y, tile_x-1)   = 1;
-            next_dirty(tile_y, tile_x)     = 1;  // except for the one of the iteration
-            next_dirty(tile_y, tile_x+1)   = 1;
-            next_dirty(tile_y+1, tile_x-1) = 1;
-            next_dirty(tile_y+1, tile_x)   = 1;
-            next_dirty(tile_y+1, tile_x+1) = 1;
+            // setting them to 2 in order to avoid writing 0 on a unchanged tile
+            // that has some changes in its neighborhood
+            next_dirty (tile_y - 1, tile_x - 1) = 1;
+            next_dirty (tile_y - 1, tile_x)     = 1;
+            next_dirty (tile_y - 1, tile_x + 1) = 1;
+            next_dirty (tile_y, tile_x - 1)     = 1;
+            next_dirty (tile_y, tile_x) =
+                1; // except for the one of the iteration
+            next_dirty (tile_y, tile_x + 1)     = 1;
+            next_dirty (tile_y + 1, tile_x - 1) = 1;
+            next_dirty (tile_y + 1, tile_x)     = 1;
+            next_dirty (tile_y + 1, tile_x + 1) = 1;
           } else {
-            if (!next_dirty(tile_y, tile_x)) {  // checking if needs to be recomputed for a neighbor
-              cur_dirty(tile_y, tile_x) = 0;
+            if (!next_dirty (tile_y, tile_x)) { // checking if needs to be
+                                                // recomputed for a neighbor
+              cur_dirty (tile_y, tile_x) = 0;
             }
           }
         }
       }
     }
 
-    if(!change) return it;
-    swap_tables_w_dirty();
+    if (!change)
+      return it;
+    swap_tables_w_dirty ();
   }
 
   return res;
 }
 
-unsigned life_compute_lazy(unsigned nb_iter) {
+unsigned life_compute_lazy (unsigned nb_iter)
+{
   unsigned res = 0;
 
   for (int it = 1; it <= nb_iter; it++) {
@@ -307,36 +394,40 @@ unsigned life_compute_lazy(unsigned nb_iter) {
       unsigned tile_y = y / TILE_H;
       for (int x = 0; x < DIM; x += TILE_W) {
         unsigned local_change = 0;
-        unsigned tile_y = y / TILE_H;
-        unsigned tile_x = x / TILE_W;
+        unsigned tile_y       = y / TILE_H;
+        unsigned tile_x       = x / TILE_W;
         // checking if we should recompute this tile or not
-        if (cur_dirty(tile_y, tile_x)) {
+        if (cur_dirty (tile_y, tile_x)) {
           // we need to keep track of per-tile changes
-          local_change = do_tile(x, y, TILE_W, TILE_H);
+          local_change = do_tile (x, y, TILE_W, TILE_H);
           change |= local_change;
 
           if (local_change) {
-            // setting them to 2 in order to avoid writing 0 on a unchanged tile that has some changes in its neighborhood
-            next_dirty(tile_y-1, tile_x-1) = 2;
-            next_dirty(tile_y-1, tile_x)   = 2;
-            next_dirty(tile_y-1, tile_x+1) = 2;
-            next_dirty(tile_y, tile_x-1)   = 2;
-            next_dirty(tile_y, tile_x)     = 1;  // except for the one of the iteration
-            next_dirty(tile_y, tile_x+1)   = 2;
-            next_dirty(tile_y+1, tile_x-1) = 2;
-            next_dirty(tile_y+1, tile_x)   = 2;
-            next_dirty(tile_y+1, tile_x+1) = 2;
+            // setting them to 2 in order to avoid writing 0 on a unchanged tile
+            // that has some changes in its neighborhood
+            next_dirty (tile_y - 1, tile_x - 1) = 2;
+            next_dirty (tile_y - 1, tile_x)     = 2;
+            next_dirty (tile_y - 1, tile_x + 1) = 2;
+            next_dirty (tile_y, tile_x - 1)     = 2;
+            next_dirty (tile_y, tile_x) =
+                1; // except for the one of the iteration
+            next_dirty (tile_y, tile_x + 1)     = 2;
+            next_dirty (tile_y + 1, tile_x - 1) = 2;
+            next_dirty (tile_y + 1, tile_x)     = 2;
+            next_dirty (tile_y + 1, tile_x + 1) = 2;
           } else {
-            if (next_dirty(tile_y, tile_x) != 2) {  // checking if needs to be recomputed for a neighbor
-              next_dirty(tile_y, tile_x) = 0;
-              cur_dirty(tile_y, tile_x) = 0;
+            if (next_dirty (tile_y, tile_x) !=
+                2) { // checking if needs to be recomputed for a neighbor
+              next_dirty (tile_y, tile_x) = 0;
+              cur_dirty (tile_y, tile_x)  = 0;
             }
           }
         }
       }
     }
-    if(!change) return it;
-    swap_tables_w_dirty();
+    if (!change)
+      return it;
+    swap_tables_w_dirty ();
   }
 
   return res;
@@ -401,20 +492,18 @@ unsigned life_compute_omptaskloop (unsigned nb_iter)
   return res;
 }
 
-
 ///////////////////////////// First touch allocations
-void life_ft(void)
+void life_ft (void)
 {
-  #pragma omp parallel for schedule(runtime) collapse(2)
+#pragma omp parallel for schedule(runtime) collapse(2)
   for (int y = 0; y < DIM; y += TILE_H)
     for (int x = 0; x < DIM; x += TILE_W) {
-      unsigned tile_y = y / TILE_H;
-      unsigned tile_x = x / TILE_W;
+      unsigned tile_y   = y / TILE_H;
+      unsigned tile_x   = x / TILE_W;
       next_table (y, x) = cur_table (y, x) = 0;
-      next_dirty(tile_y, tile_x) = cur_dirty(tile_y, tile_x) = 1;
+      next_dirty (tile_y, tile_x) = cur_dirty (tile_y, tile_x) = 1;
     }
 }
-
 
 ///////////////////////////// Initial configs
 
