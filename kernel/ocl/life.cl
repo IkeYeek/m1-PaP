@@ -17,6 +17,8 @@ __kernel void life_ocl(__global unsigned *in, __global unsigned *out)
     unsigned width = DIM;
     unsigned height = DIM;
     
+    barrier(CLK_LOCAL_MEM_FENCE);
+    
     // Load main tile area
     if (x < width && y < height) {
         tile[yloc][xloc] = in[y * width + x];
