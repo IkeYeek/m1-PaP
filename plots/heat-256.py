@@ -6,11 +6,11 @@ from expTools import *
 
 easypapOptions = {
     "-k": ["life"],
-    "-i": [1000],
+    "-i": [10],
     "-v": ["lazy_ompfor"],
     "-a": ["moultdiehard1398"],
-    "-s": [8192],
-    "-tw": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192],
+    "-s": [4096],
+    "-tw": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096],
     "-th": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048],
     "-of": ["data/perf/etape-2/life-heat-opt.csv"],
     "-wt": ["opt"],
@@ -22,7 +22,7 @@ ompICV = {
     "OMP_SCHEDULE": ["static,8"],
     "OMP_PLACES": ["sockets"],
     "OMP_PROC_BIND": ["close"],
-    "OMP_NUM_THREADS": [44]
+    "OMP_NUM_THREADS": [30]
 }
 
 nbruns = 1

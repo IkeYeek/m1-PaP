@@ -6,12 +6,12 @@
 #include "ezp_ctx.h"
 #include "ezv_sdl_gl.h"
 #include "global.h"
+#include "gpu.h"
 #include "hooks.h"
 #include "img_data.h"
 #include "mesh_data.h"
 #include "minmax.h"
 #include "time_macros.h"
-#include "gpu.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -438,7 +438,6 @@ static void ocl_list_variants (void)
   exit (EXIT_SUCCESS);
 }
 
-
 void ocl_build_program (int list_variants)
 {
   cl_int err;
@@ -800,7 +799,6 @@ size_t ocl_get_max_workgroup_size (void)
 {
   return max_workgroup_size;
 }
-
 
 const char *ocl_GetError (cl_int error)
 {
