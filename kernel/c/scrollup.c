@@ -1,11 +1,11 @@
 
 #include "easypap.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <omp.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 ///////////////////////////// Simple sequential version (seq)
 // Suggested cmdline(s):
@@ -53,12 +53,11 @@ unsigned scrollup_compute_tiled (unsigned nb_iter)
         do_tile (x, y, TILE_W, TILE_H);
 
     swap_images ();
-
   }
 
   return 0;
 }
-
+#define ENABLE_OPENCL
 #ifdef ENABLE_OPENCL
 
 //////////// OpenCL version using mask (ocl_ouf)
