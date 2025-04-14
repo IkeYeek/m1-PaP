@@ -4,6 +4,7 @@
 #include <numa.h>
 #include <omp.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -12,17 +13,16 @@
 
 typedef char cell_t;
 
-static cell_t *restrict __attribute__ ((aligned (64))) _table           = NULL;
-static cell_t *restrict __attribute__ ((aligned (64))) _alternate_table = NULL;
-static cell_t *restrict __attribute__ ((aligned (64))) _dirty_tiles     = NULL;
-static cell_t *restrict __attribute__ ((aligned (64))) _dirty_tiles_alt = NULL;
-static cell_t *restrict __attribute__ ((aligned (64))) _cur_table       = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _table           = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _alternate_table = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _dirty_tiles     = NULL;
+static cell_t *restrict __attribute__ ((aligned (32))) _dirty_tiles_alt = NULL;
 
 static unsigned __attribute__ ((aligned (64))) DIM_PER_TILE_W;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
-  return i + y * DIM + x;
+  return i + (y + 1) * DIM + (x + 1);
 }
 
 static inline cell_t *dirty_cell (cell_t *restrict i, int y, int x)
@@ -45,17 +45,20 @@ void life_init (void)
   // life_init may be (indirectly) called several times so we check if data were
   // already allocated
   if (_table == NULL) {
-    unsigned size  = DIM * DIM * sizeof (cell_t);
+    unsigned size  = (DIM + 2) * (DIM + 2) * sizeof (cell_t);
     DIM_PER_TILE_W = (DIM / TILE_W);
 
     PRINT_DEBUG ('u', "Memory footprint = 2 x %d ", size);
 
-    _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+    //                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _table = aligned_alloc (32, size);
+    memset (_table, 0, size);
 
-    _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
-                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
+    // _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+    //                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    _alternate_table = aligned_alloc (32, size);
+    memset (_alternate_table, 0, size);
     // adding 1 ghost cell on each side in order to allow oob writes by 1. those
     // well never be read anyway
     size = (DIM / TILE_W + 2) * (DIM / TILE_H + 2) * sizeof (cell_t);
@@ -75,7 +78,7 @@ void life_init (void)
 
 void life_finalize (void)
 {
-  unsigned size = DIM * DIM * sizeof (cell_t);
+  unsigned size = (DIM + 2) * (DIM + 2) * sizeof (cell_t);
   munmap (_table, size);
   munmap (_alternate_table, size);
 
@@ -143,7 +146,275 @@ int life_do_tile_default (int x, int y, int width, int height)
       }
   return change;
 }
+#define ENABLE_VECTO
+#define __AVX2__ 1
+#ifdef ENABLE_VECTO
+#include <immintrin.h>
+#if __AVX2__ == 1
+static inline __m256i _mm256_compute_neighbors (
+    __m256i vec_top_shift_left, __m256i vec_cell_shift_left,
+    __m256i vec_bot_shift_left, __m256i vec_top, __m256i vec_cell,
+    __m256i vec_bot, __m256i vec_top_shift_right, __m256i vec_cell_shift_right,
+    __m256i vec_bot_shift_right)
+{
+  __m256i vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_top_shift_left, vec_cell_shift_left);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_bot_shift_left);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_top);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_cell);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_bot);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_top_shift_right);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_cell_shift_right);
+  vec_cell_line_neigh_count =
+      _mm256_add_epi8 (vec_cell_line_neigh_count, vec_bot_shift_right);
 
+  // we substract ourself from this count
+  vec_cell_line_neigh_count =
+      _mm256_sub_epi8 (vec_cell_line_neigh_count, vec_cell);
+  return vec_cell_line_neigh_count;
+}
+static inline __m256i
+_mm256_compute_cells (__m256i vec_cell_line_neigh_count, __m256i vec_cell,
+                      __m256i only_threes, __m256i only_twos, __m256i only_ones,
+                      __m256i only_zeros)
+{
+  __m256i three_neighbors =
+      _mm256_cmpeq_epi8 (vec_cell_line_neigh_count, only_threes);
+
+  __m256i two_neighbors =
+      _mm256_cmpeq_epi8 (vec_cell_line_neigh_count, only_twos);
+
+  __m256i alive_mask = _mm256_cmpgt_epi8 (vec_cell, only_zeros);
+
+  __m256i two_neighbors_and_alive =
+      _mm256_and_si256 (two_neighbors, alive_mask);
+
+  __m256i next_alive_mask =
+      _mm256_or_si256 (three_neighbors, two_neighbors_and_alive);
+
+  __m256i next_alive = _mm256_and_si256 (next_alive_mask, only_ones);
+  return next_alive;
+}
+
+static inline char compute_from_vects (
+    __m256i vec_top_shift_left, __m256i vec_cell_shift_left,
+    __m256i vec_bot_shift_left, __m256i vec_top, __m256i vec_cell,
+    __m256i vec_bot, __m256i vec_top_shift_right, __m256i vec_cell_shift_right,
+    __m256i vec_bot_shift_right, int i, int j, __m256i only_threes,
+    __m256i only_twos, __m256i only_ones, __m256i only_zeros)
+{
+  // then we compute the neighbor count
+  __m256i vec_cell_line_neigh_count = _mm256_compute_neighbors (
+      vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
+      vec_cell, vec_bot, vec_top_shift_right, vec_cell_shift_right,
+      vec_bot_shift_right);
+  // we can now apply rules
+  __m256i next_alive =
+      _mm256_compute_cells (vec_cell_line_neigh_count, vec_cell, only_threes,
+                            only_twos, only_ones, only_zeros);
+  // store the result
+  _mm256_storeu_si256 ((__m256i *)table_cell (_alternate_table, i, j),
+                       next_alive);
+
+  // and finally compute for changes
+  __m256i diff = _mm256_xor_si256 (vec_cell, next_alive);
+  return !_mm256_testz_si256 (diff, diff);
+}
+
+int life_do_tile_avx2 (const int x, const int y, const int width,
+                       const int height)
+{
+  char change = 0;
+
+  int x_start = (x == 0) ? 1 : x;
+  int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start = (y == 0) ? 1 : y;
+  int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
+
+  // some constants we're gonna use
+  __m256i only_threes = _mm256_set1_epi8 (3);
+  __m256i only_twos   = _mm256_set1_epi8 (2);
+  __m256i only_ones   = _mm256_set1_epi8 (1);
+  __m256i only_zeros  = _mm256_setzero_si256 ();
+  for (int i = y_start; i < y_end; i++) {
+    for (int j = x_start; j < x_end; j += 32) {
+      // first we load the vectors
+      __m256i vec_top_shift_left = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i - 1, j - 1));
+      __m256i vec_cell_shift_left =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j - 1));
+      __m256i vec_bot_shift_left = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i + 1, j - 1));
+
+      __m256i vec_top =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i - 1, j));
+      __m256i vec_cell =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j));
+      __m256i vec_bot =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i + 1, j));
+
+      __m256i vec_top_shift_right = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i - 1, j + 1));
+      __m256i vec_cell_shift_right =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j + 1));
+      __m256i vec_bot_shift_right = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i + 1, j + 1));
+
+      change |= compute_from_vects (
+          vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
+          vec_cell, vec_bot, vec_top_shift_right, vec_cell_shift_right,
+          vec_bot_shift_right, i, j, only_threes, only_twos, only_ones,
+          only_zeros);
+    }
+  }
+  return change;
+}
+#endif
+static inline __m512i _mm512_compute_neighbors (
+    __m512i vec_top_shift_left, __m512i vec_cell_shift_left,
+    __m512i vec_bot_shift_left, __m512i vec_top, __m512i vec_cell,
+    __m512i vec_bot, __m512i vec_top_shift_right, __m512i vec_cell_shift_right,
+    __m512i vec_bot_shift_right)
+{
+  __m512i vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_top_shift_left, vec_cell_shift_left);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_bot_shift_left);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_top);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_cell);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_bot);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_top_shift_right);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_cell_shift_right);
+  vec_cell_line_neigh_count =
+      _mm512_add_epi8 (vec_cell_line_neigh_count, vec_bot_shift_right);
+
+  // we substract ourself from this count
+  vec_cell_line_neigh_count =
+      _mm512_sub_epi8 (vec_cell_line_neigh_count, vec_cell);
+  return vec_cell_line_neigh_count;
+}
+
+static inline __m512i
+_mm512_compute_cells (__m512i vec_cell_line_neigh_count, __m512i vec_cell,
+                      __m512i only_threes, __m512i only_twos, __m512i only_ones,
+                      __m512i only_zeros)
+{
+  __mmask64 three_neighbors_mask =
+      _mm512_cmpeq_epi8_mask (vec_cell_line_neigh_count, only_threes);
+
+  __mmask64 two_neighbors_mask =
+      _mm512_cmpeq_epi8_mask (vec_cell_line_neigh_count, only_twos);
+
+  __mmask64 alive_mask = _mm512_cmpgt_epi8_mask (vec_cell, only_zeros);
+
+  __mmask64 two_neighbors_and_alive_mask = two_neighbors_mask & alive_mask;
+
+  __mmask64 next_alive_mask =
+      three_neighbors_mask | two_neighbors_and_alive_mask;
+
+  __m512i next_alive =
+      _mm512_mask_blend_epi8 (next_alive_mask, only_zeros, only_ones);
+  return next_alive;
+}
+
+static inline char _mm512_compute_from_vects (
+    __m512i vec_top_shift_left, __m512i vec_cell_shift_left,
+    __m512i vec_bot_shift_left, __m512i vec_top, __m512i vec_cell,
+    __m512i vec_bot, __m512i vec_top_shift_right, __m512i vec_cell_shift_right,
+    __m512i vec_bot_shift_right, int i, int j, __m512i only_threes,
+    __m512i only_twos, __m512i only_ones, __m512i only_zeros)
+{
+  // then we compute the neighbor count
+  __m512i vec_cell_line_neigh_count = _mm512_compute_neighbors (
+      vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
+      vec_cell, vec_bot, vec_top_shift_right, vec_cell_shift_right,
+      vec_bot_shift_right);
+  // we can now apply rules
+  __m512i next_alive =
+      _mm512_compute_cells (vec_cell_line_neigh_count, vec_cell, only_threes,
+                            only_twos, only_ones, only_zeros);
+  // store the result
+  _mm512_storeu_si512 ((__m512i *)table_cell (_alternate_table, i, j),
+                       next_alive);
+
+  // and finally compute for changes
+  __mmask64 diff_mask = _mm512_cmpneq_epi8_mask (vec_cell, next_alive);
+
+  return (diff_mask != 0);
+}
+
+int life_do_tile_avx512 (const int x, const int y, const int width,
+                         const int height)
+{
+  char change = 0;
+
+  int x_start = (x == 0) ? 1 : x;
+  int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start = (y == 0) ? 1 : y;
+  int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
+
+  // some constants we're gonna use
+  __m512i only_threes = _mm512_set1_epi8 (3);
+  __m512i only_twos   = _mm512_set1_epi8 (2);
+  __m512i only_ones   = _mm512_set1_epi8 (1);
+  __m512i only_zeros  = _mm512_setzero_si512 ();
+
+  for (int i = y_start; i < y_end; i++) {
+    for (int j = x_start; j < x_end; j += 64) {
+      // first we load the vectors
+      __m512i vec_top_shift_left = _mm512_loadu_si512 (
+          (const __m512i *)table_cell (_table, i - 1, j - 1));
+      __m512i vec_cell_shift_left =
+          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i, j - 1));
+      __m512i vec_bot_shift_left = _mm512_loadu_si512 (
+          (const __m512i *)table_cell (_table, i + 1, j - 1));
+
+      __m512i vec_top =
+          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i - 1, j));
+      __m512i vec_cell =
+          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i, j));
+      __m512i vec_bot =
+          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i + 1, j));
+
+      __m512i vec_top_shift_right = _mm512_loadu_si512 (
+          (const __m512i *)table_cell (_table, i - 1, j + 1));
+      __m512i vec_cell_shift_right =
+          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i, j + 1));
+      __m512i vec_bot_shift_right = _mm512_loadu_si512 (
+          (const __m512i *)table_cell (_table, i + 1, j + 1));
+
+      change |= _mm512_compute_from_vects (
+          vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
+          vec_cell, vec_bot, vec_top_shift_right, vec_cell_shift_right,
+          vec_bot_shift_right, i, j, only_threes, only_twos, only_ones,
+          only_zeros);
+    }
+  }
+  return change;
+}
+int life_do_tile_avx_balanced (const int x, const int y, const int width,
+                               const int height)
+{
+  int tid = omp_get_thread_num ();
+  if (tid % 24 == 0) {
+    return life_do_tile_avx512 (x, y, width, height);
+  } else {
+    return life_do_tile_avx2 (x, y, width, height);
+  }
+}
+
+#endif
 ///////////////////////////// Do tile optimized
 int life_do_tile_opt (const int x, const int y, const int width,
                       const int height)
@@ -182,7 +453,6 @@ int life_do_tile_opt (const int x, const int y, const int width,
       next_table (i, j) = new_me;
     }
   }
-
   return change;
 }
 
@@ -289,11 +559,6 @@ unsigned life_compute_lazy_ompfor (unsigned nb_iter)
             next_dirty (tile_y + 1, tile_x - 1) = 1;
             next_dirty (tile_y + 1, tile_x)     = 1;
             next_dirty (tile_y + 1, tile_x + 1) = 1;
-          } else {
-            if (!next_dirty (tile_y, tile_x)) { // checking if needs to be
-                                                // recomputed for a neighbor
-              cur_dirty (tile_y, tile_x) = 0;
-            }
           }
         }
       }
@@ -426,21 +691,6 @@ void life_ft (void)
       next_table (y, x) = cur_table (y, x) = 0;
       next_dirty (tile_y, tile_x) = cur_dirty (tile_y, tile_x) = 1;
     }
-}
-
-////////////////////////////// OpenCl
-
-// Only called when --dump or --thumbnails is used
-void life_refresh_img_ocl (void)
-{
-  cl_int err;
-
-  err = clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
-                             sizeof (unsigned) * DIM * DIM, _cur_table, 0, NULL,
-                             NULL);
-  check (err, "Failed to read buffer from GPU");
-
-  life_refresh_img ();
 }
 
 ///////////////////////////// Initial configs
