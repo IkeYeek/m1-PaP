@@ -1,0 +1,24 @@
+void life_refresh_img_ocl (void)
+{
+  cl_int err;
+
+  unsigned size     = sizeof (unsigned) * DIM * DIM;
+  cell_t *tmp_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (!tmp_table) {
+    exit_with_error ("Failed to initialize tmp table");
+  }
+
+  err = clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
+                             size, tmp_table, 0, NULL, NULL);
+  check (err, "Failed to read buffer from GPU");
+  munmap (tmp_table, size);
+
+  for (int y = 0; y < DIM; y++) {
+    for (int x = 0; x < DIM; x++) {
+      cur_table (y, x) = tmp_table[y * DIM + x];
+    }
+  }
+
+  life_refresh_img ();
+}
