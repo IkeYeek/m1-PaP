@@ -38,26 +38,30 @@ __kernel void life_gpu_ocl_binmul (__global cell_t *in, __global cell_t *out,
 
 __kernel void life_gpu_ocl_2x (__global cell_t *in, __global cell_t *out)
 {
-  const unsigned x = get_global_id (0) * 2 - 1;
-  const unsigned y = get_global_id (1);
+  const int x  = get_global_id (0);
+  const int x2 = x + get_global_size (0);
+  const int y  = get_global_id (1);
+  cell_t new_me;
+  cell_t new_me2;
   if (x > 0 && x < DIM - 1 && y > 0 && y < DIM - 1) {
-    const cell_t me  = in[y * DIM + x];
-    const cell_t me2 = in[y * DIM + (x + 1)];
+    const cell_t me = in[y * DIM + x];
 
-    const unsigned n = in[(y - 1) * DIM + (x - 1)] + in[(y - 1) * DIM + x] +
-                       in[(y - 1) * DIM + (x + 1)] + in[(y * DIM + (x - 1))] +
-                       in[(y * DIM + (x + 1))] + in[(y + 1) * DIM + (x - 1)] +
-                       in[(y + 1) * DIM + x] + in[(y + 1) * DIM + (x + 1)];
-    const unsigned n2 =
-        in[(y - 1) * DIM + ((x + 1) - 1)] + in[(y - 1) * DIM + (x + 1)] +
-        in[(y - 1) * DIM + ((x + 1) + 1)] + in[(y * DIM + ((x + 1) - 1))] +
-        in[(y * DIM + ((x + 1) + 1))] + in[(y + 1) * DIM + ((x + 1) - 1)] +
-        in[(y + 1) * DIM + (x + 1)] + in[(y + 1) * DIM + ((x + 1) + 1)];
+    const int n = in[(y - 1) * DIM + (x - 1)] + in[(y - 1) * DIM + x] +
+                  in[(y - 1) * DIM + (x + 1)] + in[(y * DIM + (x - 1))] +
+                  in[(y * DIM + (x + 1))] + in[(y + 1) * DIM + (x - 1)] +
+                  in[(y + 1) * DIM + x] + in[(y + 1) * DIM + (x + 1)];
 
-    const cell_t new_me  = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
-    const cell_t new_me2 = (me2 & ((n2 == 2) | (n2 == 3))) | (!me2 & (n2 == 3));
-    out[y * DIM + x]     = new_me;
-    out[y * DIM + (x + 1)] = new_me2;
+    new_me           = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
+    out[y * DIM + x] = new_me;
+  }
+  if (x2 > 0 && x2 < DIM - 1 && y > 0 && y < DIM - 1) {
+    const cell_t me2 = in[y * DIM + x2];
+    const int n2     = in[(y - 1) * DIM + (x2 - 1)] + in[(y - 1) * DIM + x2] +
+                   in[(y - 1) * DIM + (x2 + 1)] + in[(y * DIM + (x2 - 1))] +
+                   in[(y * DIM + (x2 + 1))] + in[(y + 1) * DIM + (x2 - 1)] +
+                   in[(y + 1) * DIM + x2] + in[(y + 1) * DIM + (x2 + 1)];
+    new_me2           = (me2 & ((n2 == 2) | (n2 == 3))) | (!me2 & (n2 == 3));
+    out[y * DIM + x2] = new_me2;
   }
 }
 
@@ -182,10 +186,10 @@ __kernel void life_gpu_ocl_lazy (__global cell_t *in, __global cell_t *out,
                        in[(y * DIM + (x + 1))] + in[(y + 1) * DIM + (x - 1)] +
                        in[(y + 1) * DIM + x] + in[(y + 1) * DIM + (x + 1)];
     const cell_t new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
-    out[y * DIM + x]    = new_me;
     if (new_me != me) {
       tile_change = true;
     }
+    out[y * DIM + x] = new_me;
   }
   barrier (CLK_LOCAL_MEM_FENCE);
   if (yloc == 0 && xloc == 0 && tile_change) {
