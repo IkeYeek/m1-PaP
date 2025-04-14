@@ -209,11 +209,6 @@ void life_gpu_refresh_img_ocl (void)
   life_gpu_refresh_img ();
 }
 
-void life_gpu_refresh_img_ocl_lazy (void)
-{
-  life_gpu_refresh_img_ocl ();
-}
-
 void life_gpu_refresh_img_ocl_localmem (void)
 {
   life_gpu_refresh_img_ocl ();
