@@ -121,7 +121,7 @@ unsigned life_gpu_compute_ocl_lazy (unsigned nb_iter)
     err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
                                   NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
-    clFinish (ocl_queue (0));
+    // clFinish (ocl_queue (0));
     {
       cl_mem tmp          = ocl_next_buffer (0);
       ocl_next_buffer (0) = ocl_cur_buffer (0);
@@ -229,6 +229,10 @@ void life_gpu_refresh_img_ocl_2x (void)
   life_gpu_refresh_img_ocl ();
 }
 void life_gpu_refresh_img_ocl_binlum (void)
+{
+  life_gpu_refresh_img_ocl ();
+}
+void life_gpu_refresh_img_ocl_lazy (void)
 {
   life_gpu_refresh_img_ocl ();
 }

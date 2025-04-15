@@ -174,9 +174,9 @@ __kernel void life_gpu_ocl_lazy (__global cell_t *in, __global cell_t *out,
   __local unsigned tile_change;
   // first of the warp (so first of the tile as well)
   if (xloc == 0 && yloc == 0) {
-    tile_out[tile_idx] = 0;
-    tile_change        = 0;
-    compute_tile       = tile_in[tile_idx];
+    // tile_out[tile_idx] = 0;
+    tile_change  = 0;
+    compute_tile = tile_in[tile_idx];
   }
   barrier (CLK_LOCAL_MEM_FENCE);
   if (!compute_tile)
@@ -194,18 +194,22 @@ __kernel void life_gpu_ocl_lazy (__global cell_t *in, __global cell_t *out,
     out[y * DIM + x] = new_me;
   }
   barrier (CLK_LOCAL_MEM_FENCE);
-  if (yloc == 0 && xloc == 0 && tile_change) {
-    tile_out[tile_idx]                               = 1;
-    tile_out[ytile * NB_TILES_W + (xtile + 1)]       = 1;
-    tile_out[(ytile - 1) * NB_TILES_W + (xtile - 1)] = 1;
-    tile_out[(ytile - 1) * NB_TILES_W + xtile]       = 1;
-    tile_out[(ytile - 1) * NB_TILES_W + (xtile + 1)] = 1;
-    tile_out[ytile * NB_TILES_W + (xtile - 1)]       = 1;
-    tile_out[(ytile + 1) * NB_TILES_W + (xtile - 1)] = 1;
-    tile_out[(ytile + 1) * NB_TILES_W + xtile]       = 1;
-    tile_out[(ytile + 1) * NB_TILES_W + (xtile + 1)] = 1;
+  if (yloc == 0 && xloc == 0) {
+    if (tile_change) {
+      tile_out[tile_idx]                               = 1;
+      tile_out[ytile * NB_TILES_W + (xtile + 1)]       = 1;
+      tile_out[(ytile - 1) * NB_TILES_W + (xtile - 1)] = 1;
+      tile_out[(ytile - 1) * NB_TILES_W + xtile]       = 1;
+      tile_out[(ytile - 1) * NB_TILES_W + (xtile + 1)] = 1;
+      tile_out[ytile * NB_TILES_W + (xtile - 1)]       = 1;
+      tile_out[(ytile + 1) * NB_TILES_W + (xtile - 1)] = 1;
+      tile_out[(ytile + 1) * NB_TILES_W + xtile]       = 1;
+      tile_out[(ytile + 1) * NB_TILES_W + (xtile + 1)] = 1;
+    }
+    tile_in[tile_idx] = 0;
   }
 }
+
 __kernel void reset_tile_out (__global cell_t *tile_out)
 {
   unsigned xloc       = get_local_id (0);

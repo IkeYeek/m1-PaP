@@ -1,5 +1,5 @@
 #!/bin/bash
-ETAPE=2
+ETAPE=3
 
 TIMEOUT=15
 
@@ -8,8 +8,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 WHITE='\033[1;37m'
 
-echoColor () {
-    echo -e $p : $* $NOCOLOR
+echoColor() {
+  echo -e $p : $* $NOCOLOR
 }
 
 refdir="etape-$ETAPE/evaluation/"
@@ -21,30 +21,30 @@ p=projet
 #for p in projet-* ; do
 #    echo $p ----------------------------
 #    cd $p
-    make -j
-    for config in 256 1024 2048 8192; do
+make -j
+for config in 256 1024 2048 8192; do
 
-    cmd=$(cat $configPath$config)
+  cmd=$(cat $configPath$config)
 
-	reference=$refdir/$config.sha256    
-    	export cmdLine="$cmd -n  -sh -of $perfFile --label $p"
-	echo Running : "$cmdLine"
-	timeout $TIMEOUT bash -c "$cmdLine"
-	status=$?
-	[ $status -eq 137 ] &&  echoColor $RED  "run $config : timeout" && continue
-	[ $status -ne 0 ] &&  echoColor $RED "run $config : exit($status)" && continue
-        sha=data/hash/$(ls -rt data/hash/ | tail -1)
-	diff $sha  $reference
-	dstatus=$?
-	if [ $dstatus -ne 0 ] ; then
-	    echoColor $RED "diff $config : exit($status)"
-	    echo "Suppression de la ligne "
-	    tail -1 $perfFile
-	    sed -i '$ d' $perfFile
-	    continue
-	fi
-	echoColor $GREEN "OK $config"
-	rm -f $sha
+  reference=$refdir/$config.sha256
+  export cmdLine="$cmd -n  -sh -of $perfFile --label $p"
+  echo Running : "$cmdLine"
+  timeout $TIMEOUT bash -c "$cmdLine"
+  status=$?
+  [ $status -eq 137 ] && echoColor $RED "run $config : timeout" && continue
+  [ $status -ne 0 ] && echoColor $RED "run $config : exit($status)" && continue
+  sha=data/hash/$(ls -rt data/hash/ | tail -1)
+  diff $sha $reference
+  dstatus=$?
+  if [ $dstatus -ne 0 ]; then
+    echoColor $RED "diff $config : exit($status)"
+    echo "Suppression de la ligne "
+    tail -1 $perfFile
+    sed -i '$ d' $perfFile
+    continue
+  fi
+  echoColor $GREEN "OK $config"
+  rm -f $sha
 done
 
 [ -f etape-2/rapport.pdf ] || echoColor $RED "le rapport est absent"
