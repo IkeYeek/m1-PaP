@@ -1,0 +1,1 @@
+OMP_PLACES=threads OMP_SCHEDULE=static,8 ./run -k life -s 256 -a random -i 2000 -v seq -n -wt avx512

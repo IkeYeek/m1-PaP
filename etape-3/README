@@ -1,0 +1,9 @@
+Modifiez les fichiers etape-1/evaluation/{256,1024,2048,8192}  pour y placer les paramètres optimaux (nombre de threads, variante, géométrie des tuiles) à utiliser pour la taille indiquées par le nom du fichier.
+
+La version 256 est à faire en séquentiel.
+
+Enregistrez dans le répertoire etape-1 votre rapport dans un fichier nommé rapport.pdf
+
+Placez-vous dans le répertoire racine d'easypap et lancez le script etape-1/evaluation/check pour vérifier le bon fonctionnement.
+
+N'oubliez pas de pousser vos modifications sur le dépôt dans la branche principale. 

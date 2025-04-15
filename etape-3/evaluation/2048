@@ -1,0 +1,1 @@
+OMP_PLACES=sockets OMP_NUM_THREADS=44 OMP_SCHEDULE=static,8 ./run -k life -s 2048 -a moultdiehard1398 -i 1000 -tw 2048 -th 4 -wt opt -v lazy_ompfor -ft
