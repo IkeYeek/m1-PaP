@@ -98,6 +98,16 @@ unsigned life_gpu_compute_ocl_lazy (unsigned nb_iter)
 
   for (unsigned it = 1; it <= nb_iter; it++) {
     err = 0;
+    // cl_kernel reset_tile_out = clCreateKernel (program, "reset_tile_out",
+    // &err); check (err, "Failed to load reset kernel arguments"); err |=
+    // clSetKernelArg (reset_tile_out, 0, sizeof (cl_mem), &tile_out);
+    //
+    // check (err, "Failed to set tile_out reset kernel arguments");
+    //
+    // err = clEnqueueNDRangeKernel (ocl_queue (0), reset_tile_out, 2, NULL,
+    //                               global, local, 0, NULL, NULL);
+    // clFinish (ocl_queue (0));
+
     err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
                            &ocl_cur_buffer (0));
     err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
@@ -106,11 +116,12 @@ unsigned life_gpu_compute_ocl_lazy (unsigned nb_iter)
         clSetKernelArg (ocl_compute_kernel (0), 2, sizeof (cl_mem), &tile_in);
     err |=
         clSetKernelArg (ocl_compute_kernel (0), 3, sizeof (cl_mem), &tile_out);
-    check (err, "Failed to set kernel arguments");
+    check (err, "Failed to set kernel computing arguments");
 
     err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
                                   NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
+    clFinish (ocl_queue (0));
     {
       cl_mem tmp          = ocl_next_buffer (0);
       ocl_next_buffer (0) = ocl_cur_buffer (0);

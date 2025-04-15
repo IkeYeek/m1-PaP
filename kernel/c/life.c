@@ -148,6 +148,7 @@ int life_do_tile_default (int x, int y, int width, int height)
 }
 #define ENABLE_VECTO
 #define __AVX2__ 1
+#define __AVX512__ 1
 #ifdef ENABLE_VECTO
 #include <immintrin.h>
 #if __AVX2__ == 1
@@ -275,7 +276,51 @@ int life_do_tile_avx2 (const int x, const int y, const int width,
   }
   return change;
 }
+int life_do_tile_avx2_lessload (const int x, const int y, const int width,
+                                const int height)
+{
+  char change         = 0;
+  int x_start         = (x == 0) ? 1 : x;
+  int x_end           = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start         = (y == 0) ? 1 : y;
+  int y_end           = (y + height >= DIM) ? DIM - 1 : y + height;
+  __m256i only_threes = _mm256_set1_epi8 (3);
+  __m256i only_twos   = _mm256_set1_epi8 (2);
+  __m256i only_ones   = _mm256_set1_epi8 (1);
+  __m256i only_zeros  = _mm256_setzero_si256 ();
+  for (int j = x_start; j < x_end; j += 32) {
+    // Reset i at the beginning of each outer loop iteration
+    for (int i = y_start; i < y_end; i++) {
+      __m256i vec_top_shift_left = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i - 1, j - 1));
+      __m256i vec_cell_shift_left =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j - 1));
+      __m256i vec_bot_shift_left = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i + 1, j - 1));
+      __m256i vec_top =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i - 1, j));
+      __m256i vec_cell =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j));
+      __m256i vec_bot =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i + 1, j));
+      __m256i vec_top_shift_right = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i - 1, j + 1));
+      __m256i vec_cell_shift_right =
+          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j + 1));
+      __m256i vec_bot_shift_right = _mm256_loadu_si256 (
+          (const __m256i *)table_cell (_table, i + 1, j + 1));
+
+      change |= compute_from_vects (
+          vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
+          vec_cell, vec_bot, vec_top_shift_right, vec_cell_shift_right,
+          vec_bot_shift_right, i, j, only_threes, only_twos, only_ones,
+          only_zeros);
+    }
+  }
+  return change;
+}
 #endif
+#if __AVX512__ == 1
 static inline __m512i _mm512_compute_neighbors (
     __m512i vec_top_shift_left, __m512i vec_cell_shift_left,
     __m512i vec_bot_shift_left, __m512i vec_top, __m512i vec_cell,
@@ -414,6 +459,7 @@ int life_do_tile_avx_balanced (const int x, const int y, const int width,
   }
 }
 
+#endif
 #endif
 ///////////////////////////// Do tile optimized
 int life_do_tile_opt (const int x, const int y, const int width,

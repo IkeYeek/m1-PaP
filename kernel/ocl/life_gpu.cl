@@ -43,25 +43,27 @@ __kernel void life_gpu_ocl_2x (__global cell_t *in, __global cell_t *out)
   const int y  = get_global_id (1);
   cell_t new_me;
   cell_t new_me2;
-  if (x > 0 && x < DIM - 1 && y > 0 && y < DIM - 1) {
-    const cell_t me = in[y * DIM + x];
+  if (y > 0 && y < DIM - 1) {
+    if (x > 0) {
+      const cell_t me = in[y * DIM + x];
 
-    const int n = in[(y - 1) * DIM + (x - 1)] + in[(y - 1) * DIM + x] +
-                  in[(y - 1) * DIM + (x + 1)] + in[(y * DIM + (x - 1))] +
-                  in[(y * DIM + (x + 1))] + in[(y + 1) * DIM + (x - 1)] +
-                  in[(y + 1) * DIM + x] + in[(y + 1) * DIM + (x + 1)];
+      const int n = in[(y - 1) * DIM + (x - 1)] + in[(y - 1) * DIM + x] +
+                    in[(y - 1) * DIM + (x + 1)] + in[(y * DIM + (x - 1))] +
+                    in[(y * DIM + (x + 1))] + in[(y + 1) * DIM + (x - 1)] +
+                    in[(y + 1) * DIM + x] + in[(y + 1) * DIM + (x + 1)];
 
-    new_me           = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
-    out[y * DIM + x] = new_me;
-  }
-  if (x2 > 0 && x2 < DIM - 1 && y > 0 && y < DIM - 1) {
-    const cell_t me2 = in[y * DIM + x2];
-    const int n2     = in[(y - 1) * DIM + (x2 - 1)] + in[(y - 1) * DIM + x2] +
-                   in[(y - 1) * DIM + (x2 + 1)] + in[(y * DIM + (x2 - 1))] +
-                   in[(y * DIM + (x2 + 1))] + in[(y + 1) * DIM + (x2 - 1)] +
-                   in[(y + 1) * DIM + x2] + in[(y + 1) * DIM + (x2 + 1)];
-    new_me2           = (me2 & ((n2 == 2) | (n2 == 3))) | (!me2 & (n2 == 3));
-    out[y * DIM + x2] = new_me2;
+      new_me           = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
+      out[y * DIM + x] = new_me;
+    }
+    if (x2 < DIM - 1) {
+      const cell_t me2 = in[y * DIM + x2];
+      const int n2     = in[(y - 1) * DIM + (x2 - 1)] + in[(y - 1) * DIM + x2] +
+                     in[(y - 1) * DIM + (x2 + 1)] + in[(y * DIM + (x2 - 1))] +
+                     in[(y * DIM + (x2 + 1))] + in[(y + 1) * DIM + (x2 - 1)] +
+                     in[(y + 1) * DIM + x2] + in[(y + 1) * DIM + (x2 + 1)];
+      new_me2           = (me2 & ((n2 == 2) | (n2 == 3))) | (!me2 & (n2 == 3));
+      out[y * DIM + x2] = new_me2;
+    }
   }
 }
 
@@ -202,6 +204,21 @@ __kernel void life_gpu_ocl_lazy (__global cell_t *in, __global cell_t *out,
     tile_out[(ytile + 1) * NB_TILES_W + (xtile - 1)] = 1;
     tile_out[(ytile + 1) * NB_TILES_W + xtile]       = 1;
     tile_out[(ytile + 1) * NB_TILES_W + (xtile + 1)] = 1;
+  }
+}
+__kernel void reset_tile_out (__global cell_t *tile_out)
+{
+  unsigned xloc       = get_local_id (0);
+  unsigned yloc       = get_local_id (1);
+  unsigned xgroup     = get_group_id (0);
+  unsigned ygroup     = get_group_id (1);
+  unsigned NB_TILES_W = DIM / TILE_W;
+  unsigned xtile      = xgroup + 1;
+  unsigned ytile      = ygroup + 1;
+  unsigned tile_idx   = ytile * NB_TILES_W + xtile;
+
+  if (xloc == 0 && yloc == 0) {
+    tile_out[tile_idx] = 0;
   }
 }
 
