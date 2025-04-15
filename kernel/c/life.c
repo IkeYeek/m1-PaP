@@ -52,13 +52,12 @@ void life_init (void)
 
     // _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
     //                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    _table = aligned_alloc (32, size);
-    memset (_table, 0, size);
+    _table = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     // _alternate_table = mmap (NULL, size, PROT_READ | PROT_WRITE,
     //                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     _alternate_table = aligned_alloc (32, size);
-    memset (_alternate_table, 0, size);
     // adding 1 ghost cell on each side in order to allow oob writes by 1. those
     // well never be read anyway
     size = (DIM / TILE_W + 2) * (DIM / TILE_H + 2) * sizeof (cell_t);
@@ -231,6 +230,9 @@ static inline char compute_from_vects (
 int life_do_tile_avx2 (const int x, const int y, const int width,
                        const int height)
 {
+  if (x < 32 || x >= DIM - 33) {
+    return life_do_tile_opt (x, y, width, height);
+  }
   char change = 0;
 
   int x_start = (x == 0) ? 1 : x;
@@ -402,6 +404,9 @@ static inline char _mm512_compute_from_vects (
 int life_do_tile_avx512 (const int x, const int y, const int width,
                          const int height)
 {
+  if (x < 64 || x >= DIM - 65) {
+    return life_do_tile_opt (x, y, width, height);
+  }
   char change = 0;
 
   int x_start = (x == 0) ? 1 : x;
