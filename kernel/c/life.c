@@ -230,7 +230,7 @@ static inline char compute_from_vects (
 int life_do_tile_avx2 (const int x, const int y, const int width,
                        const int height)
 {
-  if (x < 32 || x >= DIM - 33) {
+  if (x < 32 || x + width >= DIM - 33) {
     return life_do_tile_opt (x, y, width, height);
   }
   char change = 0;
@@ -404,7 +404,7 @@ static inline char _mm512_compute_from_vects (
 int life_do_tile_avx512 (const int x, const int y, const int width,
                          const int height)
 {
-  if (x < 64 || x >= DIM - 65) {
+  if (x < 64 || x + width >= DIM - 65) {
     return life_do_tile_opt (x, y, width, height);
   }
   char change = 0;
