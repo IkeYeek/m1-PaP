@@ -147,7 +147,7 @@ int life_do_tile_default (int x, int y, int width, int height)
 }
 #define ENABLE_VECTO
 #define __AVX2__ 1
-#define __AVX512__ 1
+#define __AVX512__ 0
 #ifdef ENABLE_VECTO
 #include <immintrin.h>
 #if __AVX2__ == 1

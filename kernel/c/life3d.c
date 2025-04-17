@@ -7,8 +7,20 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+static char *curr_dirty = 0;
+static char *next_dirty = 0;
+
 void life3d_init (void)
 {
+  const int size = sizeof (char) * NB_PATCHES;
+  curr_dirty     = malloc (size);
+  next_dirty     = malloc (size);
+
+  for (int i = 0; i < size; i++) {
+    curr_dirty[i] = 1;
+    next_dirty[i] = 0;
+  }
+
   PRINT_DEBUG ('u', "Mesh size: %d\n", NB_CELLS);
   PRINT_DEBUG ('u', "#Patches: %d\n", NB_PATCHES);
   PRINT_DEBUG ('u', "Min cell neighbors: %d\n", min_neighbors ());
@@ -35,28 +47,6 @@ unsigned life3d_compute_seq (unsigned nb_iter)
 }
 
 int life3d_do_patch_default (int start_cell, int end_cell)
-{
-  int change = 0;
-  for (int c = 0; c < NB_CELLS; c++) {
-    float me = cur_data (c);
-    int nb_n = 0;
-    for (int n = neighbor_start (c); n < neighbor_end (c); n++) {
-      if (cur_data (neighbor (n)))
-        nb_n++;
-    }
-    if (me == 1 && nb_n != 2 && nb_n != 3) {
-      me     = 0.f;
-      change = 1;
-    } else if (me == 0 && nb_n == 3) {
-      me     = 1.f;
-      change = 1;
-    }
-    next_data (c) = me;
-  }
-  return change;
-}
-
-int life3d_do_patch_test (int start_cell, int end_cell)
 {
   int change = 1;
 
@@ -103,13 +93,70 @@ unsigned life3d_compute_tiled (unsigned nb_iter)
   return 1;
 }
 
+unsigned life3d_compute_ompfor (unsigned nb_iter)
+{
+  for (unsigned it = 1; it <= nb_iter; it++) {
+#pragma omp parallel for
+    for (int p = 0; p < NB_PATCHES; p++)
+      do_patch (p);
+    swap_data ();
+  }
+
+  // Stop after first iteration
+  return 0;
+}
+
+unsigned life3d_compute_lazy (unsigned nb_iter)
+{
+  for (unsigned it = 1; it <= nb_iter; it++) {
+#pragma omp parallel for
+    for (int p = 0; p < NB_PATCHES; p++) {
+      if (!curr_dirty[p])
+        continue;
+      int local_change = do_patch (p);
+    }
+    swap_data ();
+  }
+
+  // Stop after first iteration
+  return 0;
+}
+
 #ifdef ENABLE_OPENCL
 
-///////////////////////////// OpenCL version (ocl)
-// Suggested cmdline(s):
-// ./run -lm <your mesh file> -k life3d -g
-//
-unsigned life3d_compute_ocl (unsigned nb_iter)
+static cl_mem neighbors_buffer = 0, index_buffer = 0;
+
+void life3d_init_ocl_naive (void)
+{
+  cl_int err;
+
+  // Array of all neighbors
+  const int sizen = easypap_mesh_desc.total_neighbors * sizeof (unsigned);
+
+  neighbors_buffer =
+      clCreateBuffer (context, CL_MEM_READ_WRITE, sizen, NULL, NULL);
+  if (!neighbors_buffer)
+    exit_with_error ("Failed to allocate neighbor buffer");
+
+  err =
+      clEnqueueWriteBuffer (ocl_queue (0), neighbors_buffer, CL_TRUE, 0, sizen,
+                            easypap_mesh_desc.neighbors, 0, NULL, NULL);
+  check (err, "Failed to write to neighbor buffer");
+
+  // indexes
+  const int sizei = (NB_CELLS + 1) * sizeof (unsigned);
+
+  index_buffer = clCreateBuffer (context, CL_MEM_READ_WRITE, sizei, NULL, NULL);
+  if (!index_buffer)
+    exit_with_error ("Failed to allocate index buffer");
+
+  err = clEnqueueWriteBuffer (ocl_queue (0), index_buffer, CL_TRUE, 0, sizei,
+                              easypap_mesh_desc.index_first_neighbor, 0, NULL,
+                              NULL);
+  check (err, "Failed to write to index buffer");
+}
+
+unsigned life3d_compute_ocl_naive (unsigned nb_iter)
 {
   size_t global[1] = {GPU_SIZE}; // global domain size for our calculation
   size_t local[1]  = {TILE};     // local domain size for our calculation
@@ -124,23 +171,34 @@ unsigned life3d_compute_ocl (unsigned nb_iter)
     err = 0;
     err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
                            &ocl_cur_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &ocl_next_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 2, sizeof (cl_mem),
+                           &neighbors_buffer);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 3, sizeof (cl_mem),
+                           &index_buffer);
     check (err, "Failed to set kernel arguments");
 
     err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 1,
                                   NULL, global, local, 0, NULL, NULL);
     check (err, "Failed to execute kernel");
+
+    // Swap buffers
+    {
+      cl_mem tmp          = ocl_cur_buffer (0);
+      ocl_cur_buffer (0)  = ocl_next_buffer (0);
+      ocl_next_buffer (0) = tmp;
+    }
   }
 
   clFinish (ocl_queue (0));
 
   monitoring_end_tile (0, 0, NB_CELLS, 0, easypap_gpu_lane (0));
 
-  // Stop after first iteration
-  return 1;
+  return 0;
 }
 
-#endif // ENABLE_OPENCL
-
+#endif
 ///////////////////////////// Initial config
 static int debug_hud = -1;
 
@@ -166,7 +224,7 @@ void life3d_draw_random (void)
   int nb_spots, spot_size;
 
   if (NB_CELLS >= 100)
-    nb_spots = NB_CELLS / 100;
+    nb_spots = (NB_CELLS / 100) * 2;
   else
     nb_spots = 1;
   spot_size = NB_CELLS / nb_spots / 4;
