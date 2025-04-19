@@ -151,6 +151,74 @@ int life_do_tile_default (int x, int y, int width, int height)
 #ifdef ENABLE_VECTO
 #include <immintrin.h>
 #if __AVX2__ == 1
+// define a macro to factorize vector loading operations
+#define M256I_LOADU(y, x)                                                      \
+  _mm256_loadu_si256 ((const __m256i *)table_cell (_table, y, x))
+
+__m256i shift_bytes_left (__m256i a)
+{
+  __m256i zero = _mm256_setzero_si256 ();
+  return _mm256_alignr_epi8 (a, zero, 15); // 16-1=15
+}
+
+__m256i shift_bytes_right (__m256i a)
+{
+  __m256i zero = _mm256_setzero_si256 ();
+  return _mm256_alignr_epi8 (zero, a, 1);
+}
+
+int life_do_tile_avx2_firstidea (const int x, const int y, const int width,
+                                 const int height)
+{
+  char change = 0;
+  // precomputing start and end indexes of tile's both width and height
+  int x_start = (x == 0) ? 1 : x;
+  int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start = (y == 0) ? 1 : y;
+  int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
+
+  for (int i = y_start; i < y_end; i++) {
+    for (int j = x_start; j < x_end; j += 30) {
+      // first we load three lines, our target line (v2) and the one above and
+      // below. as we use tables that are larger by one, we don't really care
+      // about oob writes, we will just need to mask out at the end.
+      __m256i v1 = M256I_LOADU (i - 1, j - 1);
+      __m256i v2 = M256I_LOADU (i, j - 1);
+      __m256i v3 = M256I_LOADU (i + 1, j - 1);
+
+      // we start by accumulating vertical neighbors.
+      // now an entry of the vector represent the number of alive cells on the
+      // three lines at this index.
+      __m256i lines_sum = _mm256_add_epi8 (v1, v2);
+      lines_sum         = _mm256_add_epi8 (lines_sum, v3);
+
+      // now we will add left and right alive cell count by adding lines with
+      // lines shifted respectively left and right
+      __m256i lines_sum_left_shift  = shift_bytes_left (lines_sum);
+      __m256i lines_sum_right_shift = shift_bytes_right (lines_sum);
+      lines_sum = _mm256_add_epi8 (lines_sum, lines_sum_left_shift);
+      lines_sum = _mm256_add_epi8 (lines_sum, lines_sum_right_shift);
+
+      // then we need to compute a mask to remove from the count the value of
+      // the cell we are working on to do so we create a mask of alive cells in
+      // v2 so we know on which vector entries we need to substract 1
+      __m256i neighbor_count = _mm256_sub_epi8 (lines_sum, v2);
+
+      __attribute__ ((aligned (32))) char temp[32];
+      _mm256_store_si256 ((__m256i *)temp, neighbor_count);
+      for (int k = 1; k < 31; k++) {
+        int n             = temp[k];
+        int me            = cur_table (i, j - 1 + k);
+        const char new_me = (me & ((n == 2) | (n == 3))) | (!me & (n == 3));
+        change |= (me ^ new_me);
+        next_table (i, j - 1 + k) = new_me;
+      }
+    }
+  }
+
+  return change;
+}
+
 static inline __m256i _mm256_compute_neighbors (
     __m256i vec_top_shift_left, __m256i vec_cell_shift_left,
     __m256i vec_bot_shift_left, __m256i vec_top, __m256i vec_cell,
@@ -245,29 +313,20 @@ int life_do_tile_avx2 (const int x, const int y, const int width,
   __m256i only_twos   = _mm256_set1_epi8 (2);
   __m256i only_ones   = _mm256_set1_epi8 (1);
   __m256i only_zeros  = _mm256_setzero_si256 ();
+
   for (int i = y_start; i < y_end; i++) {
     for (int j = x_start; j < x_end; j += 32) {
-      // first we load the vectors
-      __m256i vec_top_shift_left = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i - 1, j - 1));
-      __m256i vec_cell_shift_left =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j - 1));
-      __m256i vec_bot_shift_left = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i + 1, j - 1));
+      __m256i vec_top_shift_left  = M256I_LOADU (i - 1, j - 1);
+      __m256i vec_cell_shift_left = M256I_LOADU (i, j - 1);
+      __m256i vec_bot_shift_left  = M256I_LOADU (i + 1, j - 1);
 
-      __m256i vec_top =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i - 1, j));
-      __m256i vec_cell =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j));
-      __m256i vec_bot =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i + 1, j));
+      __m256i vec_top  = M256I_LOADU (i - 1, j);
+      __m256i vec_cell = M256I_LOADU (i, j);
+      __m256i vec_bot  = M256I_LOADU (i + 1, j);
 
-      __m256i vec_top_shift_right = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i - 1, j + 1));
-      __m256i vec_cell_shift_right =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j + 1));
-      __m256i vec_bot_shift_right = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i + 1, j + 1));
+      __m256i vec_top_shift_right  = M256I_LOADU (i - 1, j + 1);
+      __m256i vec_cell_shift_right = M256I_LOADU (i, j + 1);
+      __m256i vec_bot_shift_right  = M256I_LOADU (i + 1, j + 1);
 
       change |= compute_from_vects (
           vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
@@ -281,36 +340,35 @@ int life_do_tile_avx2 (const int x, const int y, const int width,
 int life_do_tile_avx2_lessload (const int x, const int y, const int width,
                                 const int height)
 {
-  char change         = 0;
-  int x_start         = (x == 0) ? 1 : x;
-  int x_end           = (x + width >= DIM) ? DIM - 1 : x + width;
-  int y_start         = (y == 0) ? 1 : y;
-  int y_end           = (y + height >= DIM) ? DIM - 1 : y + height;
+  if (x < 32 || x + width >= DIM - 33) {
+    return life_do_tile_opt (x, y, width, height);
+  }
+  char change = 0;
+  int x_start = (x == 0) ? 1 : x;
+  int x_end   = (x + width >= DIM) ? DIM - 1 : x + width;
+  int y_start = (y == 0) ? 1 : y;
+  int y_end   = (y + height >= DIM) ? DIM - 1 : y + height;
+
   __m256i only_threes = _mm256_set1_epi8 (3);
   __m256i only_twos   = _mm256_set1_epi8 (2);
   __m256i only_ones   = _mm256_set1_epi8 (1);
   __m256i only_zeros  = _mm256_setzero_si256 ();
+
   for (int j = x_start; j < x_end; j += 32) {
-    // Reset i at the beginning of each outer loop iteration
+    // reset i at the beginning of each outer loop iteration
     for (int i = y_start; i < y_end; i++) {
-      __m256i vec_top_shift_left = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i - 1, j - 1));
-      __m256i vec_cell_shift_left =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j - 1));
-      __m256i vec_bot_shift_left = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i + 1, j - 1));
-      __m256i vec_top =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i - 1, j));
-      __m256i vec_cell =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j));
-      __m256i vec_bot =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i + 1, j));
-      __m256i vec_top_shift_right = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i - 1, j + 1));
-      __m256i vec_cell_shift_right =
-          _mm256_loadu_si256 ((const __m256i *)table_cell (_table, i, j + 1));
-      __m256i vec_bot_shift_right = _mm256_loadu_si256 (
-          (const __m256i *)table_cell (_table, i + 1, j + 1));
+      // load all 9 vectors using the macro
+      __m256i vec_top_shift_left  = M256I_LOADU (i - 1, j - 1);
+      __m256i vec_cell_shift_left = M256I_LOADU (i, j - 1);
+      __m256i vec_bot_shift_left  = M256I_LOADU (i + 1, j - 1);
+
+      __m256i vec_top  = M256I_LOADU (i - 1, j);
+      __m256i vec_cell = M256I_LOADU (i, j);
+      __m256i vec_bot  = M256I_LOADU (i + 1, j);
+
+      __m256i vec_top_shift_right  = M256I_LOADU (i - 1, j + 1);
+      __m256i vec_cell_shift_right = M256I_LOADU (i, j + 1);
+      __m256i vec_bot_shift_right  = M256I_LOADU (i + 1, j + 1);
 
       change |= compute_from_vects (
           vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
@@ -401,6 +459,9 @@ static inline char _mm512_compute_from_vects (
   return (diff_mask != 0);
 }
 
+#define M512I_LOADU(y, x)                                                      \
+  _mm512_loadu_si512 ((const __m512i *)table_cell (_table, (y), (x)))
+
 int life_do_tile_avx512 (const int x, const int y, const int width,
                          const int height)
 {
@@ -422,27 +483,17 @@ int life_do_tile_avx512 (const int x, const int y, const int width,
 
   for (int i = y_start; i < y_end; i++) {
     for (int j = x_start; j < x_end; j += 64) {
-      // first we load the vectors
-      __m512i vec_top_shift_left = _mm512_loadu_si512 (
-          (const __m512i *)table_cell (_table, i - 1, j - 1));
-      __m512i vec_cell_shift_left =
-          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i, j - 1));
-      __m512i vec_bot_shift_left = _mm512_loadu_si512 (
-          (const __m512i *)table_cell (_table, i + 1, j - 1));
+      __m512i vec_top_shift_left  = M512I_LOADU (i - 1, j - 1);
+      __m512i vec_cell_shift_left = M512I_LOADU (i, j - 1);
+      __m512i vec_bot_shift_left  = M512I_LOADU (i + 1, j - 1);
 
-      __m512i vec_top =
-          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i - 1, j));
-      __m512i vec_cell =
-          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i, j));
-      __m512i vec_bot =
-          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i + 1, j));
+      __m512i vec_top  = M512I_LOADU (i - 1, j);
+      __m512i vec_cell = M512I_LOADU (i, j);
+      __m512i vec_bot  = M512I_LOADU (i + 1, j);
 
-      __m512i vec_top_shift_right = _mm512_loadu_si512 (
-          (const __m512i *)table_cell (_table, i - 1, j + 1));
-      __m512i vec_cell_shift_right =
-          _mm512_loadu_si512 ((const __m512i *)table_cell (_table, i, j + 1));
-      __m512i vec_bot_shift_right = _mm512_loadu_si512 (
-          (const __m512i *)table_cell (_table, i + 1, j + 1));
+      __m512i vec_top_shift_right  = M512I_LOADU (i - 1, j + 1);
+      __m512i vec_cell_shift_right = M512I_LOADU (i, j + 1);
+      __m512i vec_bot_shift_right  = M512I_LOADU (i + 1, j + 1);
 
       change |= _mm512_compute_from_vects (
           vec_top_shift_left, vec_cell_shift_left, vec_bot_shift_left, vec_top,
