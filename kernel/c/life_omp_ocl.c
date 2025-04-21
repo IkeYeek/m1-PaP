@@ -46,6 +46,50 @@ void life_omp_ocl_init (void)
 
 #define ENABLE_OPENCL
 #ifdef ENABLE_OPENCL
+/* === First version I try, GPU takes care of the bottom of the table === */
+#define NB_LINES_FOR_GPU 512
+#define CPU_GPU_SYNC_FREQ 10
+#define TRUE_NB_LINES_FOR_GPU (NB_LINES_FOR_GPU + (CPU_GPU_SYNC_FREQ - 1))
+cl_mem gpu_table = 0, gpu_alternate_table = 0;
+// for the first version, we're going to fix the n° of lines computed by the
+// CPU vs by the GPU to NB_LINES_FOR_GPU.
+// we're going to send a border as well, of size CPU_GPU_SYNC_FREQ-1
+// The CPU will have the full table, with part of it out of sync. Every
+// CPU_GPU_SYNC_FREQ we're going to update both GPU and CPU tables.
+void life_omp_ocl_init (void)
+{
+  if (_table != NULL)
+    return;
+  const unsigned full_size = DIM * DIM * sizeof (cell_t);
+  _table                   = mmap (NULL, full_size, PROT_READ | PROT_WRITE,
+                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  _alternate_table         = mmap (NULL, full_size, PROT_READ | PROT_WRITE,
+                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+  const unsigned gpu_size = DIM * TRUE_NB_LINES_FOR_GPU * sizeof (cell_t);
+  gpu_table = clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
+  if (!gpu_table)
+    exit_with_error ("Failed to allocate gpu_table buffer");
+  gpu_alternate_table =
+      clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
+  if (!gpu_alternate_table ())
+    exit_with_error ("Failed to allocate gpu_alternate_table buffer");
+}
+
+void life_omp_ocl_draw (char *params)
+{
+  life_omp_ocl_draw (params);
+  const unsigned gpu_size = DIM * TRUE_NB_LINES_FOR_GPU * sizeof (cell_t);
+  cl_int err;
+  cell_t *gpu_table_slice_data = 0, *gpu_alternate_table_slice_data = 0;
+  gpu_table_slice_data           = malloc (gpu_size);
+  gpu_alternate_table_slice_data = malloc (gpu_size);
+  for (int y = 0; y < TRUE_NB_LINES_FOR_GPU; y++) {
+    for (int x = 0; x < DIM; x++) {
+      gpu_table_slice_data
+    }
+  }
+}
 
 void life_omp_ocl_refresh_img_ocl (void)
 {
