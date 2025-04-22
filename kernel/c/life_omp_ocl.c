@@ -87,42 +87,58 @@ void life_omp_ocl_draw_ocl (char *params)
 
 unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
 {
-  size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};
+  size_t global[2] = {GPU_SIZE_X, TRUE_NB_LINES_FOR_GPU};
   size_t local[2]  = {TILE_W, TILE_H};
   cl_int err;
   int change = 0;
-  monitoring_start (easypap_gpu_lane (0));
+  printf ("gpu size: %dx%d\n", GPU_SIZE_X, GPU_SIZE_Y);
+
+  omp_set_max_active_levels (2);
 
   for (unsigned it = 1; it <= nb_iter; it++) {
-    // running kernel on gpu
-    err = 0;
-    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
-                           &gpu_table_ocl);
-    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
-                           &gpu_alternage_table_ocl);
-    check (err, "Failed to set kernel computing arguments");
-    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
-                                  NULL, global, local, 0, NULL, NULL);
-    check (err, "Failed to execute kernel");
-
-// running on cpu
-#pragma omp parallel for schedule(runtime) collapse(2) reduction(| : change)
-    for (int y = NB_LINES_FOR_GPU; y < DIM; y += TILE_H)
-      for (int x = 0; x < DIM; x += TILE_W) {
-        change |= do_tile (x, y, TILE_W, TILE_H);
-      }
-
+#pragma omp parallel num_threads(2)
     {
-      cl_mem tmp              = gpu_table_ocl;
-      gpu_table_ocl           = gpu_alternage_table_ocl;
-      gpu_alternage_table_ocl = gpu_table_ocl;
-      cell_t *tmp2            = _table;
-      _table                  = _alternate_table;
-      _alternate_table        = tmp2;
+      int thread_id = omp_get_thread_num ();
+      if (thread_id == 0) {
+        printf ("start gpu\n");
+        monitoring_start (easypap_gpu_lane (0));
+        err = 0;
+        err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                               &gpu_table_ocl);
+        err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                               &gpu_alternage_table_ocl);
+        check (err, "Failed to set kernel computing arguments");
+        err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
+                                      NULL, global, local, 0, NULL, NULL);
+        clFinish (ocl_queue (0));
+        monitoring_end_tile (0, 0, DIM, NB_LINES_FOR_GPU, easypap_gpu_lane (0));
+        printf ("end gpu\n");
+        check (err, "Failed to execute kernel");
+      } else {
+        {
+#pragma omp parallel for schedule(runtime) collapse(2)
+          for (int y = NB_LINES_FOR_GPU; y < DIM; y += TILE_H) {
+            for (int x = 0; x < DIM; x += TILE_W) {
+              if (y == NB_LINES_FOR_GPU && !x)
+                printf ("start cpu\n");
+              change |= do_tile (x, y, TILE_W, TILE_H);
+              if (y >= DIM - 1 - TILE_H && !x)
+                printf ("end cpu\n");
+            }
+          }
+        }
+      }
     }
+    printf ("swapping\n");
+
+    cl_mem tmp              = gpu_table_ocl;
+    gpu_table_ocl           = gpu_alternage_table_ocl;
+    gpu_alternage_table_ocl = tmp;
+    cell_t *tmp2            = _table;
+    *_table                 = *_alternate_table;
+    *_alternate_table       = tmp2;
   }
-  clFinish (ocl_queue (0));
-  monitoring_end_tile (0, 0, DIM, DIM, easypap_gpu_lane (0));
+
   return 0;
 }
 
@@ -134,14 +150,14 @@ void life_omp_ocl_refresh_img_ocl (void)
                              sizeof (cell_t) * DIM * NB_LINES_FOR_GPU, _table,
                              0, NULL, NULL);
   check (err, "Failed to read buffer chunk from GPU");
-
+  printf ("refreshing\n");
   life_omp_ocl_refresh_img ();
 }
 #endif
 
 void life_omp_ocl_finalize (void)
 {
-  unsigned size = (DIM + 1) * (DIM + 1) * sizeof (cell_t);
+  unsigned size = DIM * DIM * sizeof (cell_t);
   munmap (_table, size);
   munmap (_alternate_table, size);
 }
