@@ -49,55 +49,90 @@ void life_omp_ocl_init (void)
 /* === First version I try, GPU takes care of the bottom of the table === */
 #define NB_LINES_FOR_GPU 512
 #define CPU_GPU_SYNC_FREQ 10
-#define TRUE_NB_LINES_FOR_GPU (NB_LINES_FOR_GPU + (CPU_GPU_SYNC_FREQ - 1))
-cl_mem gpu_table = 0, gpu_alternate_table = 0;
+#define BORDER_SIZE (CPU_GPU_SYNC_FREQ - 1)
+#define TRUE_NB_LINES_FOR_GPU (NB_LINES_FOR_GPU + BORDER_SIZE)
+static cl_mem gpu_table_ocl = 0, gpu_alternage_table_ocl = 0;
 // for the first version, we're going to fix the n° of lines computed by the
 // CPU vs by the GPU to NB_LINES_FOR_GPU.
 // we're going to send a border as well, of size CPU_GPU_SYNC_FREQ-1
 // The CPU will have the full table, with part of it out of sync. Every
 // CPU_GPU_SYNC_FREQ we're going to update both GPU and CPU tables.
-void life_omp_ocl_init (void)
+void life_omp_ocl_init_ocl (void)
 {
-  if (_table != NULL)
-    return;
-  const unsigned full_size = DIM * DIM * sizeof (cell_t);
-  _table                   = mmap (NULL, full_size, PROT_READ | PROT_WRITE,
-                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  _alternate_table         = mmap (NULL, full_size, PROT_READ | PROT_WRITE,
-                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  life_omp_ocl_init ();
 
   const unsigned gpu_size = DIM * TRUE_NB_LINES_FOR_GPU * sizeof (cell_t);
-  gpu_table = clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
-  if (!gpu_table)
-    exit_with_error ("Failed to allocate gpu_table buffer");
-  gpu_alternate_table =
+  gpu_table_ocl =
       clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
-  if (!gpu_alternate_table ())
-    exit_with_error ("Failed to allocate gpu_alternate_table buffer");
+  if (!gpu_table_ocl)
+    exit_with_error ("Failed to allocate gpu_table_ocl buffer");
+  gpu_alternage_table_ocl =
+      clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
+  if (!gpu_alternage_table_ocl)
+    exit_with_error ("Failed to allocate gpu_alternage_table_ocl buffer");
 }
 
-void life_omp_ocl_draw (char *params)
+void life_omp_ocl_draw_ocl (char *params)
 {
   life_omp_ocl_draw (params);
   const unsigned gpu_size = DIM * TRUE_NB_LINES_FOR_GPU * sizeof (cell_t);
   cl_int err;
-  cell_t *gpu_table_slice_data = 0, *gpu_alternate_table_slice_data = 0;
-  gpu_table_slice_data           = malloc (gpu_size);
-  gpu_alternate_table_slice_data = malloc (gpu_size);
-  for (int y = 0; y < TRUE_NB_LINES_FOR_GPU; y++) {
-    for (int x = 0; x < DIM; x++) {
-      gpu_table_slice_data
+  err = clEnqueueWriteBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
+                              gpu_size, _table, 0, NULL, NULL);
+  check (err, "Failed to write gpu_table_ocl");
+  err = clEnqueueWriteBuffer (ocl_queue (0), gpu_alternage_table_ocl, CL_TRUE,
+                              0, gpu_size, _alternate_table, 0, NULL, NULL);
+  check (err, "Failed to write gpu_alternage_table_ocl");
+}
+
+unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
+{
+  size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};
+  size_t local[2]  = {TILE_W, TILE_H};
+  cl_int err;
+  int change = 0;
+  monitoring_start (easypap_gpu_lane (0));
+
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    // running kernel on gpu
+    err = 0;
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &gpu_table_ocl);
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &gpu_alternage_table_ocl);
+    check (err, "Failed to set kernel computing arguments");
+    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
+                                  NULL, global, local, 0, NULL, NULL);
+    check (err, "Failed to execute kernel");
+
+// running on cpu
+#pragma omp parallel for schedule(runtime) collapse(2) reduction(| : change)
+    for (int y = NB_LINES_FOR_GPU; y < DIM; y += TILE_H)
+      for (int x = 0; x < DIM; x += TILE_W) {
+        change |= do_tile (x, y, TILE_W, TILE_H);
+      }
+
+    {
+      cl_mem tmp              = gpu_table_ocl;
+      gpu_table_ocl           = gpu_alternage_table_ocl;
+      gpu_alternage_table_ocl = gpu_table_ocl;
+      cell_t *tmp2            = _table;
+      _table                  = _alternate_table;
+      _alternate_table        = tmp2;
     }
   }
+  clFinish (ocl_queue (0));
+  monitoring_end_tile (0, 0, DIM, DIM, easypap_gpu_lane (0));
+  return 0;
 }
 
 void life_omp_ocl_refresh_img_ocl (void)
 {
   cl_int err;
 
-  err =
-      clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
-                           sizeof (cell_t) * DIM * DIM, _table, 0, NULL, NULL);
+  err = clEnqueueReadBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
+                             sizeof (cell_t) * DIM * NB_LINES_FOR_GPU, _table,
+                             0, NULL, NULL);
   check (err, "Failed to read buffer chunk from GPU");
 
   life_omp_ocl_refresh_img ();
