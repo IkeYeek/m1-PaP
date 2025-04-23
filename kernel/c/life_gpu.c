@@ -240,7 +240,7 @@ void life_gpu_refresh_img_ocl_lazy (void)
 
 void life_gpu_finalize (void)
 {
-  unsigned size = (DIM + 1) * (DIM + 1) * sizeof (cell_t);
+  unsigned size = (DIM) * (DIM) * sizeof (cell_t);
   munmap (_table, size);
   munmap (_alternate_table, size);
 }
