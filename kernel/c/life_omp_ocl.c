@@ -47,11 +47,12 @@ void life_omp_ocl_init (void)
 #define ENABLE_OPENCL
 #ifdef ENABLE_OPENCL
 /* === First version I try, GPU takes care of the bottom of the table === */
-#define NB_LINES_FOR_GPU 512
 #define CPU_GPU_SYNC_FREQ 10
+#define NB_LINES_FOR_GPU 512
 #define BORDER_SIZE (CPU_GPU_SYNC_FREQ - 1)
 #define TRUE_NB_LINES_FOR_GPU (NB_LINES_FOR_GPU + BORDER_SIZE)
 static cl_mem gpu_table_ocl = 0, gpu_alternage_table_ocl = 0;
+static nb_iter_true = 0;
 // for the first version, we're going to fix the n° of lines computed by the
 // CPU vs by the GPU to NB_LINES_FOR_GPU.
 // we're going to send a border as well, of size CPU_GPU_SYNC_FREQ-1
@@ -84,14 +85,12 @@ void life_omp_ocl_draw_ocl (char *params)
                               0, gpu_size, _alternate_table, 0, NULL, NULL);
   check (err, "Failed to write gpu_alternage_table_ocl");
 }
-
 unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
 {
-  size_t global[2] = {GPU_SIZE_X, TRUE_NB_LINES_FOR_GPU};
+  size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};
   size_t local[2]  = {TILE_W, TILE_H};
   cl_int err;
   int change = 0;
-  printf ("gpu size: %dx%d\n", GPU_SIZE_X, GPU_SIZE_Y);
 
   omp_set_max_active_levels (2);
 
@@ -100,7 +99,6 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
     {
       int thread_id = omp_get_thread_num ();
       if (thread_id == 0) {
-        printf ("start gpu\n");
         monitoring_start (easypap_gpu_lane (0));
         err = 0;
         err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
@@ -112,31 +110,36 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
                                       NULL, global, local, 0, NULL, NULL);
         clFinish (ocl_queue (0));
         monitoring_end_tile (0, 0, DIM, NB_LINES_FOR_GPU, easypap_gpu_lane (0));
-        printf ("end gpu\n");
         check (err, "Failed to execute kernel");
       } else {
         {
 #pragma omp parallel for schedule(runtime) collapse(2)
-          for (int y = NB_LINES_FOR_GPU; y < DIM; y += TILE_H) {
+          for (int y = NB_LINES_FOR_GPU - TILE_H * (TILE_H / BORDER_SIZE + 1);
+               y < DIM; y += TILE_H) {
             for (int x = 0; x < DIM; x += TILE_W) {
-              if (y == NB_LINES_FOR_GPU && !x)
-                printf ("start cpu\n");
               change |= do_tile (x, y, TILE_W, TILE_H);
-              if (y >= DIM - 1 - TILE_H && !x)
-                printf ("end cpu\n");
             }
           }
         }
       }
     }
-    printf ("swapping\n");
 
     cl_mem tmp              = gpu_table_ocl;
     gpu_table_ocl           = gpu_alternage_table_ocl;
     gpu_alternage_table_ocl = tmp;
     cell_t *tmp2            = _table;
-    *_table                 = *_alternate_table;
-    *_alternate_table       = tmp2;
+    _table                  = _alternate_table;
+    _alternate_table        = tmp2;
+    if (nb_iter_true++ % CPU_GPU_SYNC_FREQ == 0) {
+      unsigned gpu_size = sizeof (cell_t) * DIM * NB_LINES_FOR_GPU;
+      cl_int err;
+      err = clEnqueueReadBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
+                                 gpu_size, _table, 0, NULL, NULL);
+      check (err, "Err syncing host to device");
+      err = clEnqueueWriteBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
+                                  gpu_size, _table, 0, NULL, NULL);
+      check (err, "Err syncing device to host");
+    }
   }
 
   return 0;
@@ -150,7 +153,6 @@ void life_omp_ocl_refresh_img_ocl (void)
                              sizeof (cell_t) * DIM * NB_LINES_FOR_GPU, _table,
                              0, NULL, NULL);
   check (err, "Failed to read buffer chunk from GPU");
-  printf ("refreshing\n");
   life_omp_ocl_refresh_img ();
 }
 #endif
