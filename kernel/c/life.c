@@ -3,6 +3,7 @@
 
 #include <numa.h>
 #include <omp.h>
+#include <mpi.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,8 @@ static cell_t *restrict __attribute__ ((aligned (32))) _dirty_tiles     = NULL;
 static cell_t *restrict __attribute__ ((aligned (32))) _dirty_tiles_alt = NULL;
 
 static unsigned __attribute__ ((aligned (64))) DIM_PER_TILE_W;
+
+static int rank, size;
 
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
@@ -145,6 +148,7 @@ int life_do_tile_default (int x, int y, int width, int height)
       }
   return change;
 }
+/*
 #define ENABLE_VECTO
 #define __AVX2__ 1
 #define __AVX512__ 1
@@ -517,6 +521,7 @@ int life_do_tile_avx_balanced (const int x, const int y, const int width,
 
 #endif
 #endif
+*/
 ///////////////////////////// Do tile optimized
 int life_do_tile_opt (const int x, const int y, const int width,
                       const int height)
@@ -794,6 +799,68 @@ void life_ft (void)
       next_dirty (tile_y, tile_x) = cur_dirty (tile_y, tile_x) = 1;
     }
 }
+
+
+
+///////////////////////////// MPI
+void life_init_mpi(){
+  easypap_check_mpi();
+  MPI_Comm_rank (MPI_COMM_WORLD, &rank);
+  MPI_Comm_size (MPI_COMM_WORLD, &size);
+}
+
+static int rankTop(int rank)
+{
+    return rank * (DIM / size);
+}
+
+static unsigned int rankSize(int rank)
+{
+  return (rank != size - 1) ? (DIM / size) : ((DIM / size) + (DIM % size));
+}
+
+static void recv_lines (int ligne, int from){
+MPI_Status status;
+MPI_Recv (&cur_table (ligne, 0), DIM, MPI_UNSIGNED, from, 0, MPI_COMM_WORLD, &status);
+}
+static void send_lines (int ligne, int to){
+MPI_Send (&cur_table (ligne, 0), DIM, MPI_UNSIGNED, to, 0, MPI_COMM_WORLD);
+}
+
+static void send_borders (void){
+  if (rank % 2 == 0) {
+  send_lines (rankTop (rank), rank != 0 ? (rank - 1) : (size - 1));
+  recv_lines (rankTop ((rank + 1) % size), (rank + 1) % size);
+  } else {
+  recv_lines (rankTop ((rank + 1) % size), (rank + 1) % size);
+  send_lines (rankTop (rank), rank != 0 ? (rank - 1) : (size - 1));
+  }
+}  
+
+void life_refresh_img_mpi(){
+  MPI_Status status;
+
+  if (rank == 0) {
+    for (int i = 1; i < size; i++) {
+        unsigned otherRankTop = rankTop(i);
+        unsigned otherRankSize = rankSize(i);
+        
+        MPI_Recv(&cur_table(otherRankTop, 0), 
+                 DIM * otherRankSize, MPI_UNSIGNED, 
+                 i, 0, MPI_COMM_WORLD, &status);
+    }       
+} 
+else {
+    unsigned myTop = rankTop(rank);
+    unsigned mySize = rankSize(rank);
+    
+    MPI_Send(&cur_table(myTop, 0), 
+             DIM * mySize, MPI_UNSIGNED, 
+             0, 0, MPI_COMM_WORLD);
+}
+life_refresh_img();
+}
+
 
 ///////////////////////////// Initial configs
 
