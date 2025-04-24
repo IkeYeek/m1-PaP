@@ -49,20 +49,19 @@ void life_omp_ocl_init (void)
 /* === First version I try, GPU takes care of the bottom of the table === */
 #define CPU_GPU_SYNC_FREQ 10
 #define NB_LINES_FOR_GPU 512
-#define BORDER_SIZE (CPU_GPU_SYNC_FREQ - 1)
-#define TRUE_NB_LINES_FOR_GPU (NB_LINES_FOR_GPU + BORDER_SIZE)
+#define BORDER_SIZE CPU_GPU_SYNC_FREQ
 static cl_mem gpu_table_ocl = 0, gpu_alternage_table_ocl = 0;
-static nb_iter_true = 0;
+static int nb_iter_true = 0;
 // for the first version, we're going to fix the n° of lines computed by the
 // CPU vs by the GPU to NB_LINES_FOR_GPU.
 // we're going to send a border as well, of size CPU_GPU_SYNC_FREQ-1
 // The CPU will have the full table, with part of it out of sync. Every
-// CPU_GPU_SYNC_FREQ we're going to update both GPU and CPU tables.
+// CPU_GPU_SYNC_FREQ we're going to sync CPU and GPU.
 void life_omp_ocl_init_ocl (void)
 {
   life_omp_ocl_init ();
 
-  const unsigned gpu_size = DIM * TRUE_NB_LINES_FOR_GPU * sizeof (cell_t);
+  const unsigned gpu_size = DIM * NB_LINES_FOR_GPU * sizeof (cell_t);
   gpu_table_ocl =
       clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
   if (!gpu_table_ocl)
@@ -76,7 +75,7 @@ void life_omp_ocl_init_ocl (void)
 void life_omp_ocl_draw_ocl (char *params)
 {
   life_omp_ocl_draw (params);
-  const unsigned gpu_size = DIM * TRUE_NB_LINES_FOR_GPU * sizeof (cell_t);
+  const unsigned gpu_size = DIM * NB_LINES_FOR_GPU * sizeof (cell_t);
   cl_int err;
   err = clEnqueueWriteBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
                               gpu_size, _table, 0, NULL, NULL);
@@ -87,7 +86,7 @@ void life_omp_ocl_draw_ocl (char *params)
 }
 unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
 {
-  size_t global[2] = {GPU_SIZE_X, GPU_SIZE_Y};
+  size_t global[2] = {GPU_SIZE_X, NB_LINES_FOR_GPU};
   size_t local[2]  = {TILE_W, TILE_H};
   cl_int err;
   int change = 0;
@@ -109,13 +108,16 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
         err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
                                       NULL, global, local, 0, NULL, NULL);
         clFinish (ocl_queue (0));
-        monitoring_end_tile (0, 0, DIM, NB_LINES_FOR_GPU, easypap_gpu_lane (0));
+        monitoring_end_tile (0, 0, DIM, NB_LINES_FOR_GPU - BORDER_SIZE,
+                             easypap_gpu_lane (0));
         check (err, "Failed to execute kernel");
       } else {
         {
+          int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
+          int cpu_start_y  = NB_LINES_FOR_GPU - (border_tiles * TILE_H);
+
 #pragma omp parallel for schedule(runtime) collapse(2)
-          for (int y = NB_LINES_FOR_GPU - TILE_H * (TILE_H / BORDER_SIZE + 1);
-               y < DIM; y += TILE_H) {
+          for (int y = cpu_start_y; y < DIM; y += TILE_H) {
             for (int x = 0; x < DIM; x += TILE_W) {
               change |= do_tile (x, y, TILE_W, TILE_H);
             }
@@ -130,14 +132,22 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
     cell_t *tmp2            = _table;
     _table                  = _alternate_table;
     _alternate_table        = tmp2;
+
     if (nb_iter_true++ % CPU_GPU_SYNC_FREQ == 0) {
-      unsigned gpu_size = sizeof (cell_t) * DIM * NB_LINES_FOR_GPU;
+      unsigned true_gpu_size =
+          sizeof (cell_t) * DIM * (NB_LINES_FOR_GPU - BORDER_SIZE);
       cl_int err;
+
       err = clEnqueueReadBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
-                                 gpu_size, _table, 0, NULL, NULL);
+                                 true_gpu_size, _table, 0, NULL, NULL);
       check (err, "Err syncing host to device");
-      err = clEnqueueWriteBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
-                                  gpu_size, _table, 0, NULL, NULL);
+
+      size_t border_offset_elements = DIM * (NB_LINES_FOR_GPU - BORDER_SIZE);
+
+      err = clEnqueueWriteBuffer (
+          ocl_queue (0), gpu_table_ocl, CL_TRUE, true_gpu_size,
+          BORDER_SIZE * DIM * sizeof (cell_t), _table + border_offset_elements,
+          0, NULL, NULL);
       check (err, "Err syncing device to host");
     }
   }
@@ -150,8 +160,9 @@ void life_omp_ocl_refresh_img_ocl (void)
   cl_int err;
 
   err = clEnqueueReadBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
-                             sizeof (cell_t) * DIM * NB_LINES_FOR_GPU, _table,
-                             0, NULL, NULL);
+                             sizeof (cell_t) * DIM *
+                                 (NB_LINES_FOR_GPU - BORDER_SIZE),
+                             _table, 0, NULL, NULL);
   check (err, "Failed to read buffer chunk from GPU");
   life_omp_ocl_refresh_img ();
 }
