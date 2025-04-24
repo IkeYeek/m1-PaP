@@ -28,8 +28,10 @@ CXX			:= g++
 IS_CLANG = $(shell $(CC) --version 2>/dev/null | head -n 1 | grep -c "clang")
 
 # Optimization level
-CFLAGS 			:= -O3 -march=native -funroll-loops -fopt-info-vec
-CUDA_CFLAGS		:= -O3
+#CFLAGS 			:= -O3 -march=native -funroll-loops -fopt-info-vec #Incompatible MPI
+CFLAGS += -O2 -mtune=generic
+
+#CUDA_CFLAGS		:= -O3
 
 # Warnings
 CFLAGS			+= -Wall -Wno-unused-function

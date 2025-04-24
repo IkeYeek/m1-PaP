@@ -803,12 +803,14 @@ void life_ft (void)
 
 
 ///////////////////////////// MPI
-void life_init_mpi(){
-  easypap_check_mpi();
-  MPI_Comm_rank (MPI_COMM_WORLD, &rank);
-  MPI_Comm_size (MPI_COMM_WORLD, &size);
+void life_init_mpi() {
+    easypap_check_mpi();
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    life_init();
 }
 
+// Function implementations
 static int rankTop(int rank)
 {
     return rank * (DIM / size);
@@ -816,16 +818,15 @@ static int rankTop(int rank)
 
 static unsigned int rankSize(int rank)
 {
-  return (rank != size - 1) ? (DIM / size) : ((DIM / size) + (DIM % size));
+    return (rank != size - 1) ? (DIM / size) : ((DIM / size) + (DIM % size));
 }
-
 static void recv_lines (int ligne, int from){
-MPI_Status status;
-MPI_Recv (&cur_table (ligne, 0), DIM, MPI_UNSIGNED, from, 0, MPI_COMM_WORLD, &status);
-}
-static void send_lines (int ligne, int to){
-MPI_Send (&cur_table (ligne, 0), DIM, MPI_UNSIGNED, to, 0, MPI_COMM_WORLD);
-}
+  MPI_Status status;
+  MPI_Recv (&cur_table (ligne, 0), DIM, MPI_UNSIGNED, from, 0, MPI_COMM_WORLD, &status);
+  }
+  static void send_lines (int ligne, int to){
+  MPI_Send (&cur_table (ligne, 0), DIM, MPI_UNSIGNED, to, 0, MPI_COMM_WORLD);
+  }
 
 static void send_borders (void){
   if (rank % 2 == 0) {
@@ -837,30 +838,55 @@ static void send_borders (void){
   }
 }  
 
-void life_refresh_img_mpi(){
-  MPI_Status status;
 
-  if (rank == 0) {
-    for (int i = 1; i < size; i++) {
-        unsigned otherRankTop = rankTop(i);
-        unsigned otherRankSize = rankSize(i);
-        
-        MPI_Recv(&cur_table(otherRankTop, 0), 
-                 DIM * otherRankSize, MPI_UNSIGNED, 
-                 i, 0, MPI_COMM_WORLD, &status);
-    }       
-} 
-else {
+unsigned life_compute_mpi(unsigned nb_iter)
+{
+    unsigned res = 0;
     unsigned myTop = rankTop(rank);
     unsigned mySize = rankSize(rank);
+    unsigned global_change = 0;
     
-    MPI_Send(&cur_table(myTop, 0), 
-             DIM * mySize, MPI_UNSIGNED, 
-             0, 0, MPI_COMM_WORLD);
-}
-life_refresh_img();
+    for (unsigned it = 1; it <= nb_iter; it++) {
+        send_borders();
+        
+        unsigned change = 0;
+        for (int y = myTop; y < myTop + mySize; y += TILE_H) {
+            for (int x = 0; x < DIM; x += TILE_W) {
+                int actual_tile_h = (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
+                change |= do_tile(x, y, TILE_W, actual_tile_h);
+            }
+        }
+        
+        if (!global_change)
+            return res = it;
+            
+        swap_tables();
+    }
+    
+    return res;
 }
 
+void life_refresh_img_mpi()
+{
+    MPI_Status status;
+    
+    if (rank == 0) {
+        for (int i = 1; i < size; i++) {
+            unsigned otherRankTop = rankTop(i);
+            unsigned otherRankSize = rankSize(i);
+            MPI_Recv(&cur_table(otherRankTop, 0),
+                   DIM * otherRankSize, MPI_UNSIGNED,
+                   i, 0, MPI_COMM_WORLD, &status);
+        }
+        life_refresh_img();
+    } else {
+        unsigned myTop = rankTop(rank);
+        unsigned mySize = rankSize(rank);
+        MPI_Send(&cur_table(myTop, 0),
+               DIM * mySize, MPI_UNSIGNED,
+               0, 0, MPI_COMM_WORLD);
+    }
+}
 
 ///////////////////////////// Initial configs
 
