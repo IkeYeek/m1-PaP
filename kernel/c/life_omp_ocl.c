@@ -48,7 +48,7 @@ void life_omp_ocl_init (void)
 #ifdef ENABLE_OPENCL
 /* === First version I try, GPU takes care of the bottom of the table === */
 #define CPU_GPU_SYNC_FREQ 10
-#define NB_LINES_FOR_GPU 512
+#define NB_LINES_FOR_GPU 1024
 #define BORDER_SIZE CPU_GPU_SYNC_FREQ
 static cl_mem gpu_table_ocl = 0, gpu_alternage_table_ocl = 0;
 static int nb_iter_true = 0;
@@ -133,11 +133,12 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
     _table                  = _alternate_table;
     _alternate_table        = tmp2;
 
-    if (nb_iter_true++ % CPU_GPU_SYNC_FREQ == 0) {
+    if (++nb_iter_true % CPU_GPU_SYNC_FREQ == 0) {
       unsigned true_gpu_size =
           sizeof (cell_t) * DIM * (NB_LINES_FOR_GPU - BORDER_SIZE);
       cl_int err;
 
+      printf ("%d\n", nb_iter_true);
       err = clEnqueueReadBuffer (ocl_queue (0), gpu_table_ocl, CL_TRUE, 0,
                                  true_gpu_size, _table, 0, NULL, NULL);
       check (err, "Err syncing host to device");
