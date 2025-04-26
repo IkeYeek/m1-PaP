@@ -5,7 +5,7 @@ __kernel void life_omp_ocl_ocl (__global cell_t *in, __global cell_t *out)
   const unsigned x = get_global_id (0);
   const unsigned y = get_global_id (1);
 
-  if (x > 0 && x < DIM - 1 && y > 0 && y < DIM - 1) {
+  if (x > 0 && x < DIM - 1 && y > 0 && y < get_global_size(1) - 1) {
     const cell_t me = in[y * DIM + x];
 
     const unsigned n = in[(y - 1) * DIM + (x - 1)] + in[(y - 1) * DIM + x] +
