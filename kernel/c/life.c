@@ -803,16 +803,6 @@ void life_ft (void)
 
 
 ///////////////////////////// MPI
-void life_init_mpi() {
-  easypap_check_mpi();
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &size);
-  
-  life_init();
-
-  printf("Process %d of %d initialized (rows %d-%d)\n", 
-    rank, size, rankTop(rank), rankBot(rank)-1);
-}
 
 int rankTop(int rank) {
   return (rank * DIM) / size;
@@ -825,6 +815,16 @@ int rankSize(int rank) {
 int rankBot(int rank) {
   return rankTop(rank) + rankSize(rank);
 }
+void life_init_mpi() {
+  easypap_check_mpi();
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+  
+  life_init();
+
+  printf("Process %d of %d initialized (rows %d-%d)\n", 
+    rank, size, rankTop(rank), rankBot(rank)-1);
+}
 
 static void exchange_halos() {
   if (size == 1) return; 
@@ -832,44 +832,22 @@ static void exchange_halos() {
   MPI_Status status;
   int tag = 0;
   
-  // Send to top neighbor, receive from bottom
+  // Send to top neighbor, receive from top
   if (rank > 0) {
       MPI_Send(&cur_table(rankTop(rank), 0), DIM, MPI_CHAR, rank-1, tag, MPI_COMM_WORLD);
       MPI_Recv(&cur_table(rankTop(rank)-1, 0), DIM, MPI_CHAR, rank-1, tag, MPI_COMM_WORLD, &status);
   }
   
-  // Send to bottom neighbor, receive from top
+  // Send to bottom neighbor, receive from bottom
   if (rank < size-1) {
-      MPI_Send(&cur_table(rankBot(rank), 0), DIM, MPI_CHAR, rank+1, tag, MPI_COMM_WORLD);
-      MPI_Recv(&cur_table(rankBot(rank)+1, 0), DIM, MPI_CHAR, rank+1, tag, MPI_COMM_WORLD, &status);
+      MPI_Send(&cur_table(rankBot(rank)-1, 0), DIM, MPI_CHAR, rank+1, tag, MPI_COMM_WORLD);
+      MPI_Recv(&cur_table(rankBot(rank), 0), DIM, MPI_CHAR, rank+1, tag, MPI_COMM_WORLD, &status);
   }
-}
-
-unsigned life_compute_mpi(unsigned nb_iter) {
-  unsigned res = 0;
-  unsigned myTop = rankTop(rank);
-  unsigned mySize = rankSize(rank);
-  
-  for (unsigned it = 1; it <= nb_iter; it++) {
-      exchange_halos();
-      
-      for (int y = myTop; y < myTop + mySize; y += TILE_H) {
-          for (int x = 0; x < DIM; x += TILE_W) {
-              int actual_tile_h = (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
-              do_tile(x, y, TILE_W, actual_tile_h);
-          }
-      }
-      
-      
-      swap_tables();
-  }
-  
-  return res;
 }
 
 void life_refresh_img_mpi() {
   MPI_Status status;
-  
+
   if (rank == 0) {
     for (int i = 1; i < size; i++) {
         unsigned otherRankTop = rankTop(i);
@@ -883,6 +861,7 @@ void life_refresh_img_mpi() {
             fprintf(stderr, "Warning: Tried to receive data beyond table bounds from rank %d\n", i);
         }
     }
+    life_refresh_img();
   } else {
       unsigned myTop = rankTop(rank);
       unsigned mySize = rankSize(rank);
@@ -894,10 +873,67 @@ void life_refresh_img_mpi() {
       } else {
           fprintf(stderr, "Warning: Rank %d tried to send data beyond table bounds\n", rank);
       }
-     
+      life_refresh_img();  
   }
-  life_refresh_img();
+  
 }
+
+unsigned life_compute_mpi(unsigned nb_iter) {
+  unsigned res = 0;
+  unsigned myTop = rankTop(rank);
+  unsigned mySize = rankSize(rank);
+  
+  for (unsigned it = 1; it <= nb_iter; it++) {
+      exchange_halos();
+      unsigned change = 0;
+
+      for (int y = myTop; y < myTop + mySize; y += TILE_H) {
+          for (int x = 0; x < DIM; x += TILE_W) {
+              int actual_tile_h = (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
+              change |= do_tile(x, y, TILE_W, actual_tile_h);
+          }
+      }
+      
+      if (!change) {
+          res = it;
+          break;
+      }
+      
+      
+      swap_tables();
+  }
+  
+  return res;
+}
+
+unsigned life_compute_mpi_omp(unsigned nb_iter) {
+  unsigned res = 0;
+  unsigned myTop = rankTop(rank);
+  unsigned mySize = rankSize(rank);
+  
+  for (unsigned it = 1; it <= nb_iter; it++) {
+      exchange_halos();
+      unsigned change = 0;
+      #pragma omp parallel for schedule(runtime) collapse(2) 
+      for (int y = myTop; y < myTop + mySize; y += TILE_H) {
+          for (int x = 0; x < DIM; x += TILE_W) {
+              int actual_tile_h = (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
+              change |= do_tile(x, y, TILE_W, actual_tile_h);
+          }
+      }
+      
+      if (!change) {
+          res = it;
+          break;
+      }
+      
+      
+      swap_tables();
+  }
+  
+  return res;
+}
+
 
 ///////////////////////////// Initial configs
 
