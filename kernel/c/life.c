@@ -871,7 +871,6 @@ void life_refresh_img_mpi() {
   MPI_Status status;
   
   if (rank == 0) {
-
     for (int i = 1; i < size; i++) {
         unsigned otherRankTop = rankTop(i);
         unsigned otherRankSize = rankSize(i);
@@ -884,7 +883,6 @@ void life_refresh_img_mpi() {
             fprintf(stderr, "Warning: Tried to receive data beyond table bounds from rank %d\n", i);
         }
     }
-    life_refresh_img();
   } else {
       unsigned myTop = rankTop(rank);
       unsigned mySize = rankSize(rank);
@@ -896,7 +894,9 @@ void life_refresh_img_mpi() {
       } else {
           fprintf(stderr, "Warning: Rank %d tried to send data beyond table bounds\n", rank);
       }
+     
   }
+  life_refresh_img();
 }
 
 ///////////////////////////// Initial configs
