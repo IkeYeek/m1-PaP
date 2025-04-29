@@ -809,62 +809,41 @@ void life_init_mpi() {
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   
   life_init();
-  
-  printf("Process %d of %d initialized\n", rank + 1, size);
+
+  printf("Process %d of %d initialized (rows %d-%d)\n", 
+    rank, size, rankTop(rank), rankBot(rank)-1);
 }
 
-static int rankTop(int rank) {
-  return rank * (DIM / size);
-}
-
-static int rankBot(int rank) {
-  return rankTop(rank) + rankSize(rank);
+int rankTop(int rank) {
+  return (rank * DIM) / size;
 }
 
 int rankSize(int rank) {
-  return (rank != size - 1) ? (DIM / size) : ((DIM / size) + (DIM % size));
+  return (((rank + 1) * DIM) / size) - ((rank * DIM) / size);
 }
 
-/*
+int rankBot(int rank) {
+  return rankTop(rank) + rankSize(rank);
+}
+
 static void exchange_halos() {
-  MPI_Status status;
+  if (size == 1) return; 
   
-  if (rank % 2 == 0) {
-      if (rank > 0) {
-          MPI_Send(&cur_table(rankTop(rank), 0), DIM, MPI_UNSIGNED, rank-1, 0, MPI_COMM_WORLD);
-      }
-      
-      if (rank < size - 1) {
-          MPI_Send(&cur_table(rankBot(rank) - 1, 0), DIM, MPI_UNSIGNED, rank+1, 0, MPI_COMM_WORLD);
-      }
-      
-      if (rank > 0) {
-          MPI_Recv(&cur_table(rankTop(rank) - 1, 0), DIM, MPI_UNSIGNED, rank-1, 0, MPI_COMM_WORLD, &status);
-      }
-      
-      if (rank < size - 1) {
-          MPI_Recv(&cur_table(rankBot(rank), 0), DIM, MPI_UNSIGNED, rank+1, 0, MPI_COMM_WORLD, &status);
-      }
-  } else {
-      
-      if (rank > 0) {
-          MPI_Recv(&cur_table(rankTop(rank) - 1, 0), DIM, MPI_UNSIGNED, rank-1, 0, MPI_COMM_WORLD, &status);
-      }
-      
-      if (rank < size - 1) {
-          MPI_Recv(&cur_table(rankBot(rank), 0), DIM, MPI_UNSIGNED, rank+1, 0, MPI_COMM_WORLD, &status);
-      }
-      
-      if (rank > 0) {
-          MPI_Send(&cur_table(rankTop(rank), 0), DIM, MPI_UNSIGNED, rank-1, 0, MPI_COMM_WORLD);
-      }
-      
-      if (rank < size - 1) {
-          MPI_Send(&cur_table(rankBot(rank) - 1, 0), DIM, MPI_UNSIGNED, rank+1, 0, MPI_COMM_WORLD);
-      }
+  MPI_Status status;
+  int tag = 0;
+  
+  // Send to top neighbor, receive from bottom
+  if (rank > 0) {
+      MPI_Send(&cur_table(rankTop(rank), 0), DIM, MPI_CHAR, rank-1, tag, MPI_COMM_WORLD);
+      MPI_Recv(&cur_table(rankTop(rank)-1, 0), DIM, MPI_CHAR, rank-1, tag, MPI_COMM_WORLD, &status);
+  }
+  
+  // Send to bottom neighbor, receive from top
+  if (rank < size-1) {
+      MPI_Send(&cur_table(rankBot(rank), 0), DIM, MPI_CHAR, rank+1, tag, MPI_COMM_WORLD);
+      MPI_Recv(&cur_table(rankBot(rank)+1, 0), DIM, MPI_CHAR, rank+1, tag, MPI_COMM_WORLD, &status);
   }
 }
-*/
 
 unsigned life_compute_mpi(unsigned nb_iter) {
   unsigned res = 0;
@@ -872,22 +851,15 @@ unsigned life_compute_mpi(unsigned nb_iter) {
   unsigned mySize = rankSize(rank);
   
   for (unsigned it = 1; it <= nb_iter; it++) {
-      unsigned change = 0;
+      exchange_halos();
+      
       for (int y = myTop; y < myTop + mySize; y += TILE_H) {
           for (int x = 0; x < DIM; x += TILE_W) {
               int actual_tile_h = (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
-              change |= do_tile(x, y, TILE_W, actual_tile_h);
+              do_tile(x, y, TILE_W, actual_tile_h);
           }
       }
       
-      /*
-      unsigned global_change;
-      MPI_Allreduce(&change, &global_change, 1, MPI_UNSIGNED, MPI_LOR, MPI_COMM_WORLD);
-      
-      if (!global_change) {
-          res = it;
-          break;
-      }*/
       
       swap_tables();
   }
@@ -899,27 +871,27 @@ void life_refresh_img_mpi() {
   MPI_Status status;
   
   if (rank == 0) {
-     
-      for (int i = 1; i < size; i++) {
-          unsigned otherRankTop = rankTop(i);
-          unsigned otherRankSize = rankSize(i);
-          
-          if (otherRankTop + otherRankSize <= DIM) {
-              MPI_Recv(&cur_table(otherRankTop, 0),
-                     otherRankSize * DIM, MPI_UNSIGNED,
-                     i, 0, MPI_COMM_WORLD, &status);
-          } else {
-              fprintf(stderr, "Warning: Tried to receive data beyond table bounds from rank %d\n", i);
-          }
-      }
-      life_refresh_img();
+
+    for (int i = 1; i < size; i++) {
+        unsigned otherRankTop = rankTop(i);
+        unsigned otherRankSize = rankSize(i);
+        
+        if (otherRankTop + otherRankSize <= DIM) {
+            MPI_Recv(&cur_table(otherRankTop, 0),
+                    otherRankSize * DIM, MPI_CHAR,
+                    i, 0, MPI_COMM_WORLD, &status);
+        } else {
+            fprintf(stderr, "Warning: Tried to receive data beyond table bounds from rank %d\n", i);
+        }
+    }
+    life_refresh_img();
   } else {
       unsigned myTop = rankTop(rank);
       unsigned mySize = rankSize(rank);
       
       if (myTop + mySize <= DIM) {
           MPI_Send(&cur_table(myTop, 0),
-                 mySize * DIM, MPI_UNSIGNED,
+                 mySize * DIM, MPI_CHAR,
                  0, 0, MPI_COMM_WORLD);
       } else {
           fprintf(stderr, "Warning: Rank %d tried to send data beyond table bounds\n", rank);
