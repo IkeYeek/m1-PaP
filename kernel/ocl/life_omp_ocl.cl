@@ -17,7 +17,7 @@ __kernel void life_omp_ocl_ocl (__global cell_t *in, __global cell_t *out)
   }
 }
 
-__kernel void life_omp_ocl_ocl_task (__global cell_t *in, __global cell_t *out)
+__kernel void life_omp_ocl_ocl_adaptive (__global cell_t *in, __global cell_t *out)
 {
   const unsigned x = get_global_id (0);
   const unsigned y = get_global_id (1);
