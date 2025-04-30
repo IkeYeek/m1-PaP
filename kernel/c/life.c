@@ -826,6 +826,17 @@ void life_init_mpi() {
     rank, size, rankTop(rank), rankBot(rank)-1);
 }
 
+void life_init_mpi_omp() {
+  easypap_check_mpi();  
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+  
+  life_init();
+  printf("Process %d of %d initialized (rows %d-%d)\n", 
+    rank, size, rankTop(rank), rankBot(rank)-1);
+}
+
 static void exchange_halos() {
   if (size == 1) return; 
   
@@ -893,14 +904,15 @@ unsigned life_compute_mpi(unsigned nb_iter) {
               change |= do_tile(x, y, TILE_W, actual_tile_h);
           }
       }
-      
+      swap_tables();
+
       if (!change) {
           res = it;
           break;
       }
       
       
-      swap_tables();
+      
   }
   
   return res;
@@ -912,9 +924,9 @@ unsigned life_compute_mpi_omp(unsigned nb_iter) {
   unsigned mySize = rankSize(rank);
   
   for (unsigned it = 1; it <= nb_iter; it++) {
-      exchange_halos();
       unsigned change = 0;
-      #pragma omp parallel for schedule(runtime) collapse(2) 
+      exchange_halos();
+      #pragma omp parallel for collapse(2) schedule(runtime) reduction(| : change) shared(size)
       for (int y = myTop; y < myTop + mySize; y += TILE_H) {
           for (int x = 0; x < DIM; x += TILE_W) {
               int actual_tile_h = (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
@@ -922,18 +934,18 @@ unsigned life_compute_mpi_omp(unsigned nb_iter) {
           }
       }
       
+      swap_tables();
+      
       if (!change) {
           res = it;
           break;
       }
       
       
-      swap_tables();
   }
   
   return res;
 }
-
 
 ///////////////////////////// Initial configs
 
