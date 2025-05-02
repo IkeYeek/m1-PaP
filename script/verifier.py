@@ -239,7 +239,8 @@ if __name__ == "__main__":
     base_gpu_options["-k"] = ["life"]
     base_gpu_options["-wt"] = ["avx2", "avx512"]
     base_gpu_options["-i"] = [10]
-    base_gpu_options["-v"] = ["lazy_ompfor"]
+    base_gpu_options["-v"] = ["mpi_omp"]
+    base_gpu_options["-mpi"] = ['"-np 4"']
     base_gpu_options["-s"] = [8192]
     base_gpu_options["-a"] = ["random"]
 
