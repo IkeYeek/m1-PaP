@@ -50,7 +50,7 @@ def verify(
     different_configs = {}
 
     # Run base variants
-    base_env = {"OMP_NUM_THREADS": ["1"]}  # Default environment
+    base_env = {"OMP_NUM_THREADS": ["1"], "OMP_PLACES": ["threads"]}  # Default environment
     if verbose:
         print("Running base variants...")
     execute("./run", base_env, base_options, 1, verbose=verbose, easyPath=easyPath)
@@ -99,7 +99,7 @@ def verify(
         del compare_options["-g"]
 
     # Run compare variants
-    compare_env = {"OMP_NUM_THREADS": ["1"]}  # Default environment
+    compare_env = {"OMP_NUM_THREADS": ["1"], "OMP_PLACES": ["threads"]}  # Default environment
     if verbose:
         print("Running compare variants...")
     execute(
@@ -237,7 +237,6 @@ def execute(commande, ompenv, option, nbruns=1, verbose=True, easyPath="."):
 if __name__ == "__main__":
     base_gpu_options = {}
     base_gpu_options["-k"] = ["life"]
-    base_gpu_options["-wt"] = ["avx2", "avx512"]
     base_gpu_options["-i"] = [10]
     base_gpu_options["-v"] = ["mpi_omp"]
     base_gpu_options["-mpi"] = ['"-np 4"']
