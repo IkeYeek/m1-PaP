@@ -58,7 +58,7 @@ static unsigned true_iter_number;
 
 /* === kernel/compute functions === */
 static inline void enqueue_kernel (cl_int err, size_t global[2],
-                                   size_t local[2], uint64_t clock)
+                                   size_t local[2], uint64_t *clock)
 {
   err = 0;
   err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
@@ -67,7 +67,7 @@ static inline void enqueue_kernel (cl_int err, size_t global[2],
                          &ocl_next_buffer (0));
   check (err, "Error setting kernel arguments");
 
-  clock = ezm_gettime ();
+  *clock = ezm_gettime ();
   err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2, NULL,
                                 global, local, 0, NULL,
                                 ezp_ocl_eventptr (EVENT_START_KERNEL, 0));
@@ -178,7 +178,7 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
   unsigned change = 0;
 
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
-    enqueue_kernel (err, global, local, clock);
+    enqueue_kernel (err, global, local, &clock);
     compute_cpu (change);
     finish_and_time (clock);
     ocl_swap_tables ();
@@ -202,7 +202,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
 
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
     // gpu
-    enqueue_kernel (err, global, local, clock);
+    enqueue_kernel (err, global, local, &clock);
     // cpu
     compute_cpu (change);
     finish_and_time (clock);
