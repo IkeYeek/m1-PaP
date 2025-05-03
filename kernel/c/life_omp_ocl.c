@@ -208,14 +208,17 @@ unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
   int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
   int cpu_start_y  = kernel_fp[0].h - (border_tiles * TILE_H);
 
-#pragma omp parallel master
+  omp_set_max_active_levels (2);
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
-#pragma omp task
-    enqueue_kernel (err, global, local, &clock);
-#pragma omp taskloop collapse(2)
-    for (int y = cpu_start_y; y < DIM; y += TILE_H) {
-      for (int x = 0; x < DIM; x += TILE_W) {
-        change |= do_tile (x, y, TILE_W, TILE_H);
+#pragma omp parallel sections num_threads(2)
+    {
+#pragma omp section
+      enqueue_kernel (err, global, local, &clock);
+#pragma omp parallel for schedule(runtime) collapse(2) reduction(| : change)
+      for (int y = cpu_start_y; y < DIM; y += TILE_H) {
+        for (int x = 0; x < DIM; x += TILE_W) {
+          change |= do_tile (x, y, TILE_W, TILE_H);
+        }
       }
     }
     finish_and_time (clock);
