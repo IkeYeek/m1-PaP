@@ -6,6 +6,7 @@
 #include <numa.h>
 #include <omp.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -46,14 +47,56 @@ void life_omp_ocl_init (void)
 }
 #define ENABLE_OPENCL
 #ifdef ENABLE_OPENCL
-#ifndef TASKV
 
+#ifndef TASKV
 #define BORDER_SIZE 10
 #define GPU_CPU_SYNC_FREQ BORDER_SIZE // a little more explicit when used...
 
 static ezp_gpu_event_footprint_t kernel_fp[2];
 static uint64_t kernel_durations[2];
 static unsigned true_iter_number;
+
+/* === kernel/compute functions === */
+static inline void enqueue_kernel (cl_int err, size_t global[2],
+                                   size_t local[2], uint64_t clock)
+{
+  err = 0;
+  err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                         &ocl_cur_buffer (0));
+  err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                         &ocl_next_buffer (0));
+  check (err, "Error setting kernel arguments");
+
+  clock = ezm_gettime ();
+  err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2, NULL,
+                                global, local, 0, NULL,
+                                ezp_ocl_eventptr (EVENT_START_KERNEL, 0));
+  check (err, "Error enqueuing kernel");
+  clFlush (ocl_queue (0));
+}
+
+static inline void compute_cpu (unsigned change)
+{
+
+  int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
+  int cpu_start_y  = kernel_fp[0].h - (border_tiles * TILE_H);
+#pragma omp parallel for collapse(2) schedule(runtime)
+  for (int y = cpu_start_y; y < DIM; y += TILE_H) {
+    for (int x = kernel_fp[1].x; x < DIM; x += TILE_W) {
+      change |= do_tile (x, y, TILE_W, TILE_H);
+    }
+  }
+}
+
+static inline void finish_and_time (uint64_t clock)
+{
+  kernel_durations[1] = ezm_gettime () - clock;
+  clFinish (ocl_queue (0));
+  kernel_durations[0] = ezp_gpu_event_monitor (
+      0, EVENT_START_KERNEL, clock, &kernel_fp[0], TASK_TYPE_COMPUTE, 0);
+  ezp_gpu_event_reset ();
+}
+
 static inline ocl_swap_tables ()
 {
   cl_mem tmp          = ocl_cur_buffer (0);
@@ -63,6 +106,7 @@ static inline ocl_swap_tables ()
   _table              = _alternate_table;
   _alternate_table    = tmp2;
 }
+
 static inline ocl_sync_borders (cl_int err)
 {
   unsigned true_gpu_size =
@@ -83,6 +127,9 @@ static inline ocl_sync_borders (cl_int err)
                             _table + border_offset_elements, 0, NULL, NULL);
   check (err, "Err syncing device to host");
 }
+
+/* === initializations === */
+
 void life_omp_ocl_config_ocl (char *params)
 {
   easypap_gl_buffer_sharing = 0;
@@ -119,49 +166,32 @@ void life_omp_ocl_init_ocl_adaptive ()
   life_omp_ocl_init_ocl ();
 }
 
+/* === computes === */
+
 unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
 {
   size_t global[2] = {DIM,
                       kernel_fp[0].h}; // global domain size for our calculation
   size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
   cl_int err;
+  uint64_t clock;
   unsigned change = 0;
 
-  int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
-  int cpu_start_y  = kernel_fp[0].h - (border_tiles * TILE_H);
-
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
-    err = 0;
-    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
-                           &ocl_cur_buffer (0));
-    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
-                           &ocl_next_buffer (0));
-    check (err, "Error setting kernel arguments");
-
-    monitoring_start (easypap_gpu_lane (0));
-    err = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
-                                  NULL, global, local, 0, NULL, NULL);
-    check (err, "Error enqueuing kernel");
-    clFlush (ocl_queue (0));
-#pragma omp parallel for collapse(2) schedule(runtime)
-    for (int y = cpu_start_y; y < DIM; y += TILE_H) {
-      for (int x = kernel_fp[1].x; x < DIM; x += TILE_W) {
-        change |= do_tile (x, y, TILE_W, TILE_H);
-      }
-    }
-    clFinish (ocl_queue (0));
+    enqueue_kernel (err, global, local, clock);
+    compute_cpu (change);
+    finish_and_time (clock);
     ocl_swap_tables ();
     if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0)
       ocl_sync_borders (err);
   }
-  monitoring_end_tile (0, 0, DIM, kernel_fp[1].h - BORDER_SIZE,
-                       easypap_gpu_lane (0));
   return 0;
 }
-static bool much_greater_than (uint64_t a, uint64_t b)
+static inline bool much_greater_than (uint64_t a, uint64_t b)
 {
-  return a > b;
+  return a > b * 10;
 }
+
 unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
 {
   size_t global[2] = {DIM, kernel_fp[0].h};
@@ -170,41 +200,17 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
   uint64_t clock;
   unsigned change = 0;
 
-  int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
-
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
     // gpu
-    err = 0;
-    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
-                           &ocl_cur_buffer (0));
-    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
-                           &ocl_next_buffer (0));
-    check (err, "Error setting kernel arguments");
-
-    clock = ezm_gettime ();
-    err   = clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2,
-                                    NULL, global, local, 0, NULL,
-                                    ezp_ocl_eventptr (EVENT_START_KERNEL, 0));
-    check (err, "Error enqueuing kernel");
-    clFlush (ocl_queue (0));
+    enqueue_kernel (err, global, local, clock);
     // cpu
-    int cpu_start_y = kernel_fp[0].h - (border_tiles * TILE_H);
-#pragma omp parallel for collapse(2) schedule(runtime)
-    for (int y = cpu_start_y; y < DIM; y += TILE_H) {
-      for (int x = kernel_fp[1].x; x < DIM; x += TILE_W) {
-        change |= do_tile (x, y, TILE_W, TILE_H);
-      }
-    }
-    kernel_durations[1] = ezm_gettime () - clock;
-    clFinish (ocl_queue (0));
-    kernel_durations[0] = ezp_gpu_event_monitor (
-        0, EVENT_START_KERNEL, clock, &kernel_fp[0], TASK_TYPE_COMPUTE, 0);
-    ezp_gpu_event_reset ();
+    compute_cpu (change);
+    finish_and_time (clock);
     ocl_swap_tables ();
     if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0) {
       ocl_sync_borders (err);
       if (kernel_durations[0]) {
-        if (much_greater_than (kernel_durations[0] * 1000,
+        if (much_greater_than (kernel_durations[0],
                                kernel_durations[1]) &&
             kernel_fp[0].h > TILE_H * 2) { // cpu going faster
           PRINT_DEBUG ('v', "Giving more work to the CPU\n");
@@ -215,6 +221,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
           kernel_fp[0].h -= TILE_H;
           kernel_fp[1].h += TILE_H;
           kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
+          global[1]      = kernel_fp[0].h;
         } else if (much_greater_than (kernel_durations[1],
                                       kernel_durations[0]) &&
                    kernel_fp[1].h > TILE_H) { // gpu going brrrr fast
@@ -226,6 +233,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
           kernel_fp[0].h += TILE_H;
           kernel_fp[1].h -= TILE_H;
           kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
+          global[1]      = kernel_fp[0].h;
         }
       }
     }
@@ -233,6 +241,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
   return 0;
 }
 
+/* === refresh fn === */
 void life_omp_ocl_refresh_img_ocl (void)
 {
   cl_int err;
