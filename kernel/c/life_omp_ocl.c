@@ -75,7 +75,7 @@ static inline void enqueue_kernel (cl_int err, size_t global[2],
   clFlush (ocl_queue (0));
 }
 
-static inline void compute_cpu (unsigned change)
+static inline void compute_cpu (unsigned *change)
 {
 
   int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
@@ -83,7 +83,7 @@ static inline void compute_cpu (unsigned change)
 #pragma omp parallel for collapse(2) schedule(runtime)
   for (int y = cpu_start_y; y < DIM; y += TILE_H) {
     for (int x = kernel_fp[1].x; x < DIM; x += TILE_W) {
-      change |= do_tile (x, y, TILE_W, TILE_H);
+      *change |= do_tile (x, y, TILE_W, TILE_H);
     }
   }
 }
@@ -141,6 +141,11 @@ void life_omp_ocl_config_ocl_adaptive (char *params)
   life_omp_ocl_config_ocl (params);
 }
 
+void life_omp_ocl_config_ocl_mt (char *params)
+{
+  life_omp_ocl_config_ocl (params);
+}
+
 void life_omp_ocl_init_ocl ()
 {
   kernel_fp[0].x = 0;
@@ -166,6 +171,11 @@ void life_omp_ocl_init_ocl_adaptive ()
   life_omp_ocl_init_ocl ();
 }
 
+void life_omp_ocl_init_ocl_mt ()
+{
+  life_omp_ocl_init_ocl ();
+}
+
 /* === computes === */
 
 unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
@@ -179,7 +189,35 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
 
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
     enqueue_kernel (err, global, local, &clock);
-    compute_cpu (change);
+    compute_cpu (&change);
+    finish_and_time (clock);
+    ocl_swap_tables ();
+    if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0)
+      ocl_sync_borders (err);
+  }
+  return 0;
+}
+unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
+{
+  size_t global[2] = {DIM,
+                      kernel_fp[0].h}; // global domain size for our calculation
+  size_t local[2]  = {TILE_W, TILE_H}; // local domain size for our calculation
+  cl_int err;
+  uint64_t clock;
+  unsigned change  = 0;
+  int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
+  int cpu_start_y  = kernel_fp[0].h - (border_tiles * TILE_H);
+
+#pragma omp parallel master
+  for (unsigned iter = 1; iter <= nb_iter; iter++) {
+#pragma omp task
+    enqueue_kernel (err, global, local, &clock);
+#pragma omp taskloop collapse(2)
+    for (int y = cpu_start_y; y < DIM; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        change |= do_tile (x, y, TILE_W, TILE_H);
+      }
+    }
     finish_and_time (clock);
     ocl_swap_tables ();
     if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0)
@@ -204,7 +242,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
     // gpu
     enqueue_kernel (err, global, local, &clock);
     // cpu
-    compute_cpu (change);
+    compute_cpu (&change);
     finish_and_time (clock);
     ocl_swap_tables ();
     if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0) {
@@ -254,6 +292,10 @@ void life_omp_ocl_refresh_img_ocl (void)
   life_omp_ocl_refresh_img ();
 }
 void life_omp_ocl_refresh_img_ocl_adaptive ()
+{
+  life_omp_ocl_refresh_img_ocl ();
+}
+void life_omp_ocl_refresh_img_ocl_mt ()
 {
   life_omp_ocl_refresh_img_ocl ();
 }
