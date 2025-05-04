@@ -97,6 +97,15 @@ static inline void finish_and_time (uint64_t clock)
   ezp_gpu_event_reset ();
 }
 
+static inline void finish_and_time_additive (uint64_t clock)
+{
+  kernel_durations[1] += ezm_gettime () - clock;
+  clFinish (ocl_queue (0));
+  kernel_durations[0] += ezp_gpu_event_monitor (
+      0, EVENT_START_KERNEL, clock, &kernel_fp[0], TASK_TYPE_COMPUTE, 0);
+  ezp_gpu_event_reset ();
+}
+
 static inline ocl_swap_tables ()
 {
   cl_mem tmp          = ocl_cur_buffer (0);
@@ -146,6 +155,11 @@ void life_omp_ocl_config_ocl_mt (char *params)
   life_omp_ocl_config_ocl (params);
 }
 
+void life_omp_ocl_config_ocl_adaptive_conv (char *params)
+{
+  life_omp_ocl_config_ocl (params);
+}
+
 void life_omp_ocl_init_ocl ()
 {
   kernel_fp[0].x = 0;
@@ -176,6 +190,11 @@ void life_omp_ocl_init_ocl_mt ()
   life_omp_ocl_init_ocl ();
 }
 
+void life_omp_ocl_init_ocl_adaptive_conv ()
+{
+  life_omp_ocl_init_ocl ();
+}
+
 /* === computes === */
 
 unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
@@ -197,6 +216,7 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
   }
   return 0;
 }
+
 unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
 {
   size_t global[2] = {DIM,
@@ -228,9 +248,84 @@ unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
   }
   return 0;
 }
+
 static inline bool much_greater_than (uint64_t a, uint64_t b)
 {
-  return a > b * 10;
+  return a > b * 1.5;
+}
+
+unsigned life_omp_ocl_compute_ocl_adaptive_conv (unsigned nb_iter)
+{
+  size_t global[2] = {DIM, kernel_fp[0].h};
+  size_t local[2]  = {TILE_W, TILE_H};
+  cl_int err;
+  uint64_t clock;
+  unsigned change  = 0;
+  int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
+
+  for (unsigned iter = 1; iter <= nb_iter; iter++) {
+    // gpu
+    enqueue_kernel (err, global, local, &clock);
+    // cpu
+    compute_cpu (&change);
+    finish_and_time_additive (clock);
+    ocl_swap_tables ();
+    if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0) {
+      ocl_sync_borders (err);
+      if (kernel_durations[0]) {
+        // we will first look at which kernel is going the faster
+        // to define the kernel that grows and the one that shrinks based
+        unsigned growing_idx, shrinking_idx;
+        if (much_greater_than (kernel_durations[0], kernel_durations[1])) {
+          growing_idx   = 1;
+          shrinking_idx = 0;
+        } else if (much_greater_than (kernel_durations[1],
+                                      kernel_durations[0])) {
+          growing_idx   = 0;
+          shrinking_idx = 1;
+        } else {
+          PRINT_DEBUG ('v', "skipping growth, %d - %d\n", kernel_durations[0],
+                       kernel_durations[1]);
+          goto skip_growth; // no one saw this .......
+        }
+        // now we compute both the maximal boundary grow and one that
+        // matches the ratio cpu/gpu, we get the MIN of those two values
+        unsigned max_growth =
+            (kernel_fp[shrinking_idx].h - border_tiles * TILE_H) / TILE_H;
+        unsigned ratio =
+            kernel_durations[shrinking_idx] / kernel_durations[growing_idx];
+        unsigned ratio_growth = (ratio * kernel_fp[growing_idx].h) / TILE_H;
+        unsigned growth       = MIN (max_growth, ratio_growth);
+
+        PRINT_DEBUG ('v', "growing %s by %d tiles (%d)\n",
+                     growing_idx == 0 ? "device" : "host", growth,
+                     growth * TILE_H);
+
+        // first we sync, then we grow
+        if (growing_idx == 1) {
+          // growing on CPU, need to sync from device
+          clEnqueueReadBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
+                               sizeof (cell_t) * DIM * kernel_fp[0].h, _table,
+                               0, NULL, NULL);
+        } else {
+          // growing on GPU, need to sync from host
+          clEnqueueWriteBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE,
+                                sizeof (cell_t) * kernel_fp[0].h * DIM,
+                                sizeof (cell_t) * DIM * growth * TILE_H,
+                                _table + (DIM * kernel_fp[0].h), 0, NULL, NULL);
+        }
+
+        kernel_fp[growing_idx].h += growth * TILE_H;
+        kernel_fp[shrinking_idx].h -= growth * TILE_H;
+        kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
+        global[1]      = kernel_fp[0].h;
+      skip_growth:;
+      }
+      kernel_durations[0] = 0;
+      kernel_durations[1] = 0;
+    }
+  }
+  return 0;
 }
 
 unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
@@ -299,6 +394,10 @@ void life_omp_ocl_refresh_img_ocl_adaptive ()
   life_omp_ocl_refresh_img_ocl ();
 }
 void life_omp_ocl_refresh_img_ocl_mt ()
+{
+  life_omp_ocl_refresh_img_ocl ();
+}
+void life_omp_ocl_refresh_img_ocl_adaptive_conv ()
 {
   life_omp_ocl_refresh_img_ocl ();
 }
