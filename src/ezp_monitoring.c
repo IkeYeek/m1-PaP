@@ -20,6 +20,8 @@ unsigned do_trace          = 0;
 unsigned trace_may_be_used = 0;
 unsigned do_gmonitor       = 0;
 
+extern unsigned trace_starting_iteration;
+
 static void set_default_trace_label (void)
 {
   if (easypap_trace_label[0] == '\0') {
@@ -80,7 +82,8 @@ void ezp_monitoring_init (unsigned nb_cpus, unsigned nb_gpus)
       ezm_recorder_store_img2d_dim (ezp_monitor, DIM, DIM);
     }
 
-    ezm_recorder_enable (ezp_monitor, 1); // FIXME
+    if (trace_starting_iteration == 1)
+      ezm_recorder_enable (ezp_monitor, 1);
 
     return;
   }
