@@ -183,3 +183,82 @@ void mandel_debug (int x, int y)
     ezv_hud_set (ctx[0], debug_hud, "#iter: %d", cur_table (y, x));
   }
 }
+
+
+// Intrinsics functions
+#ifdef ENABLE_VECTO
+#include <immintrin.h>
+
+#if __AVX2__ == 1
+
+void mandel_tile_check_avx (void)
+{
+  // Tile width must be larger than AVX vector size
+  easypap_vec_check (AVX_VEC_SIZE_FLOAT, DIR_HORIZONTAL);
+}
+
+
+int mandel_do_tile_avx (int x, int y, int width, int height)
+{
+  __m256 zr, zi, cr, ci, norm; //, iter;
+  __m256 deux     = _mm256_set1_ps (2.0);
+  __m256 max_norm = _mm256_set1_ps (4.0);
+  __m256i un      = _mm256_set1_epi32 (1);
+
+  for (int i = y; i < y + height; i++)
+    for (int j = x; j < x + width; j += AVX_VEC_SIZE_FLOAT) {
+
+      __m256i iter = _mm256_setzero_si256 ();
+      __m256 mask  = _mm256_castsi256_ps (_mm256_set1_epi32 (0xFFFFFFFF));
+
+      zr = zi = norm = _mm256_set1_ps (0);
+
+      cr = _mm256_add_ps (_mm256_set1_ps (j),
+                          _mm256_set_ps (7, 6, 5, 4, 3, 2, 1, 0));
+
+      cr = _mm256_fmadd_ps (cr, _mm256_set1_ps (xstep),
+                            _mm256_set1_ps (leftX));
+
+      ci = _mm256_set1_ps (topY - ystep * i);
+
+      for (int it = 0; it < MAX_ITERATIONS; it++) {
+        // rc = zr^2
+        __m256 rc = _mm256_mul_ps (zr, zr);
+        __m256 ic = _mm256_mul_ps (zi, zi);
+
+        // |Z|^2 = (partie réelle)^2 + (partie imaginaire)^2 = zr^2 + zi^2
+        norm = _mm256_add_ps (rc, ic);
+
+        // On compare les normes au carré de chacun des 8 nombres Z avec 4
+        // (normalement on doit tester |Z| <= 2 mais c'est trop cher de calculer
+        //  une racine carrée)
+        // Le résultat est un vecteur d'entiers (mask) qui contient FF quand
+        // c'est vrai et 0 sinon
+        mask = _mm256_and_ps (mask, _mm256_cmp_ps (norm, max_norm, _CMP_LE_OS));
+
+
+        // FIXME 1
+        // Il faut sortir de la boucle lorsque le masque ne contient que
+        // des zéros (i.e. tous les Z ont une norme > 2, donc la suite a
+        // divergé pour tout le monde)
+
+
+        // FIXME 2
+        // On met à jour le nombre d'itérations effectuées pour chaque pixel.
+        iter = _mm256_add_epi32 (iter, un);
+
+        // On calcule Z = Z^2 + C et c'est reparti !
+        __m256 xy = _mm256_mul_ps (zr, zi);
+        zr        = _mm256_add_ps (rc, _mm256_sub_ps (cr, ic));
+        zi        = _mm256_fmadd_ps (deux, xy, ci);
+      }
+
+      _mm256_store_si256 ((__m256i *)&cur_table (i, j), iter);
+    }
+
+  return 0;
+}
+
+#endif // AVX
+
+#endif
