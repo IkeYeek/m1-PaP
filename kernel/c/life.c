@@ -1024,19 +1024,12 @@ void life_draw_moultdiehard2474 (void)
   moult_rle (104, 32, "data/rle/diehard2474.rle");
 }
 
-// Just in case we want to draw an initial configuration and dump it to file,
-// with no iteration at all
-unsigned life_compute_none (unsigned nb_iter)
-{
-  return 1;
-}
-
 //////////// debug ////////////
 static int debug_hud = -1;
 
 void life_config (char *param)
 {
-  seed += param ? atoi (param) : 0;
+  seed += param ? atoi (param) : 0; // config pseudo_random 
   if (picking_enabled) {
     debug_hud = ezv_hud_alloc (ctx[0]);
     ezv_hud_on (ctx[0], debug_hud);

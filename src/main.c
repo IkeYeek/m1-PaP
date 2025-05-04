@@ -55,7 +55,7 @@ static unsigned do_dump __attribute__ ((unused))               = 0;
 static unsigned do_thumbs __attribute__ ((unused))             = 0;
 static unsigned show_gpu_config                                = 0;
 static unsigned list_gpu_variants                              = 0;
-static unsigned trace_starting_iteration                       = 1;
+unsigned trace_starting_iteration                              = 1;
 static unsigned show_sha256_signature __attribute__ ((unused)) = 0;
 static unsigned show_iterations                                = 0;
 unsigned use_scotch                                            = 0;
@@ -698,8 +698,10 @@ int main (int argc, char **argv)
           refresh_rate = max_iter - iterations;
 
 #ifdef ENABLE_TRACE
-        if (trace_may_be_used && (iterations + 1 == trace_starting_iteration))
+        if (trace_may_be_used && (iterations + 1 == trace_starting_iteration)) {
           do_trace = 1;
+          ezm_recorder_enable (ezp_monitor, trace_starting_iteration);
+        }
 #endif
 
         monitoring_start_iteration ();
