@@ -251,7 +251,7 @@ unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
 
 static inline bool much_greater_than (uint64_t a, uint64_t b)
 {
-  return a > b * 1.5;
+  return a > b * 4;
 }
 
 unsigned life_omp_ocl_compute_ocl_adaptive_conv (unsigned nb_iter)
