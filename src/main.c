@@ -1,4 +1,5 @@
 
+
 #include "constants.h"
 #include "easypap.h"
 #include "gpu.h"
@@ -6,7 +7,6 @@
 #ifdef ENABLE_SHA
 #include "hash.h"
 #endif
-#include "energy_monitor.h"
 #include "ezp_ctx.h"
 #include "ezv_event.h"
 
@@ -156,25 +156,8 @@ static void update_refresh_rate (int p)
   printf ("< Refresh rate set to: %d >\n", refresh_rate);
 }
 
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY (x)
-
-const char *get_compiler_info ()
-{
-#if defined(__clang__)
-  return "Clang-" TOSTRING (__clang_major__);
-#elif defined(__GNUC__)
-  return "GCC-" TOSTRING (__GNUC__);
-#elif defined(_MSC_VER)
-  return "MSVC-" _MSC_VER;
-#else
-  return "unknown-compiler";
-#endif
-}
-
 static void output_perf_numbers (long time_in_us, unsigned nb_iter,
-                                 int64_t total_cycles, int64_t total_stalls,
-                                 int64_t nrj, double *freq, int nr_corekinds)
+                                 int64_t total_cycles, int64_t total_stalls)
 {
   FILE *f = fopen (output_file, "a");
   struct utsname s;
@@ -184,40 +167,23 @@ static void output_perf_numbers (long time_in_us, unsigned nb_iter,
                      strerror (errno));
 
   if (ftell (f) == 0) {
-    fprintf (f, "%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s",
-             "machine", "compiler", "size", "tilew", "tileh", "threads",
-             "kernel", "variant", "tiling", "iterations", "schedule", "places",
-             "label", "arg", "time", "total_cycles", "total_stalls", "µ-joule");
-    // for(int c = 0; c < nr_corekinds; c++)
-    // fprintf (f, ";core-kind-%d-GHz",c);
-    fprintf (f, ";little-GHz;big-GHz");
-    fprintf (f, "\n");
+    fprintf (f, "%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s\n",
+             "machine", "size", "tilew", "tileh", "threads", "kernel",
+             "variant", "tiling", "iterations", "schedule", "places", "label",
+             "arg", "config", "time", "total_cycles", "total_stalls");
   }
 
   if (uname (&s) < 0)
     exit_with_error ("uname failed (%s)", strerror (errno));
 
-  fprintf (f,
-           "%s;%s;%u;%u;%u;%u;%s;%s;%s;%u;%s;%s;%s;%s;%ld;%" PRId64 ";%" PRId64
-           ";%" PRId64,
-           s.nodename, get_compiler_info (), DIM, TILE_W, TILE_H,
-           easypap_requested_number_of_threads (), kernel_name, variant_name,
-           tile_name, nb_iter, easypap_omp_schedule (), easypap_omp_places (),
-           easypap_trace_label, (draw_param ?: "none"), time_in_us,
-           total_cycles, total_stalls, nrj);
+  fprintf (
+      f,
+      "%s;%u;%u;%u;%u;%s;%s;%s;%u;%s;%s;%s;%s;%s;%ld;%" PRId64 ";%" PRId64 "\n",
+      s.nodename, DIM, TILE_W, TILE_H, easypap_requested_number_of_threads (),
+      kernel_name, variant_name, tile_name, nb_iter, easypap_omp_schedule (),
+      easypap_omp_places (), easypap_trace_label, (draw_param ?: "none"),
+      (config_param ?: "none"), time_in_us, total_cycles, total_stalls);
 
-  int nr = hwloc_cpukinds_get_nr(topology, 0);
-  if (nr < 2)
-    fprintf (f, ";;%g\n", freq[0]);
-  else
-    {
-      for (int i = 0; i < 2; i++)
-	if (freq[i]>0)
-	  fprintf (f, ";%g", freq[i]);
-	else
-	  fprintf (f, ";");
-    fprintf (f, "\n");
-    }
   fclose (f);
 }
 
@@ -685,8 +651,6 @@ int main (int argc, char **argv)
         refresh_rate = INT_MAX;
     }
 
-    frequency_monitor_init (topology);
-    energy_monitor_init (topology);
     t_start = ezp_gettime ();
 
     while (!stable) {
@@ -732,11 +696,7 @@ int main (int argc, char **argv)
       }
     }
 
-    duration                  = ezp_gettime () - t_start;
-    uint64_t nrj              = energy_monitor_get_consumption ();
-    int nr_corekinds          = 2; // hwloc_cpukinds_get_nr (topology, 0);
-    double freq[2] = {};
-    frequency_compute (freq);
+    duration = ezp_gettime () - t_start;
 
     PRINT_MASTER ("Computation completed after %d iterations\n", iterations);
 
@@ -745,16 +705,14 @@ int main (int argc, char **argv)
       if (do_cache) {
         int64_t perfcounters[EASYPAP_NB_COUNTERS];
         if (easypap_perfcounter_get_total_counters (perfcounters) == 0)
-          output_perf_numbers (
-              duration, iterations, perfcounters[EASYPAP_TOTAL_CYCLES],
-              perfcounters[EASYPAP_TOTAL_STALLS], nrj, freq, nr_corekinds);
+          output_perf_numbers (duration, iterations,
+                               perfcounters[EASYPAP_TOTAL_CYCLES],
+                               perfcounters[EASYPAP_TOTAL_STALLS]);
       } else {
-        output_perf_numbers (duration, iterations, -1, -1, nrj, freq,
-                             nr_corekinds););
+        output_perf_numbers (duration, iterations, -1, -1);
       }
 #else
-      output_perf_numbers (duration, iterations, -1, -1, nrj, freq,
-                           nr_corekinds);
+      output_perf_numbers (duration, iterations, -1, -1);
 #endif
     }
     PRINT_MASTER ("%" PRId64 ".%03" PRId64 "\n", duration / 1000,
