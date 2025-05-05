@@ -33,7 +33,7 @@ __kernel void life_omp_ocl_ocl_mt (__global cell_t *in, __global cell_t *out)
     out[y * DIM + x]    = new_me;
   }
 }
-
+//l
 __kernel void life_omp_ocl_ocl_hybrid_dyn (__global cell_t *in,
                                          __global cell_t *out)
 {

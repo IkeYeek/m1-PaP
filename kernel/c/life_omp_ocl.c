@@ -595,6 +595,7 @@ void life_omp_ocl_refresh_img_ocl_hybrid_conv ()
 {
   life_omp_ocl_refresh_img_ocl_hybrid ();
 }
+
 void life_omp_ocl_refresh_img_ocl_hybrid_lazy ()
 {
   life_omp_ocl_refresh_img_ocl_hybrid ();
