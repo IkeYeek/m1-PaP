@@ -148,10 +148,10 @@ int life_do_tile_default (int x, int y, int width, int height)
       }
   return change;
 }
-/*
+
 #define ENABLE_VECTO
-#define __AVX2__ 1
-#define __AVX512__ 1
+#define __AVX2__ 0
+#define __AVX512__ 0
 #ifdef ENABLE_VECTO
 #include <immintrin.h>
 #if __AVX2__ == 1
@@ -521,7 +521,7 @@ int life_do_tile_avx_balanced (const int x, const int y, const int width,
 
 #endif
 #endif
-*/
+
 ///////////////////////////// Do tile optimized
 int life_do_tile_opt (const int x, const int y, const int width,
                       const int height)
