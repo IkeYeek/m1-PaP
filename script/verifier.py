@@ -237,7 +237,7 @@ def execute(commande, ompenv, option, nbruns=1, verbose=True, easyPath="."):
 if __name__ == "__main__":
     base_gpu_options = {}
     base_gpu_options["-k"] = ["life"]
-    base_gpu_options["-i"] = [10]
+    base_gpu_options["-i"] = [11]
     base_gpu_options["-v"] = ["mpi_omp"]
     base_gpu_options["-mpi"] = ['"-np 4"']
     base_gpu_options["-s"] = [8192]
