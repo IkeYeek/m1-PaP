@@ -803,56 +803,49 @@ void life_ft (void)
 
 ///////////////////////////// MPI
 
-int rankTop (int rank)
+int rankTop(int rank)
 {
   return (rank * DIM) / size;
 }
 
-int rankSize (int rank)
+int rankSize(int rank)
 {
   return (((rank + 1) * DIM) / size) - ((rank * DIM) / size);
 }
 
-int rankBot (int rank)
+int rankBot(int rank)
 {
-  return rankTop (rank) + rankSize (rank);
-}
-void life_init_mpi ()
-{
-  easypap_check_mpi ();
-  MPI_Comm_rank (MPI_COMM_WORLD, &rank);
-  MPI_Comm_size (MPI_COMM_WORLD, &size);
-
-  life_init ();
-
-  // printf("Process %d of %d initialized (rows %d-%d)\n",
-  //   rank, size, rankTop(rank), rankBot(rank)-1);
+  return rankTop(rank) + rankSize(rank);
 }
 
-void life_init_mpi_omp ()
+void life_init_mpi()
 {
-  easypap_check_mpi ();
+  easypap_check_mpi();
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-  MPI_Comm_rank (MPI_COMM_WORLD, &rank);
-  MPI_Comm_size (MPI_COMM_WORLD, &size);
-
-  life_init ();
-  // printf("Process %d of %d initialized (rows %d-%d)\n",
-  //  rank, size, rankTop(rank), rankBot(rank)-1);
-}
-void life_init_mpi_omp_border ()
-{
-  easypap_check_mpi ();
-
-  MPI_Comm_rank (MPI_COMM_WORLD, &rank);
-  MPI_Comm_size (MPI_COMM_WORLD, &size);
-
-  life_init ();
-  // printf("Process %d of %d initialized (rows %d-%d)\n",
-  //  rank, size, rankTop(rank), rankBot(rank)-1);
+  life_init();
 }
 
-static void exchange_halos ()
+void life_init_mpi_omp()
+{
+  easypap_check_mpi();
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+  life_init();
+}
+
+void life_init_mpi_omp_border()
+{
+  easypap_check_mpi();
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+  life_init();
+}
+
+static void exchange_halos()
 {
   if (size == 1)
     return;
@@ -862,233 +855,212 @@ static void exchange_halos ()
 
   // Send to top neighbor, receive from top
   if (rank > 0) {
-    MPI_Send (&cur_table (rankTop (rank), 0), DIM, MPI_CHAR, rank - 1, tag,
-              MPI_COMM_WORLD);
-    MPI_Recv (&cur_table (rankTop (rank) - 1, 0), DIM, MPI_CHAR, rank - 1, tag,
-              MPI_COMM_WORLD, &status);
+    MPI_Send(&cur_table(rankTop(rank), 0), DIM, MPI_CHAR, rank - 1, tag,
+             MPI_COMM_WORLD);
+    MPI_Recv(&cur_table(rankTop(rank) - 1, 0), DIM, MPI_CHAR, rank - 1, tag,
+             MPI_COMM_WORLD, &status);
   }
 
   // Send to bottom neighbor, receive from bottom
   if (rank < size - 1) {
-    MPI_Send (&cur_table (rankBot (rank) - 1, 0), DIM, MPI_CHAR, rank + 1, tag,
-              MPI_COMM_WORLD);
-    MPI_Recv (&cur_table (rankBot (rank), 0), DIM, MPI_CHAR, rank + 1, tag,
-              MPI_COMM_WORLD, &status);
+    MPI_Send(&cur_table(rankBot(rank) - 1, 0), DIM, MPI_CHAR, rank + 1, tag,
+             MPI_COMM_WORLD);
+    MPI_Recv(&cur_table(rankBot(rank), 0), DIM, MPI_CHAR, rank + 1, tag,
+             MPI_COMM_WORLD, &status);
   }
 }
 
-void life_refresh_img_mpi ()
+void life_refresh_img_mpi()
 {
   MPI_Status status;
 
   if (rank == 0) {
     for (int i = 1; i < size; i++) {
-      unsigned otherRankTop  = rankTop (i);
-      unsigned otherRankSize = rankSize (i);
+      unsigned otherRankTop = rankTop(i);
+      unsigned otherRankSize = rankSize(i);
 
       if (otherRankTop + otherRankSize <= DIM) {
-        MPI_Recv (&cur_table (otherRankTop, 0), otherRankSize * DIM, MPI_CHAR,
-                  i, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(&cur_table(otherRankTop, 0), otherRankSize * DIM, MPI_CHAR,
+                 i, 0, MPI_COMM_WORLD, &status);
       } else {
-        fprintf (
-            stderr,
-            "Warning: Tried to receive data beyond table bounds from rank %d\n",
-            i);
+        fprintf(stderr,
+                "Warning: Tried to receive data beyond table bounds from rank %d\n",
+                i);
       }
     }
-    life_refresh_img ();
+    life_refresh_img();
   } else {
-    unsigned myTop  = rankTop (rank);
-    unsigned mySize = rankSize (rank);
+    unsigned myTop = rankTop(rank);
+    unsigned mySize = rankSize(rank);
 
     if (myTop + mySize <= DIM) {
-      MPI_Send (&cur_table (myTop, 0), mySize * DIM, MPI_CHAR, 0, 0,
-                MPI_COMM_WORLD);
+      MPI_Send(&cur_table(myTop, 0), mySize * DIM, MPI_CHAR, 0, 0,
+               MPI_COMM_WORLD);
     } else {
-      fprintf (stderr,
-               "Warning: Rank %d tried to send data beyond table bounds\n",
-               rank);
+      fprintf(stderr,
+              "Warning: Rank %d tried to send data beyond table bounds\n",
+              rank);
     }
-    life_refresh_img ();
+    life_refresh_img();
   }
 }
 
-void life_refresh_img_mpi_omp ()
+void life_refresh_img_mpi_omp()
 {
   MPI_Status status;
 
   if (rank == 0) {
     for (int i = 1; i < size; i++) {
-      unsigned otherRankTop  = rankTop (i);
-      unsigned otherRankSize = rankSize (i);
+      unsigned otherRankTop = rankTop(i);
+      unsigned otherRankSize = rankSize(i);
 
       if (otherRankTop + otherRankSize <= DIM) {
-        MPI_Recv (&cur_table (otherRankTop, 0), otherRankSize * DIM, MPI_CHAR,
-                  i, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(&cur_table(otherRankTop, 0), otherRankSize * DIM, MPI_CHAR,
+                 i, 0, MPI_COMM_WORLD, &status);
       } else {
-        fprintf (
-            stderr,
-            "Warning: Tried to receive data beyond table bounds from rank %d\n",
-            i);
+        fprintf(stderr,
+                "Warning: Tried to receive data beyond table bounds from rank %d\n",
+                i);
       }
     }
-    life_refresh_img ();
+    life_refresh_img();
   } else {
-    unsigned myTop  = rankTop (rank);
-    unsigned mySize = rankSize (rank);
+    unsigned myTop = rankTop(rank);
+    unsigned mySize = rankSize(rank);
 
     if (myTop + mySize <= DIM) {
-      MPI_Send (&cur_table (myTop, 0), mySize * DIM, MPI_CHAR, 0, 0,
-                MPI_COMM_WORLD);
+      MPI_Send(&cur_table(myTop, 0), mySize * DIM, MPI_CHAR, 0, 0,
+               MPI_COMM_WORLD);
     } else {
-      fprintf (stderr,
-               "Warning: Rank %d tried to send data beyond table bounds\n",
-               rank);
+      fprintf(stderr,
+              "Warning: Rank %d tried to send data beyond table bounds\n",
+              rank);
     }
-    life_refresh_img ();
+    life_refresh_img();
   }
 }
 
-void life_refresh_img_mpi_omp_border ()
+void life_refresh_img_mpi_omp_border()
 {
   MPI_Status status;
 
   if (rank == 0) {
     for (int i = 1; i < size; i++) {
-      unsigned otherRankTop  = rankTop (i);
-      unsigned otherRankSize = rankSize (i);
+      unsigned otherRankTop = rankTop(i);
+      unsigned otherRankSize = rankSize(i);
 
       if (otherRankTop + otherRankSize <= DIM) {
-        MPI_Recv (&cur_table (otherRankTop, 0), otherRankSize * DIM, MPI_CHAR,
-                  i, 0, MPI_COMM_WORLD, &status);
+        MPI_Recv(&cur_table(otherRankTop, 0), otherRankSize * DIM, MPI_CHAR,
+                 i, 0, MPI_COMM_WORLD, &status);
       } else {
-        fprintf (
-            stderr,
-            "Warning: Tried to receive data beyond table bounds from rank %d\n",
-            i);
+        fprintf(stderr,
+                "Warning: Tried to receive data beyond table bounds from rank %d\n",
+                i);
       }
     }
-    life_refresh_img ();
+    life_refresh_img();
   } else {
-    unsigned myTop  = rankTop (rank);
-    unsigned mySize = rankSize (rank);
+    unsigned myTop = rankTop(rank);
+    unsigned mySize = rankSize(rank);
 
     if (myTop + mySize <= DIM) {
-      MPI_Send (&cur_table (myTop, 0), mySize * DIM, MPI_CHAR, 0, 0,
-                MPI_COMM_WORLD);
+      MPI_Send(&cur_table(myTop, 0), mySize * DIM, MPI_CHAR, 0, 0,
+               MPI_COMM_WORLD);
     } else {
-      fprintf (stderr,
-               "Warning: Rank %d tried to send data beyond table bounds\n",
-               rank);
+      fprintf(stderr,
+              "Warning: Rank %d tried to send data beyond table bounds\n",
+              rank);
     }
-    life_refresh_img ();
+    life_refresh_img();
   }
 }
 
-unsigned life_compute_mpi (unsigned nb_iter)
+unsigned life_compute_mpi(unsigned nb_iter)
 {
-  unsigned res    = 0;
-  unsigned myTop  = rankTop (rank);
-  unsigned mySize = rankSize (rank);
-
-  for (unsigned it = 1; it <= nb_iter; it++) {
-    exchange_halos ();
-    unsigned change = 0;
-
-    for (int y = myTop; y < myTop + mySize; y += TILE_H) {
-      for (int x = 0; x < DIM; x += TILE_W) {
-        int actual_tile_h =
-            (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
-        change |= do_tile (x, y, TILE_W, actual_tile_h);
-      }
-    }
-    swap_tables ();
-
-    if (!change) {
-      res = it;
-      break;
-    }
-  }
-
-  return res;
-}
-
-unsigned life_compute_mpi_omp (unsigned nb_iter)
-{
-  unsigned res    = 0;
-  unsigned myTop  = rankTop (rank);
-  unsigned mySize = rankSize (rank);
-
-  for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
-    exchange_halos ();
-#pragma omp parallel for schedule(runtime) collapse(2)
-    for (int y = myTop; y < myTop + mySize; y += TILE_H) {
-      for (int x = 0; x < DIM; x += TILE_W) {
-        int actual_tile_h =
-            (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
-        change |= do_tile (x, y, TILE_W, actual_tile_h);
-      }
-    }
-
-    swap_tables ();
-
-    if (!change) {
-      res = it;
-      break;
-    }
-  }
-
-  return res;
-}
-
-unsigned life_compute_mpi_omp_border(unsigned nb_iter){
   unsigned res = 0;
   unsigned myTop = rankTop(rank);
   unsigned mySize = rankSize(rank);
 
-  // Define the active computation region (excluding border)
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    exchange_halos();
+    unsigned change = 0;
+
+    for (int y = myTop; y < myTop + mySize; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        int actual_tile_h =
+            (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
+        change |= do_tile(x, y, TILE_W, actual_tile_h);
+      }
+    }
+    swap_tables();
+
+    if (!change) {
+      res = it;
+      break;
+    }
+  }
+
+  return res;
+}
+
+unsigned life_compute_mpi_omp(unsigned nb_iter)
+{
+  unsigned res = 0;
+  unsigned myTop = rankTop(rank);
+  unsigned mySize = rankSize(rank);
+
+  for (unsigned it = 1; it <= nb_iter; it++) {
+    unsigned change = 0;
+    exchange_halos();
+    
+    #pragma omp parallel for schedule(runtime) collapse(2)
+    for (int y = myTop; y < myTop + mySize; y += TILE_H) {
+      for (int x = 0; x < DIM; x += TILE_W) {
+        int actual_tile_h =
+            (y + TILE_H > myTop + mySize) ? (myTop + mySize - y) : TILE_H;
+        change |= do_tile(x, y, TILE_W, actual_tile_h);
+      }
+    }
+
+    swap_tables();
+
+    if (!change) {
+      res = it;
+      break;
+    }
+  }
+
+  return res;
+}
+
+unsigned life_compute_mpi_omp_border(unsigned nb_iter)
+{
+  unsigned res = 0;
+  unsigned myTop = rankTop(rank);
+  unsigned mySize = rankSize(rank);
+
   int start_y = (rank == 0) ? BORDER_SIZE : myTop;
   int end_y = (rank == size - 1) ? (myTop + mySize - BORDER_SIZE) : (myTop + mySize);
 
   for (unsigned it = 1; it <= nb_iter; it++) {
-    unsigned change = 0;
-    
-    // Exchange halos between MPI processes
     exchange_halos();
-
-    // Computation using OpenMP for parallelism within the node
-    #pragma omp parallel reduction(|:change)
-    {
-      unsigned local_change = 0;
-      
-      // Dynamic scheduling for better load balancing
-      #pragma omp for schedule(dynamic, 1) collapse(2)
-      for (int y = start_y; y < end_y; y += TILE_H) {
-        for (int x = BORDER_SIZE; x < DIM - BORDER_SIZE; x += TILE_W) {
-          // Calculate actual tile dimensions, respecting borders and domain boundaries
-          int actual_tile_h = (y + TILE_H > end_y) ? (end_y - y) : TILE_H;
-          int actual_tile_w = (x + TILE_W > DIM - BORDER_SIZE) ? (DIM - BORDER_SIZE - x) : TILE_W;
-          
-          // Process tile and track if any cell changed
-          local_change |= do_tile(x, y, actual_tile_w, actual_tile_h);
-        }
+    
+    unsigned change = 0;
+    unsigned local_change = 0;
+  
+    #pragma omp parallel for schedule(dynamic, 1) collapse(2) reduction(|:local_change)
+    for (int y = start_y; y < end_y; y += TILE_H) {
+      for (int x = BORDER_SIZE; x < DIM - BORDER_SIZE; x += TILE_W) {
+        int actual_tile_h = (y + TILE_H > end_y) ? (end_y - y) : TILE_H;
+        int actual_tile_w = (x + TILE_W > DIM - BORDER_SIZE) ? (DIM - BORDER_SIZE - x) : TILE_W;
+        local_change |= do_tile(x, y, actual_tile_w, actual_tile_h);
       }
-      
-      // Combine the changes from all threads
-      #pragma omp atomic
-      change |= local_change;
     }
-
-    // Synchronize change status across all MPI processes
-    unsigned global_change = 0;
-    MPI_Allreduce(&change, &global_change, 1, MPI_UNSIGNED, MPI_LOR, MPI_COMM_WORLD);
-
-    // Swap current and next tables for the next iteration
+    
+    change = local_change;
     swap_tables();
 
-    // If no changes were made anywhere, we can stop iterating
-    if (!global_change) {
+    if (!change) {
       res = it;
       break;
     }
