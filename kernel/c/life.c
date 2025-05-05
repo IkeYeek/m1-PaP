@@ -1295,7 +1295,10 @@ void life_draw_moultdiehard2474 (void)
 {
   moult_rle (104, 32, "data/rle/diehard2474.rle");
 }
-
+void life_draw_twinprime (void)
+{
+  moult_rle (104, 32, "data/rle/twinprime.rle");
+}
 //////////// debug ////////////
 static int debug_hud = -1;
 

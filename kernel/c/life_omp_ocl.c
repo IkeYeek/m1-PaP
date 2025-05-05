@@ -1107,6 +1107,16 @@ void life_omp_ocl_draw_moultdiehard2474 (void)
   moult_rle (104, 32, "data/rle/diehard2474.rle");
 }
 
+void life_omp_ocl_draw_2engineship (void)
+{
+  moult_rle (104, 32, "data/rle/2engineship.rle");
+}
+
+void life_omp_ocl_draw_twinprime (void)
+{
+  moult_rle (104, 32, "data/rle/twinprime.rle");
+}
+
 // Just in case we want to draw an initial configuration and dump it to file,
 // with no iteration at all
 unsigned life_omp_ocl_compute_none (unsigned nb_iter)
