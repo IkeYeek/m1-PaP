@@ -1,39 +1,56 @@
 #!/usr/bin/env python3
 from expTools import *
 
-# MPI configurations to test
-mpi_configs = ['"-np 1"', '"-np 2"', '"-np 4"', '"-np 8"', '"-np 16"']
-
-# Common options for all runs
-easypapOptions = {
-    "-k": ["life"],                 # Kernel: Game of Life
-    "-i": [10],                     # Number of iterations
-    "-v": ["mpi"],             # Version: MPI+OpenMP
-    "-a": ["random"],               # Initialization pattern
-    "-s": [8192],                   # Grid size (8192x8192)
-    "--label": ["mpi_speedup"],     # Label for grouping results
-    "-of": ["life_speedup.csv"],    # Output file
-    "-mpi": mpi_configs,            # MPI configurations to test
+# Get the sequential reference time first (important to establish baseline)
+seq_options = {
+    "-k": ["life"],           # Kernel: Game of Life
+    "-i": [10],               # Number of iterations
+    "-v": ["seq"],            # Version: Sequential
+    "-a": ["random"],         # Initialization pattern
+    "-s": [8192],             # Grid size (8192x8192)
+    "--label": ["seq_ref"],   # Label for reference
+    "-of": ["life_speedup.csv"] # Output file
 }
 
-# OpenMP configurations (with fixed thread count since we're focusing on MPI scaling)
-ompICV = {
-    "OMP_SCHEDULE": ["static"],     # Static scheduling
-    "OMP_PLACES": ["threads"],      # Thread placement
-    "OMP_NUM_THREADS": [1]          # Only 1 thread per process to isolate MPI scaling
+seq_omp = {
+    "OMP_PLACES=threads"
+    "OMP_NUM_THREADS": [1]
 }
 
-nbruns = 3  # Number of runs per configuration for more stable results
+# Run sequential version once for reference
+execute("./run", seq_omp, seq_options, 3, verbose=True, easyPath=".")
 
-# Execute MPI+OpenMP versions
-execute("./run", ompICV, easypapOptions, nbruns, verbose=False, easyPath=".")
+# Now run MPI configurations
+mpi_process_counts = [1, 2, 4, 8, 16]
 
-# Execute sequential version for baseline comparison
-easypapOptions["-v"] = ["seq"]
-easypapOptions["-mpi"] = ['"-np 1"']  # Only need 1 process for sequential
-seqOmpICV = {"OMP_NUM_THREADS": [1]}
-execute("./run", seqOmpICV, easypapOptions, nbruns, verbose=False, easyPath=".")
+# Common options for all MPI runs
+mpi_options = {
+    "-k": ["life"],           # Kernel: Game of Life
+    "-i": [10],               # Number of iterations
+    "-v": ["mpi"],            # Version: MPI
+    "-a": ["random"],         # Initialization pattern
+    "-s": [8192],             # Grid size (8192x8192)
+    "--label": ["mpi_speedup"], # Label for grouping results
+    "-of": ["life_speedup.csv"] # Output file
+}
+
+# Create separate runs for each MPI configuration
+for np in mpi_process_counts:
+    current_options = mpi_options.copy()
+    current_options["-mpi"] = [f'"-np {np}"']
+    
+    # For larger runs, may need a hostfile
+    if np > 8:
+        current_options["-mpi"] = [f'"-np {np}"']
+    
+    # Environment variables
+    mpi_omp = {
+        "OMP_SCHEDULE": ["static"],
+        "OMP_PLACES": ["threads"],
+        "OMP_NUM_THREADS": [1]  # Only 1 thread per process to isolate MPI scaling
+    }
+    
+    execute("./run", mpi_omp, current_options, 3, verbose=True, easyPath=".")
 
 print("Experiments complete. Recommended plots:")
-print("plots/easyplot.py -if life_speedup.csv -v mpi -- x=mpi_np y=speedup")
-print("This will show the speedup relative to the sequential version for different MPI process counts.")
+print("plots/easyplot.py -if life_speedup.csv -g mpi_np -- x=mpi_np y=speedup")
