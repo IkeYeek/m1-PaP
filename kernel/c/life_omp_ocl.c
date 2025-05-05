@@ -177,7 +177,7 @@ void life_omp_ocl_init_ocl ()
 
   true_iter_number = 0;
   life_omp_ocl_init ();
-  life_omp_ocl_ft ();
+  life_omp_ocl_ft_ocl ();
 }
 
 void life_omp_ocl_init_ocl_adaptive ()
@@ -665,7 +665,11 @@ void life_omp_ocl_ft (void)
 }
 void life_omp_ocl_ft_ocl (void)
 {
-  life_omp_ocl_ft ();
+#pragma omp parallel for schedule(runtime) collapse(2)
+  for (int y = DIM / 2; y < DIM; y += TILE_H)
+    for (int x = 0; x < DIM; x += TILE_W) {
+      next_table (y, x) = cur_table (y, x) = 0;
+    }
 }
 ///////////////////////////// Initial configs
 
