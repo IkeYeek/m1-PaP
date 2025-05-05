@@ -29,7 +29,7 @@ static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 
 static inline cell_t *tiles_cell (cell_t *restrict i, int y, int x)
 {
-  return i + (y + 1) * DIM + (x + 1);
+  return i + (y + 1) * (DIM / TILE_W) + (x + 1);
 }
 
 // This kernel does not directly work on cur_img/next_img.
@@ -128,7 +128,7 @@ static inline ocl_swap_tables ()
   _alternate_table    = tmp2;
 }
 
-static inline ocl_sync_borders (cl_int err)
+static inline void ocl_sync_borders (cl_int err)
 {
   unsigned true_gpu_size =
       sizeof (cell_t) * DIM * (kernel_fp[0].h - BORDER_SIZE);
@@ -226,7 +226,7 @@ void life_omp_ocl_init_ocl_hybrid_lazy (void)
 
   _alternate_tiles = mmap (NULL, size, PROT_READ | PROT_WRITE,
                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  size    = ((DIM / TILE_W) + 2) * ((DIM / TILE_H) + 2) * sizeof (cell_t);
+  memset (_alternate_tiles, 1, size);
   tile_in = clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
   if (!tile_in)
     exit_with_error ("Failed to allocate tile_in buffer");
@@ -488,7 +488,38 @@ unsigned life_omp_ocl_compute_ocl_hybrid_lazy (unsigned nb_iter)
                             global, local, 0, NULL,
                             ezp_ocl_eventptr (EVENT_START_KERNEL, 0));
     check (err, "Failed to execute kernel");
+    int border_tiles = (BORDER_SIZE * 2) / TILE_H + 1;
+    int cpu_start_y  = kernel_fp[0].h - (border_tiles * TILE_H);
 
+    // computing CPU
+    for (int y = cpu_start_y; y < DIM; y += TILE_H) {
+      for (int x = kernel_fp[1].x; x < DIM; x += TILE_W) {
+        unsigned local_change = 0;
+        unsigned tile_y       = y / TILE_H;
+        unsigned tile_x       = x / TILE_W;
+        // checking if we should recompute this tile or not
+        if (cur_tiles (tile_y, tile_x) || next_tiles (tile_y, tile_x)) {
+          // we need to keep track of per-tile changes
+          local_change = do_tile (x, y, TILE_W, TILE_H);
+          change |= local_change;
+
+          if (local_change) {
+            // setting them to 2 in order to avoid writing 0 on a unchanged tile
+            // that has some changes in its neighborhood
+            next_tiles (tile_y - 1, tile_x - 1) = 1;
+            next_tiles (tile_y - 1, tile_x)     = 1;
+            next_tiles (tile_y - 1, tile_x + 1) = 1;
+            next_tiles (tile_y, tile_x - 1)     = 1;
+            next_tiles (tile_y, tile_x) =
+                1; // except for the one of the iteration
+            next_tiles (tile_y, tile_x + 1)     = 1;
+            next_tiles (tile_y + 1, tile_x - 1) = 1;
+            next_tiles (tile_y + 1, tile_x)     = 1;
+            next_tiles (tile_y + 1, tile_x + 1) = 1;
+          }
+        }
+      }
+    }
     kernel_durations[1] += ezm_gettime () - clock;
     clFinish (ocl_queue (0));
     kernel_durations[0] += ezp_gpu_event_monitor (
@@ -497,12 +528,43 @@ unsigned life_omp_ocl_compute_ocl_hybrid_lazy (unsigned nb_iter)
 
     // switching tables
     {
-      cl_mem tmp          = ocl_next_buffer (0);
+      cl_mem tmp_buf      = ocl_next_buffer (0);
       ocl_next_buffer (0) = ocl_cur_buffer (0);
-      ocl_cur_buffer (0)  = tmp;
-      tmp                 = tile_in;
+      ocl_cur_buffer (0)  = tmp_buf;
+      tmp_buf             = tile_in;
       tile_in             = tile_out;
-      tile_out            = tmp;
+      tile_out            = tmp_buf;
+
+      cell_t *tmp  = _table;
+      cell_t *tmp2 = _tiles;
+
+      _table           = _alternate_table;
+      _alternate_table = tmp;
+
+      unsigned size = (DIM / TILE_W + 2) * (DIM / TILE_H + 2) * sizeof (cell_t);
+      _tiles        = _alternate_tiles;
+      _alternate_tiles = tmp2;
+      memset (_alternate_tiles, 0, size);
+    }
+
+    if (++true_iter_number % BORDER_SIZE) {
+      unsigned true_gpu_size =
+          sizeof (cell_t) * DIM * (kernel_fp[0].h - BORDER_SIZE);
+
+      err = clEnqueueReadBuffer (
+          ocl_queue (0), ocl_cur_buffer (0), CL_TRUE,
+          sizeof (cell_t) * DIM * (kernel_fp[0].h - BORDER_SIZE * 2),
+          sizeof (cell_t) * DIM * BORDER_SIZE,
+          _table + DIM * (kernel_fp[0].h - BORDER_SIZE * 2), 0, NULL, NULL);
+      check (err, "Err syncing host to device");
+
+      size_t border_offset_elements = DIM * (kernel_fp[0].h - BORDER_SIZE);
+
+      err = clEnqueueWriteBuffer (
+          ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, true_gpu_size,
+          BORDER_SIZE * DIM * sizeof (cell_t), _table + border_offset_elements,
+          0, NULL, NULL);
+      check (err, "Err syncing device to host");
     }
   }
   return 0;
