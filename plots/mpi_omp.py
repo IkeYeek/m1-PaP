@@ -3,7 +3,7 @@ from expTools import *
 
 # Recommended Plot:
 # plots/easyplot.py -if mandel.csv -v omp_tiled -- col=schedule row=label
-
+mpi_conf = ['"-np 1"','"-np 2"','"-np 3"','"-np 5"','"-np 6"','"-np 7"','"-np 8"']
 easypapOptions = {
     "-k": ["life"],
     "-i": [10],
@@ -11,14 +11,15 @@ easypapOptions = {
     "-a": ["moultdiehard1398"],
     "-s": [4096],
     "-of": ["mpi_threads.csv"],
-    "-mpi": ['"-np 4"']
+    "--label" : ["nb_proc"],
+    "-mpi": mpi_conf + ['"-hostfile mymachines"']
 }
 
 # OMP Internal Control Variable
 ompICV = {
     "OMP_SCHEDULE": ["dynamic"],
     "OMP_PLACES": ["threads"],
-    "OMP_NUM_THREADS": [1,4,8,14,20,25,30,35,40,47]
+    "OMP_NUM_THREADS": [25]
 }
 
 nbruns = 1
