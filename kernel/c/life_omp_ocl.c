@@ -19,15 +19,26 @@ typedef char cell_t;
 static cell_t *restrict __attribute__ ((aligned (64))) _table           = NULL;
 static cell_t *restrict __attribute__ ((aligned (64))) _alternate_table = NULL;
 
+static cell_t *restrict __attribute__ ((aligned (64))) _tiles           = NULL;
+static cell_t *restrict __attribute__ ((aligned (64))) _alternate_tiles = NULL;
+
 static inline cell_t *table_cell (cell_t *restrict i, int y, int x)
 {
   return i + y * DIM + x;
+}
+
+static inline cell_t *tiles_cell (cell_t *restrict i, int y, int x)
+{
+  return i + (y + 1) * DIM + (x + 1);
 }
 
 // This kernel does not directly work on cur_img/next_img.
 // Instead, we use 2D arrays of boolean values, not colors
 #define cur_table(y, x) (*table_cell (_table, (y), (x)))
 #define next_table(y, x) (*table_cell (_alternate_table, (y), (x)))
+
+#define cur_tiles(y, x) (*tiles_cell (_tiles, (y), (x)))
+#define next_tiles(y, x) (*tiles_cell (_alternate_tiles, (y), (x)))
 
 void life_omp_ocl_init (void)
 {
@@ -45,6 +56,7 @@ void life_omp_ocl_init (void)
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   }
 }
+
 #define ENABLE_OPENCL
 #ifdef ENABLE_OPENCL
 
@@ -160,6 +172,11 @@ void life_omp_ocl_config_ocl_adaptive_conv (char *params)
   life_omp_ocl_config_ocl (params);
 }
 
+void life_omp_ocl_config_ocl_hybrid_lazy (char *params)
+{
+  life_omp_ocl_config_ocl (params);
+}
+
 void life_omp_ocl_init_ocl ()
 {
   kernel_fp[0].x = 0;
@@ -193,6 +210,71 @@ void life_omp_ocl_init_ocl_mt ()
 void life_omp_ocl_init_ocl_adaptive_conv ()
 {
   life_omp_ocl_init_ocl ();
+}
+
+static cl_mem tile_in = 0, tile_out = 0;
+void life_omp_ocl_init_ocl_hybrid_lazy (void)
+{
+  if (_table != NULL)
+    return;
+
+  life_omp_ocl_init ();
+
+  unsigned size = ((DIM / TILE_W) + 2) * ((DIM / TILE_H) + 2) * sizeof (cell_t);
+  _tiles        = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+  _alternate_tiles = mmap (NULL, size, PROT_READ | PROT_WRITE,
+                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  size    = ((DIM / TILE_W) + 2) * ((DIM / TILE_H) + 2) * sizeof (cell_t);
+  tile_in = clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
+  if (!tile_in)
+    exit_with_error ("Failed to allocate tile_in buffer");
+  tile_out = clCreateBuffer (context, CL_MEM_READ_WRITE, size, NULL, NULL);
+  if (!tile_out)
+    exit_with_error ("Failed to allocate tile_out buffer");
+
+  kernel_fp[0].x = 0;
+  kernel_fp[0].y = 0;
+  kernel_fp[0].w = DIM;
+  kernel_fp[0].h = (NB_TILES_Y / 2) * TILE_H;
+
+  kernel_fp[1].x = 0;
+  kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
+  kernel_fp[1].w = DIM;
+  kernel_fp[1].h = DIM - kernel_fp[1].y;
+
+  kernel_durations[0] = 0;
+  kernel_durations[1] = 0;
+
+  true_iter_number = 0;
+  life_omp_ocl_init ();
+  life_omp_ocl_ft_ocl ();
+}
+void life_omp_ocl_draw_ocl_hybrid_lazy (char *params)
+{
+  life_omp_ocl_draw (params);
+  const unsigned size =
+      ((DIM / TILE_W) + 2) * ((DIM / TILE_H) + 2) * sizeof (cell_t);
+  cl_int err;
+  cell_t *all_1 = malloc (size);
+  cell_t *all_0 = malloc (size);
+  for (int y = 0; y < (DIM / TILE_H) + 2; y++) {
+    for (int x = 0; x < (DIM / TILE_W) + 2; x++) {
+      all_1[y * (DIM / TILE_W) + x] = 1;
+      all_0[y * (DIM / TILE_W) + x] = 0;
+    }
+  }
+
+  err = clEnqueueWriteBuffer (ocl_queue (0), tile_in, CL_TRUE, 0, size, all_1,
+                              0, NULL, NULL);
+  check (err, "Failed to write to tile_in");
+  err = clEnqueueWriteBuffer (ocl_queue (0), tile_out, CL_TRUE, 0, size, all_0,
+                              0, NULL, NULL);
+  check (err, "Failed to write to tile_out");
+
+  free (all_0);
+  free (all_1);
 }
 
 /* === computes === */
@@ -252,6 +334,58 @@ unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
 static inline bool much_greater_than (uint64_t a, uint64_t b)
 {
   return a > b * 2.5;
+}
+
+unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
+{
+  size_t global[2] = {DIM, kernel_fp[0].h};
+  size_t local[2]  = {TILE_W, TILE_H};
+  cl_int err;
+  uint64_t clock;
+  unsigned change = 0;
+
+  for (unsigned iter = 1; iter <= nb_iter; iter++) {
+    // gpu
+    enqueue_kernel (err, global, local, &clock);
+    // cpu
+    compute_cpu (&change);
+    finish_and_time_additive (clock);
+    ocl_swap_tables ();
+    if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0) {
+      ocl_sync_borders (err);
+      if (kernel_durations[0]) {
+        if (much_greater_than (kernel_durations[0],
+                               kernel_durations[1]) &&
+            kernel_fp[0].h > TILE_H * 2) { // cpu going faster
+          PRINT_DEBUG ('v', "Giving more work to the CPU\n");
+          clEnqueueReadBuffer (
+              ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
+              sizeof (cell_t) * DIM * kernel_fp[0].h, _table, 0, NULL,
+              NULL); // TODO: make this load only whats required
+          kernel_fp[0].h -= TILE_H;
+          kernel_fp[1].h += TILE_H;
+          kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
+          global[1]      = kernel_fp[0].h;
+        } else if (much_greater_than (kernel_durations[1],
+                                      kernel_durations[0]) &&
+                   kernel_fp[1].h > TILE_H) { // gpu going brrrr fast
+          PRINT_DEBUG ('v', "Giving more work to the GPU\n");
+          clEnqueueWriteBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE,
+                                sizeof (cell_t) * kernel_fp[0].h * DIM,
+                                sizeof (cell_t) * DIM * TILE_H,
+                                _table + (DIM * kernel_fp[0].h), 0, NULL, NULL);
+          kernel_fp[0].h += TILE_H;
+          kernel_fp[1].h -= TILE_H;
+          kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
+          global[1]      = kernel_fp[0].h;
+        } else {
+          kernel_durations[0] = 0;
+          kernel_durations[1] = 0;
+        }
+      }
+    }
+  }
+  return 0;
 }
 
 unsigned life_omp_ocl_compute_ocl_adaptive_conv (unsigned nb_iter)
@@ -328,7 +462,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive_conv (unsigned nb_iter)
   return 0;
 }
 
-unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
+unsigned life_omp_ocl_compute_ocl_hybrid_lazy (unsigned nb_iter)
 {
   size_t global[2] = {DIM, kernel_fp[0].h};
   size_t local[2]  = {TILE_W, TILE_H};
@@ -337,44 +471,38 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
   unsigned change = 0;
 
   for (unsigned iter = 1; iter <= nb_iter; iter++) {
-    // gpu
-    enqueue_kernel (err, global, local, &clock);
-    // cpu
-    compute_cpu (&change);
-    finish_and_time_additive (clock);
-    ocl_swap_tables ();
-    if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0) {
-      ocl_sync_borders (err);
-      if (kernel_durations[0]) {
-        if (much_greater_than (kernel_durations[0],
-                               kernel_durations[1]) &&
-            kernel_fp[0].h > TILE_H * 2) { // cpu going faster
-          PRINT_DEBUG ('v', "Giving more work to the CPU\n");
-          clEnqueueReadBuffer (
-              ocl_queue (0), ocl_cur_buffer (0), CL_TRUE, 0,
-              sizeof (cell_t) * DIM * kernel_fp[0].h, _table, 0, NULL,
-              NULL); // TODO: make this load only whats required
-          kernel_fp[0].h -= TILE_H;
-          kernel_fp[1].h += TILE_H;
-          kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
-          global[1]      = kernel_fp[0].h;
-        } else if (much_greater_than (kernel_durations[1],
-                                      kernel_durations[0]) &&
-                   kernel_fp[1].h > TILE_H) { // gpu going brrrr fast
-          PRINT_DEBUG ('v', "Giving more work to the GPU\n");
-          clEnqueueWriteBuffer (ocl_queue (0), ocl_cur_buffer (0), CL_TRUE,
-                                sizeof (cell_t) * kernel_fp[0].h * DIM,
-                                sizeof (cell_t) * DIM * TILE_H,
-                                _table + (DIM * kernel_fp[0].h), 0, NULL, NULL);
-          kernel_fp[0].h += TILE_H;
-          kernel_fp[1].h -= TILE_H;
-          kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
-          global[1]      = kernel_fp[0].h;
-        } else {
-          kernel_durations[0] = 0;
-          kernel_durations[1] = 0;
-        }
-      }
+    // computing GPU
+    err = 0;
+    err |= clSetKernelArg (ocl_compute_kernel (0), 0, sizeof (cl_mem),
+                           &ocl_cur_buffer (0));
+    err |= clSetKernelArg (ocl_compute_kernel (0), 1, sizeof (cl_mem),
+                           &ocl_next_buffer (0));
+    err |=
+        clSetKernelArg (ocl_compute_kernel (0), 2, sizeof (cl_mem), &tile_in);
+    err |=
+        clSetKernelArg (ocl_compute_kernel (0), 3, sizeof (cl_mem), &tile_out);
+    check (err, "Failed to set kernel computing arguments");
+
+    clock = ezm_gettime ();
+    clEnqueueNDRangeKernel (ocl_queue (0), ocl_compute_kernel (0), 2, NULL,
+                            global, local, 0, NULL,
+                            ezp_ocl_eventptr (EVENT_START_KERNEL, 0));
+    check (err, "Failed to execute kernel");
+
+    kernel_durations[1] += ezm_gettime () - clock;
+    clFinish (ocl_queue (0));
+    kernel_durations[0] += ezp_gpu_event_monitor (
+        0, EVENT_START_KERNEL, clock, &kernel_fp[0], TASK_TYPE_COMPUTE, 0);
+    ezp_gpu_event_reset ();
+
+    // switching tables
+    {
+      cl_mem tmp          = ocl_next_buffer (0);
+      ocl_next_buffer (0) = ocl_cur_buffer (0);
+      ocl_cur_buffer (0)  = tmp;
+      tmp                 = tile_in;
+      tile_in             = tile_out;
+      tile_out            = tmp;
     }
   }
   return 0;
@@ -401,6 +529,10 @@ void life_omp_ocl_refresh_img_ocl_mt ()
   life_omp_ocl_refresh_img_ocl ();
 }
 void life_omp_ocl_refresh_img_ocl_adaptive_conv ()
+{
+  life_omp_ocl_refresh_img_ocl ();
+}
+void life_omp_ocl_refresh_img_ocl_hybrid_lazy ()
 {
   life_omp_ocl_refresh_img_ocl ();
 }
