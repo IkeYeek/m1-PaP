@@ -1304,7 +1304,7 @@ static int debug_hud = -1;
 
 void life_config (char *param)
 {
-  seed += param ? atoi (param) : 0; // config pseudo_random 
+  seed += param ? atoi (param) : 0; // config pseudo_random
   if (picking_enabled) {
     debug_hud = ezv_hud_alloc (ctx[0]);
     ezv_hud_on (ctx[0], debug_hud);
