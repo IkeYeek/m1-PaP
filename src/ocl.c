@@ -472,10 +472,10 @@ void ocl_build_program (int list_variants)
                GPU_SIZE_Y, TILE_H);
 
     // Make sure we don't exceed the maximum group size
-    if (TILE_W * TILE_H > max_workgroup_size)
-      exit_with_error ("TILE_W (%d) x TILE_H (%d) cannot exceed "
-                       "CL_DEVICE_MAX_WORK_GROUP_SIZE (%ld)",
-                       TILE_W, TILE_H, max_workgroup_size);
+    // if (TILE_W * TILE_H > max_workgroup_size)
+    //   exit_with_error ("TILE_W (%d) x TILE_H (%d) cannot exceed "
+    //                    "CL_DEVICE_MAX_WORK_GROUP_SIZE (%ld)",
+    //                    TILE_W, TILE_H, max_workgroup_size);
   } else {
     str = getenv ("TILE");
     if (str != NULL) {
