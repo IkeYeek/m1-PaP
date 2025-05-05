@@ -151,33 +151,33 @@ static inline void ocl_sync_borders (cl_int err)
 
 /* === initializations === */
 
-void life_omp_ocl_config_ocl (char *params)
+void life_omp_ocl_config_ocl_hybrid (char *params)
 {
   easypap_gl_buffer_sharing = 0;
   life_omp_ocl_config (params);
 }
 
-void life_omp_ocl_config_ocl_adaptive (char *params)
+void life_omp_ocl_config_ocl_hybrid_dyn (char *params)
 {
-  life_omp_ocl_config_ocl (params);
+  life_omp_ocl_config_ocl_hybrid (params);
 }
 
 void life_omp_ocl_config_ocl_mt (char *params)
 {
-  life_omp_ocl_config_ocl (params);
+  life_omp_ocl_config_ocl_hybrid (params);
 }
 
-void life_omp_ocl_config_ocl_adaptive_conv (char *params)
+void life_omp_ocl_config_ocl_hybrid_conv (char *params)
 {
-  life_omp_ocl_config_ocl (params);
+  life_omp_ocl_config_ocl_hybrid (params);
 }
 
 void life_omp_ocl_config_ocl_hybrid_lazy (char *params)
 {
-  life_omp_ocl_config_ocl (params);
+  life_omp_ocl_config_ocl_hybrid (params);
 }
 
-void life_omp_ocl_init_ocl ()
+void life_omp_ocl_init_ocl_hybrid ()
 {
   kernel_fp[0].x = 0;
   kernel_fp[0].y = 0;
@@ -194,22 +194,22 @@ void life_omp_ocl_init_ocl ()
 
   true_iter_number = 0;
   life_omp_ocl_init ();
-  life_omp_ocl_ft_ocl ();
+  life_omp_ocl_ft_ocl_hybrid ();
 }
 
-void life_omp_ocl_init_ocl_adaptive ()
+void life_omp_ocl_init_ocl_hybrid_dyn ()
 {
-  life_omp_ocl_init_ocl ();
+  life_omp_ocl_init_ocl_hybrid ();
 }
 
 void life_omp_ocl_init_ocl_mt ()
 {
-  life_omp_ocl_init_ocl ();
+  life_omp_ocl_init_ocl_hybrid ();
 }
 
-void life_omp_ocl_init_ocl_adaptive_conv ()
+void life_omp_ocl_init_ocl_hybrid_conv ()
 {
-  life_omp_ocl_init_ocl ();
+  life_omp_ocl_init_ocl_hybrid ();
 }
 
 static cl_mem tile_in = 0, tile_out = 0;
@@ -249,7 +249,7 @@ void life_omp_ocl_init_ocl_hybrid_lazy (void)
 
   true_iter_number = 0;
   life_omp_ocl_init ();
-  life_omp_ocl_ft_ocl ();
+  life_omp_ocl_ft_ocl_hybrid ();
 }
 void life_omp_ocl_draw_ocl_hybrid_lazy (char *params)
 {
@@ -279,7 +279,7 @@ void life_omp_ocl_draw_ocl_hybrid_lazy (char *params)
 
 /* === computes === */
 
-unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
+unsigned life_omp_ocl_compute_ocl_hybrid (unsigned nb_iter)
 {
   size_t global[2] = {DIM,
                       kernel_fp[0].h}; // global domain size for our calculation
@@ -336,7 +336,7 @@ static inline bool much_greater_than (uint64_t a, uint64_t b)
   return a > b * 2.5;
 }
 
-unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
+unsigned life_omp_ocl_compute_ocl_hybrid_dyn (unsigned nb_iter)
 {
   size_t global[2] = {DIM, kernel_fp[0].h};
   size_t local[2]  = {TILE_W, TILE_H};
@@ -388,7 +388,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
   return 0;
 }
 
-unsigned life_omp_ocl_compute_ocl_adaptive_conv (unsigned nb_iter)
+unsigned life_omp_ocl_compute_ocl_hybrid_conv (unsigned nb_iter)
 {
   size_t global[2] = {DIM, kernel_fp[0].h};
   size_t local[2]  = {TILE_W, TILE_H};
@@ -492,6 +492,7 @@ unsigned life_omp_ocl_compute_ocl_hybrid_lazy (unsigned nb_iter)
     int cpu_start_y  = kernel_fp[0].h - (border_tiles * TILE_H);
 
     // computing CPU
+#pragma omp parallel for reduction(| : change) collapse(2) schedule(runtime)
     for (int y = cpu_start_y; y < DIM; y += TILE_H) {
       for (int x = kernel_fp[1].x; x < DIM; x += TILE_W) {
         unsigned local_change = 0;
@@ -571,7 +572,7 @@ unsigned life_omp_ocl_compute_ocl_hybrid_lazy (unsigned nb_iter)
 }
 
 /* === refresh fn === */
-void life_omp_ocl_refresh_img_ocl (void)
+void life_omp_ocl_refresh_img_ocl_hybrid (void)
 {
   cl_int err;
 
@@ -582,21 +583,21 @@ void life_omp_ocl_refresh_img_ocl (void)
   check (err, "Failed to read buffer chunk from GPU");
   life_omp_ocl_refresh_img ();
 }
-void life_omp_ocl_refresh_img_ocl_adaptive ()
+void life_omp_ocl_refresh_img_ocl_hybrid_dyn ()
 {
-  life_omp_ocl_refresh_img_ocl ();
+  life_omp_ocl_refresh_img_ocl_hybrid ();
 }
 void life_omp_ocl_refresh_img_ocl_mt ()
 {
-  life_omp_ocl_refresh_img_ocl ();
+  life_omp_ocl_refresh_img_ocl_hybrid ();
 }
-void life_omp_ocl_refresh_img_ocl_adaptive_conv ()
+void life_omp_ocl_refresh_img_ocl_hybrid_conv ()
 {
-  life_omp_ocl_refresh_img_ocl ();
+  life_omp_ocl_refresh_img_ocl_hybrid ();
 }
 void life_omp_ocl_refresh_img_ocl_hybrid_lazy ()
 {
-  life_omp_ocl_refresh_img_ocl ();
+  life_omp_ocl_refresh_img_ocl_hybrid ();
 }
 #else
 /* === First version I try, GPU takes care of the bottom of the table === */
@@ -605,30 +606,31 @@ void life_omp_ocl_refresh_img_ocl_hybrid_lazy ()
 #define CPU_GPU_SYNC_FREQ 10
 #define NB_LINES_FOR_GPU 512
 #define BORDER_SIZE CPU_GPU_SYNC_FREQ
-static cl_mem gpu_table_ocl = 0, gpu_alternage_table_ocl = 0;
+static cl_mem gpu_table_ocl_hybrid = 0, gpu_alternage_table_ocl_hybrid = 0;
 static int nb_iter_true = 0;
 // for the first version, we're going to fix the n° of lines computed by the
 // CPU vs by the GPU to NB_LINES_FOR_GPU.
 // we're going to send a border as well, of size CPU_GPU_SYNC_FREQ-1
 // The CPU will have the full table, with part of it out of sync. Every
 // CPU_GPU_SYNC_FREQ we're going to sync CPU and GPU.
-void life_omp_ocl_init_ocl (void)
+void life_omp_ocl_init_ocl_hybrid (void)
 {
   life_omp_ocl_init ();
-  life_omp_ocl_ft_ocl ();
+  life_omp_ocl_ft_ocl_hybrid ();
 
   const unsigned gpu_size = DIM * NB_LINES_FOR_GPU * sizeof (cell_t);
-  gpu_table_ocl =
+  gpu_table_ocl_hybrid =
       clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
   if (!gpu_table_ocl)
-    exit_with_error ("Failed to allocate gpu_table_ocl buffer");
-  gpu_alternage_table_ocl =
+    exit_with_error ("Failed to allocate gpu_table_ocl_hybrid buffer");
+  gpu_alternage_table_ocl_hybrid =
       clCreateBuffer (context, CL_MEM_READ_WRITE, gpu_size, NULL, NULL);
   if (!gpu_alternage_table_ocl)
-    exit_with_error ("Failed to allocate gpu_alternage_table_ocl buffer");
+    exit_with_error (
+        "Failed to allocate gpu_alternage_table_ocl_hybrid buffer");
 }
 
-void life_omp_ocl_draw_ocl (char *params)
+void life_omp_ocl_draw_ocl_hybrid (char *params)
 {
   life_omp_ocl_draw (params);
   const unsigned gpu_size = DIM * NB_LINES_FOR_GPU * sizeof (cell_t);
@@ -679,17 +681,17 @@ static inline void sync_cpu_gpu (cl_int err)
   check (err, "Err syncing device to host");
 }
 
-static inline void switch_tables_ocl (void)
+static inline void switch_tables_ocl_hybrid (void)
 {
-  cl_mem tmp              = gpu_table_ocl;
-  gpu_table_ocl           = gpu_alternage_table_ocl;
-  gpu_alternage_table_ocl = tmp;
-  cell_t *tmp2            = _table;
-  _table                  = _alternate_table;
-  _alternate_table        = tmp2;
+  cl_mem tmp                     = gpu_table_ocl;
+  gpu_table_ocl_hybrid           = gpu_alternage_table_ocl;
+  gpu_alternage_table_ocl_hybrid = tmp;
+  cell_t *tmp2                   = _table;
+  _table                         = _alternate_table;
+  _alternate_table               = tmp2;
 }
 
-unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
+unsigned life_omp_ocl_compute_ocl_hybrid (unsigned nb_iter)
 {
 
   size_t global[2] = {GPU_SIZE_X, NB_LINES_FOR_GPU};
@@ -715,7 +717,7 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
       }
     }
 
-    switch_tables_ocl ();
+    switch_tables_ocl_hybrid ();
 
     if (++nb_iter_true % CPU_GPU_SYNC_FREQ == 0 && nb_iter_true > 0) {
       sync_cpu_gpu (err);
@@ -724,7 +726,7 @@ unsigned life_omp_ocl_compute_ocl (unsigned nb_iter)
   return 0;
 }
 
-void life_omp_ocl_refresh_img_ocl (void)
+void life_omp_ocl_refresh_img_ocl_hybrid (void)
 {
   cl_int err;
 
@@ -860,7 +862,7 @@ void life_omp_ocl_ft (void)
       next_table (y, x) = cur_table (y, x) = 0;
     }
 }
-void life_omp_ocl_ft_ocl (void)
+void life_omp_ocl_ft_ocl_hybrid (void)
 {
 #pragma omp parallel for schedule(runtime) collapse(2)
   for (int y = DIM / 2; y < DIM; y += TILE_H)
@@ -914,7 +916,7 @@ static void otca_autoswitch (char *name, int x, int y)
                           RLE_ORIENTATION_NORMAL);
 }
 
-static void otca_life_omp_ocl (char *name, int x, int y)
+static void otca_life_omp_ocl_hybrid (char *name, int x, int y)
 {
   life_omp_ocl_rle_parse (name, x, y, RLE_ORIENTATION_NORMAL);
   life_omp_ocl_rle_parse ("data/rle/b3-s23-ctrl.rle", x + 123, y + 1396,
@@ -932,7 +934,8 @@ static void at_the_four_corners (char *filename, int distance)
                           RLE_ORIENTATION_HINVERT | RLE_ORIENTATION_VINVERT);
 }
 
-// Suggested cmdline: ./run -k life_omp_ocl -s 2176 -a otca_off -ts 64 -r 10 -si
+// Suggested cmdline: ./run -k life_omp_ocl_hybrid -s 2176 -a otca_off -ts 64 -r
+// 10 -si
 void life_omp_ocl_draw_otca_off (void)
 {
   if (DIM < 2176)
@@ -941,7 +944,8 @@ void life_omp_ocl_draw_otca_off (void)
   otca_autoswitch ("data/rle/otca-off.rle", 1, 1);
 }
 
-// Suggested cmdline: ./run -k life_omp_ocl -s 2176 -a otca_on -ts 64 -r 10 -si
+// Suggested cmdline: ./run -k life_omp_ocl_hybrid -s 2176 -a otca_on -ts 64 -r
+// 10 -si
 void life_omp_ocl_draw_otca_on (void)
 {
   if (DIM < 2176)
@@ -950,7 +954,8 @@ void life_omp_ocl_draw_otca_on (void)
   otca_autoswitch ("data/rle/otca-on.rle", 1, 1);
 }
 
-// Suggested cmdline: ./run -k life_omp_ocl -s 6208 -a meta3x3 -ts 64 -r 50 -si
+// Suggested cmdline: ./run -k life_omp_ocl_hybrid -s 6208 -a meta3x3 -ts 64 -r
+// 50 -si
 void life_omp_ocl_draw_meta3x3 (void)
 {
   if (DIM < 6208)
@@ -958,12 +963,12 @@ void life_omp_ocl_draw_meta3x3 (void)
 
   for (int i = 0; i < 3; i++)
     for (int j = 0; j < 3; j++)
-      otca_life_omp_ocl (j == 1 ? "data/rle/otca-on.rle"
-                                : "data/rle/otca-off.rle",
-                         1 + j * (2058 - 10), 1 + i * (2058 - 10));
+      otca_life_omp_ocl_hybrid (j == 1 ? "data/rle/otca-on.rle"
+                                       : "data/rle/otca-off.rle",
+                                1 + j * (2058 - 10), 1 + i * (2058 - 10));
 }
 
-// Suggested cmdline: ./run -k life_omp_ocl -a bugs -ts 64
+// Suggested cmdline: ./run -k life_omp_ocl_hybrid -a bugs -ts 64
 void life_omp_ocl_draw_bugs (void)
 {
   for (int y = 16; y < DIM / 2; y += 32) {
@@ -974,7 +979,8 @@ void life_omp_ocl_draw_bugs (void)
   }
 }
 
-// Suggested cmdline: ./run -k life_omp_ocl -v omp -a ship -s 512 -m -ts 16
+// Suggested cmdline: ./run -k life_omp_ocl_hybrid -v omp -a ship -s 512 -m -ts
+// 16
 void life_omp_ocl_draw_ship (void)
 {
   for (int y = 16; y < DIM / 2; y += 32) {
@@ -1048,7 +1054,7 @@ void life_omp_ocl_draw_random (void)
         set_cell (i, j);
 }
 
-// Suggested cmdline: ./run -k life_omp_ocl -a clown -s 256 -i 110
+// Suggested cmdline: ./run -k life_omp_ocl_hybrid -a clown -s 256 -i 110
 void life_omp_ocl_draw_clown (void)
 {
   life_omp_ocl_rle_parse ("data/rle/clown-seed.rle", DIM / 2, DIM / 2,
@@ -1082,19 +1088,19 @@ static void moult_rle (int size, int p, char *filepath)
   }
 }
 
-// ./run  -k life_omp_ocl -a moultdiehard130  -v omp -ts 32 -m -s 512
+// ./run  -k life_omp_ocl_hybrid -a moultdiehard130  -v omp -ts 32 -m -s 512
 void life_omp_ocl_draw_moultdiehard130 (void)
 {
   moult_rle (16, 128, "data/rle/diehard.rle");
 }
 
-// ./run  -k life_omp_ocl -a moultdiehard2474  -v omp -ts 32 -m -s 1024
+// ./run  -k life_omp_ocl_hybrid -a moultdiehard2474  -v omp -ts 32 -m -s 1024
 void life_omp_ocl_draw_moultdiehard1398 (void)
 {
   moult_rle (52, 96, "data/rle/diehard1398.rle");
 }
 
-// ./run  -k life_omp_ocl -a moultdiehard2474  -v omp -ts 32 -m -s 2048
+// ./run  -k life_omp_ocl_hybrid -a moultdiehard2474  -v omp -ts 32 -m -s 2048
 void life_omp_ocl_draw_moultdiehard2474 (void)
 {
   moult_rle (104, 32, "data/rle/diehard2474.rle");

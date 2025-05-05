@@ -1,6 +1,6 @@
 #include "kernel/ocl/common.cl"
 typedef char cell_t;
-__kernel void life_omp_ocl_ocl (__global cell_t *in, __global cell_t *out)
+__kernel void life_omp_ocl_ocl_hybrid (__global cell_t *in, __global cell_t *out)
 {
   const unsigned x = get_global_id (0);
   const unsigned y = get_global_id (1);
@@ -34,7 +34,7 @@ __kernel void life_omp_ocl_ocl_mt (__global cell_t *in, __global cell_t *out)
   }
 }
 
-__kernel void life_omp_ocl_ocl_adaptive (__global cell_t *in,
+__kernel void life_omp_ocl_ocl_hybrid_dyn (__global cell_t *in,
                                          __global cell_t *out)
 {
   const unsigned x = get_global_id (0);
@@ -52,7 +52,7 @@ __kernel void life_omp_ocl_ocl_adaptive (__global cell_t *in,
   }
 }
 
-__kernel void life_omp_ocl_ocl_adaptive_conv (__global cell_t *in,
+__kernel void life_omp_ocl_ocl_hybrid_conv (__global cell_t *in,
                                          __global cell_t *out)
 {
   const unsigned x = get_global_id (0);
