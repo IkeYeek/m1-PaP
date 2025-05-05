@@ -251,7 +251,7 @@ unsigned life_omp_ocl_compute_ocl_mt (unsigned nb_iter)
 
 static inline bool much_greater_than (uint64_t a, uint64_t b)
 {
-  return a > b * 4;
+  return a > b * 2.5;
 }
 
 unsigned life_omp_ocl_compute_ocl_adaptive_conv (unsigned nb_iter)
@@ -341,7 +341,7 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
     enqueue_kernel (err, global, local, &clock);
     // cpu
     compute_cpu (&change);
-    finish_and_time (clock);
+    finish_and_time_additive (clock);
     ocl_swap_tables ();
     if (++true_iter_number % GPU_CPU_SYNC_FREQ == 0 && true_iter_number > 0) {
       ocl_sync_borders (err);
@@ -370,6 +370,9 @@ unsigned life_omp_ocl_compute_ocl_adaptive (unsigned nb_iter)
           kernel_fp[1].h -= TILE_H;
           kernel_fp[1].y = kernel_fp[0].y + kernel_fp[0].h;
           global[1]      = kernel_fp[0].h;
+        } else {
+          kernel_durations[0] = 0;
+          kernel_durations[1] = 0;
         }
       }
     }
