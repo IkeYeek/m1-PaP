@@ -1052,8 +1052,7 @@ unsigned life_compute_mpi_omp_border(unsigned nb_iter)
     for (int y = start_y; y < end_y; y += TILE_H) {
       for (int x = BORDER_SIZE; x < DIM - BORDER_SIZE; x += TILE_W) {
         int actual_tile_h = (y + TILE_H > end_y) ? (end_y - y) : TILE_H;
-        int actual_tile_w = (x + TILE_W > DIM - BORDER_SIZE) ? (DIM - BORDER_SIZE - x) : TILE_W;
-        local_change |= do_tile(x, y, actual_tile_w, actual_tile_h);
+        local_change |= do_tile(x, y, TILE_W, actual_tile_h);
       }
     }
     
