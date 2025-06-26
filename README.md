@@ -29,3 +29,6 @@ Full source code for the “Programmation des Architectures Parallèles” (intr
 > *Instructions on how to build and run each branch will be added here soon. Feel free to contact me or open an issue if you need help in the meantime!*
 
 </details>
+
+> **License & Disclaimer**  
+> Code is provided “as is” for educational use only. You may reference it, but **do not copy**—especially if you’re also at Uni Bordeaux (they definitly will get your ass and I won't do shit about it)! Instead, once again, ask me, still got a little bit of free time in my life!
